@@ -1,0 +1,9 @@
+[package]
+name = "birl"
+version = "0.1.0"
+authors = ["Rafael <lazpeng@gmail.com>"]
+
+description = "Interpretador da linguagem BIRL"
+repository = "https://github.com/lazpeng/birl"
+
+[dependencies]
