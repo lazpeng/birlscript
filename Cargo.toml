@@ -1,9 +1,9 @@
 [package]
-name = "birl"
-version = "0.1.0"
+name = "birlscript"
+version = "0.1.3"
 authors = ["Rafael <lazpeng@gmail.com>"]
 
-description = "Interpretador da linguagem BIRL"
+description = "Interpretador da linguagem BIRLSCRIPT"
 repository = "https://github.com/lazpeng/birl"
 
 [dependencies]
