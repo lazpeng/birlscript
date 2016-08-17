@@ -149,7 +149,7 @@ mod value {
 /// Os valores passados aos comandos têm nomes fantasia alfabéticos para exemplificação
 pub enum Command {
     /// Move (copia) o conteudo da variavel no endereco a pro b
-    Move(types::Address, types::Address),
+    Move(types::Address, Value),
     /// Limpa o valor da variavel no endereco a
     Clear(types::Address),
     /// Aplica xor na variavel no endereco a com o valor b
@@ -257,7 +257,7 @@ fn parse_cmd(cmd: &str) -> Option<Command> {
         kw::KW_MOVE => {
             check_n_params(CommandType::Move, arguments.len());
             let (addr1, addr2) = (arguments[0].parse::<types::Address>().unwrap(),
-                                  arguments[1].parse::<types::Address>().unwrap());
+                                  value::parse_expr(arguments[1]).unwrap());
             Some(Command::Move(addr1, addr2))
         }
         kw::KW_CLEAR => {
