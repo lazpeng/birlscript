@@ -26,17 +26,19 @@ pub mod kw {
     /// Adição
     pub const KW_ADD: &'static str = "CONSTROI";
     /// Diminuição
-    pub const KW_REM: &'static str = "NEGATIVA";
+    pub const KW_REM: &'static str = "MENOS CUMPADE";
     /// Divisão
-    pub const KW_DIV: &'static str = "AGUA COM MUSCULO";
+    pub const KW_DIV: &'static str = "DIVIDE CUMPADE";
     /// Multiplicação
     pub const KW_MUL: &'static str = "CONSTROI FIBRA";
+    /// Multiplica por -1
+    pub const KW_NEG: &'static str = "NEGATIVA BAMBAM";
     /// Declara uma variável
     pub const KW_DECL: &'static str = "VEM";
     /// Declara uma variável com um valor
     pub const KW_DECLWV: &'static str = "VEM PORRA";
     /// Realiza um "pulo" de uma seção para outra
-    pub const KW_JUMP: &'static str = "HORA DO";
+    pub const KW_JUMP: &'static str = "E HORA DO";
     /// Comparação
     pub const KW_CMP: &'static str = "E ELE QUE A GENTE QUER";
 }
@@ -106,6 +108,9 @@ mod value {
                         value.push(actual);
                     }
                 }
+                'a' ... 'z' | 'A' ... 'Z' | '_' => {
+                    return Some(Value::Symbol(e));
+                }
                 _ => println!("Erro, caractere \"{}\" encontrado durante parsing.", fchar),
             }
             None
@@ -134,6 +139,8 @@ pub enum Command {
     Div(u64, i64),
     /// Multiplica o valor da variavel no endereco a com o valor b
     Mul(u64, i64),
+    /// Multiplica um valor por -1
+    Neg(u64),
     /// Declara a variavel com nome a
     Decl(String),
     /// Declara a variavel com nome a e valor b
