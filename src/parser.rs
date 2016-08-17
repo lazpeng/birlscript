@@ -251,7 +251,7 @@ fn parse_cmd(cmd: &str) -> Option<Command> {
         // Apenas um argumento
         arguments.push(cmd_parts[1].trim());
     } else {
-        arguments = cmd_parts[1].split(',').collect::<Vec<&str>>();
+        arguments = cmd_parts[1].split(',').map(|arg| arg.trim()).collect::<Vec<&str>>();
     }
     let cmd: Option<Command> = match cmd_type {
         kw::KW_MOVE => {
@@ -486,12 +486,30 @@ fn parse_global(glb: &str) -> Global {
 mod tests {
 
     #[test]
-    fn parsing_command() {
+    fn command_decl() {
         let cmd = super::parse_cmd("VEM: MONSTRO").unwrap();
         match cmd {
-            super::Command::Decl(name) => println!("Declarou com nome: {}", name),
-            _ => panic!("Erro: Comando não interpretado corretamente"),
+            super::Command::Decl(name) => assert!(name == "MONSTRO"),
+            _ => panic!(),
         }
     }
 
+    #[test]
+    fn command_declwv() {
+        let cmd = super::parse_cmd("VEM PORRA: MONSTRO, \"CUMPADE\"").unwrap();
+        match cmd {
+            super::Command::DeclWV(name, val) => {
+                println!("nome: {}", name);
+                assert!(name == "MONSTRO");
+                match val {
+                    super::Value::Str(v) => {
+                        println!("val: {}", v);
+                        assert!(*v == "CUMPADE");
+                    }
+                    _ => panic!(),
+                }
+            }
+            _ => panic!(),
+        }
+    }
 }
