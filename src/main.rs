@@ -1,4 +1,5 @@
 mod parser;
+mod commands;
 
 /// Imprime mensagem de ajuda
 fn print_help() {
@@ -49,12 +50,18 @@ fn get_params() -> Vec<Param> {
     use std::env;
     let mut ret: Vec<Param> = vec![];
     let mut params = env::args();
+    // Se o proximo argumento é um valor que deve ser ignorado
+    let mut next_is_val = false;
     if params.len() > 2 {
         loop {
             let p = match params.next() {
                 Some(v) => v,
                 None => break,
             };
+            if next_is_val {
+                next_is_val = false;
+                continue;
+            }
             match p.as_str() {
                 "-a" |
                 "--ajuda-o-maluco-ta-doente" => ret.push(Param::PrintHelp),
@@ -63,6 +70,7 @@ fn get_params() -> Vec<Param> {
                 "--versao-dessa-porra" => ret.push(Param::PrintVersion),
                 "-e" |
                 "--ele-que-a-gente-quer" => {
+                    next_is_val = true;
                     let cmd = match params.next() {
                         Some(name) => name,
                         None => {
@@ -74,6 +82,7 @@ fn get_params() -> Vec<Param> {
                     ret.push(Param::CommandHelp(cmd));
                 }
                 "-j" | "--jaula" => {
+                    next_is_val = true;
                     let section = match params.next() {
                         Some(sect) => sect,
                         None => {
@@ -91,7 +100,17 @@ fn get_params() -> Vec<Param> {
 }
 
 /// Printa ajuda para um comando
-fn command_help(_command: &str) {}
+fn command_help(command: &str) {
+    use parser::kw::*;
+    use commands::*;
+    let doc = match command {
+        KW_MOVE => doc_move(),
+        KW_CLEAR => doc_clear(),
+        KW_XOR => doc_xor(),
+        _ => String::new(),
+    };
+    println!("{}", doc);
+}
 
 fn main() {
     let params = get_params();
