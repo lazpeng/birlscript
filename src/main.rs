@@ -107,7 +107,20 @@ fn command_help(command: &str) {
         KW_MOVE => doc_move(),
         KW_CLEAR => doc_clear(),
         KW_XOR => doc_xor(),
-        _ => String::new(),
+        KW_AND => doc_and(),
+        KW_OR => doc_or(),
+        KW_ADD => doc_add(),
+        KW_REM => doc_rem(),
+        KW_DIV => doc_div(),
+        KW_MUL => doc_mul(),
+        KW_NEG => doc_neg(),
+        KW_DECL => doc_decl(),
+        KW_DECLWV => doc_declwv(),
+        KW_JUMP => doc_jump(),
+        KW_CMP => doc_cmp(),
+        KW_PRINTLN => doc_println(),
+        KW_PRINT => doc_print(),
+        _ => String::from("Comando não encontrado"),
     };
     println!("{}", doc);
 }
