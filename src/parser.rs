@@ -41,41 +41,30 @@ pub mod kw {
     pub const KW_JUMP: &'static str = "E HORA DO";
     /// Comparação
     pub const KW_CMP: &'static str = "E ELE QUE A GENTE QUER";
+    /// Printa com nova linha
+    pub const KW_PRINTLN: &'static str = "CE QUER VER ESSA PORRA";
+    /// Printa
+    pub const KW_PRINT: &'static str = "CE QUER VER";
 }
 
-/// Diferenciação dos tipos de diferentes arquiteturas
-pub mod types {
-    #[cfg(target_pointer_width = "32")]
-    /// No caso de um pc de 32 bits, use uint32 como endereço
-    pub type Address = u32;
+#[cfg(target_pointer_width = "32")]
+mod types {
+    pub type MaxInt = i32;
+    pub type MaxFlt = f32;
+}
 
-    #[cfg(target_pointer_width = "32")]
-    /// No caso de um pc de 32 bits, use uint32 como maior valor int signed
-    pub type MaxSInt = i32;
-
-    #[cfg(target_pointer_width = "32")]
-    /// No caso de um pc de 32 bits, use float como maior valor de ponto flutuante
-    pub type MaxFP = f32;
-
-    #[cfg(target_pointer_width = "64")]
-    /// No caso de um p de 64 bits, use uint64 como endereço
-    pub type Address = u64;
-
-    #[cfg(target_pointer_width = "64")]
-    /// No caso de um pc de 32 bits, use uint64 como maior valor int signed
-    pub type MaxSInt = i64;
-
-    #[cfg(target_pointer_width = "64")]
-    /// No caso de um pc de 32 bits, use double como maior valor de ponto flutuante
-    pub type MaxFP = f64;
+#[cfg(target_pointer_width = "64")]
+mod types {
+    pub type MaxInt = i64;
+    pub type MaxFlt = f64;
 }
 
 /// Representa um valor que pode ser atribuido a uma variavel
 pub enum Value {
     /// Numero inteiro de 64 bits
-    Integer(types::MaxSInt),
+    Integer(types::MaxInt),
     /// Numero de ponto flutuante de 64 bits
-    FloatP(types::MaxFP),
+    FloatP(types::MaxFlt),
     /// Caractere UTF-8
     Char(char),
     /// Texto em UTF-8, guarda apenas a referencia ao valor no heap
@@ -136,7 +125,15 @@ mod value {
                     }
                 }
                 'a'...'z' | 'A'...'Z' | '_' => {
-                    return Some(Value::Symbol(e));
+                    let mut sym = String::new();
+                    for c in e.chars() {
+                        match c {
+                            // Checa por um caractere invalido
+                            '+' | '-' | '\\' | '*' | '|' | '(' | ')' | '#' | ';' | '!' => break,
+                            _ => sym.push(c),
+                        }
+                    }
+                    return Some(Value::Symbol(sym));
                 }
                 _ => println!("Erro, caractere \"{}\" encontrado durante parsing.", fchar),
             }
@@ -149,25 +146,25 @@ mod value {
 /// Os valores passados aos comandos têm nomes fantasia alfabéticos para exemplificação
 pub enum Command {
     /// Move (copia) o conteudo da variavel no endereco a pro b
-    Move(types::Address, Value),
+    Move(Value, Value),
     /// Limpa o valor da variavel no endereco a
-    Clear(types::Address),
+    Clear(Value),
     /// Aplica xor na variavel no endereco a com o valor b
-    Xor(types::Address, Value),
+    Xor(Value, Value),
     /// Aplica and na variavel no endereco a com o valor b
-    And(types::Address, Value),
+    And(Value, Value),
     /// Aplica or  na variavel no endereco a com o valor b
-    Or(types::Address, Value),
+    Or(Value, Value),
     /// Adiciona b ao valor da variavel no endereco a
-    Add(types::Address, Value),
+    Add(Value, Value),
     /// Remove b do valor da variavel no endereco a
-    Rem(types::Address, types::MaxSInt),
+    Rem(Value, Value),
     /// Divide o valor da variavel no endereco a com o valor b
-    Div(types::Address, types::MaxSInt),
+    Div(Value, Value),
     /// Multiplica o valor da variavel no endereco a com o valor b
-    Mul(types::Address, types::MaxSInt),
+    Mul(Value, Value),
     /// Multiplica um valor numa variavel por -1
-    Neg(types::Address),
+    Neg(Value),
     /// Declara a variavel com nome a
     Decl(String),
     /// Declara a variavel com nome a e valor b
@@ -176,6 +173,10 @@ pub enum Command {
     Jump(String),
     /// Compara os valores de a e b, usado em condicionais
     Cmp(Value, Value),
+    /// Printa o valor a com uma nova linha em seguida
+    Println(Value),
+    /// Printa o valor a
+    Print(Value),
 }
 
 /// Facil representação dos comandos sem os argumentos
@@ -194,6 +195,8 @@ pub enum CommandType {
     DeclWV,
     Jump,
     Cmp,
+    Println,
+    Print,
 }
 
 /// Procura pelo caractere c em src e retorna quantas vezes ele foi encontrado
@@ -229,6 +232,8 @@ fn check_n_params(command: CommandType, num_params: usize) {
         CommandType::Xor => (2, kw::KW_XOR),
         CommandType::Clear => (1, kw::KW_CLEAR),
         CommandType::Move => (2, kw::KW_MOVE),
+        CommandType::Println => (1, kw::KW_PRINTLN),
+        CommandType::Print => (1, kw::KW_PRINT),
     };
     if expected != num_params {
         panic!(format!("Erro: \"{}\" espera {} parametros, porém {} foram passados.",
@@ -256,60 +261,60 @@ fn parse_cmd(cmd: &str) -> Option<Command> {
     let cmd: Option<Command> = match cmd_type {
         kw::KW_MOVE => {
             check_n_params(CommandType::Move, arguments.len());
-            let (addr1, addr2) = (arguments[0].parse::<types::Address>().unwrap(),
+            let (addr1, addr2) = (value::parse_expr(arguments[0]).unwrap(),
                                   value::parse_expr(arguments[1]).unwrap());
             Some(Command::Move(addr1, addr2))
         }
         kw::KW_CLEAR => {
             check_n_params(CommandType::Clear, arguments.len());
-            let addr = arguments[0].parse::<types::Address>().unwrap();
+            let addr = value::parse_expr(arguments[0]).unwrap();
             Some(Command::Clear(addr))
         }
         kw::KW_XOR => {
             check_n_params(CommandType::Xor, arguments.len());
-            let (addr1, addr2) = (arguments[0].parse::<types::Address>().unwrap(),
+            let (addr1, addr2) = (value::parse_expr(arguments[0]).unwrap(),
                                   value::parse_expr(arguments[1]).unwrap());
             Some(Command::Xor(addr1, addr2))
         }
         kw::KW_AND => {
             check_n_params(CommandType::And, arguments.len());
-            let (addr1, addr2) = (arguments[0].parse::<types::Address>().unwrap(),
+            let (addr1, addr2) = (value::parse_expr(arguments[0]).unwrap(),
                                   value::parse_expr(arguments[1]).unwrap());
             Some(Command::And(addr1, addr2))
         }
         kw::KW_OR => {
             check_n_params(CommandType::Or, arguments.len());
-            let (addr1, addr2) = (arguments[0].parse::<types::Address>().unwrap(),
+            let (addr1, addr2) = (value::parse_expr(arguments[0]).unwrap(),
                                   value::parse_expr(arguments[1]).unwrap());
             Some(Command::Or(addr1, addr2))
         }
         kw::KW_ADD => {
             check_n_params(CommandType::Add, arguments.len());
-            let (addr1, addr2) = (arguments[0].parse::<types::Address>().unwrap(),
+            let (addr1, addr2) = (value::parse_expr(arguments[0]).unwrap(),
                                   value::parse_expr(arguments[1]).unwrap());
             Some(Command::Add(addr1, addr2))
         }
         kw::KW_REM => {
             check_n_params(CommandType::Rem, arguments.len());
-            let (addr1, addr2) = (arguments[0].parse::<types::Address>().unwrap(),
-                                  arguments[1].parse::<types::MaxSInt>().unwrap());
+            let (addr1, addr2) = (value::parse_expr(arguments[0]).unwrap(),
+                                  value::parse_expr(arguments[1]).unwrap());
             Some(Command::Rem(addr1, addr2))
         }
         kw::KW_DIV => {
             check_n_params(CommandType::Div, arguments.len());
-            let (addr1, addr2) = (arguments[0].parse::<types::Address>().unwrap(),
-                                  arguments[1].parse::<types::MaxSInt>().unwrap());
+            let (addr1, addr2) = (value::parse_expr(arguments[0]).unwrap(),
+                                  value::parse_expr(arguments[1]).unwrap());
             Some(Command::Div(addr1, addr2))
         }
         kw::KW_MUL => {
             check_n_params(CommandType::Mul, arguments.len());
-            let (addr1, addr2) = (arguments[0].parse::<types::Address>().unwrap(),
-                                  arguments[1].parse::<types::MaxSInt>().unwrap());
+            let (addr1, addr2) = (value::parse_expr(arguments[0]).unwrap(),
+                                  value::parse_expr(arguments[1]).unwrap());
             Some(Command::Mul(addr1, addr2))
         }
         kw::KW_NEG => {
             check_n_params(CommandType::Neg, arguments.len());
-            let addr = arguments[0].parse::<types::Address>().unwrap();
+            let addr = value::parse_expr(arguments[0]).unwrap();
             Some(Command::Neg(addr))
         }
         kw::KW_DECL => {
@@ -333,6 +338,16 @@ fn parse_cmd(cmd: &str) -> Option<Command> {
             let (addr1, addr2) = (value::parse_expr(arguments[0]).unwrap(),
                                   value::parse_expr(arguments[1]).unwrap());
             Some(Command::Cmp(addr1, addr2))
+        }
+        kw::KW_PRINTLN => {
+            check_n_params(CommandType::Println, arguments.len());
+            let val = value::parse_expr(arguments[0]).unwrap();
+            Some(Command::Println(val))
+        }
+        kw::KW_PRINT => {
+            check_n_params(CommandType::Print, arguments.len());
+            let val = value::parse_expr(arguments[0]).unwrap();
+            Some(Command::Print(val))
         }
         _ => {
             println!("Erro: Comando \"{}\" não existe.", cmd_type);
@@ -437,11 +452,12 @@ fn parse_section(sect_str: &str) -> Section {
                 continue;
             }
             // Parte util da linha, caso haja um comentario
-            let util_line = if line.contains('#') {
+            // Comentarios são feitos com # ou ;
+            let util_line = if line.contains('#') || line.contains(';') {
                 let mut tmp = String::new();
                 for c in line.chars() {
                     // Enquanto o caractere não for um comentário, continue
-                    if c != '#' {
+                    if c != '#' && c != ';' {
                         tmp.push(c);
                     } else {
                         break;
@@ -474,42 +490,13 @@ fn parse_global(glb: &str) -> Global {
     let (glb_name, glb_value) = (words[1].trim(), words[2].trim());
     let glb_value = match value::parse_expr(glb_value) {
         Some(val) => val,
-        None => panic!(),
+        None => {
+            panic!("Erro fazendo parsing do global \"{}\", valor incorreto.",
+                   glb_name)
+        }
     };
     Global {
         identifier: String::from(glb_name),
         value: glb_value,
-    }
-}
-
-/// Modulo de teste
-mod tests {
-
-    #[test]
-    fn command_decl() {
-        let cmd = super::parse_cmd("VEM: MONSTRO").unwrap();
-        match cmd {
-            super::Command::Decl(name) => assert!(name == "MONSTRO"),
-            _ => panic!(),
-        }
-    }
-
-    #[test]
-    fn command_declwv() {
-        let cmd = super::parse_cmd("VEM PORRA: MONSTRO, \"CUMPADE\"").unwrap();
-        match cmd {
-            super::Command::DeclWV(name, val) => {
-                println!("nome: {}", name);
-                assert!(name == "MONSTRO");
-                match val {
-                    super::Value::Str(v) => {
-                        println!("val: {}", v);
-                        assert!(*v == "CUMPADE");
-                    }
-                    _ => panic!(),
-                }
-            }
-            _ => panic!(),
-        }
     }
 }
