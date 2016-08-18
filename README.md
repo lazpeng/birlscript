@@ -35,10 +35,10 @@ outros não. Optei por deixar o que fizesse ao menos o mínimo de sentido).
 # Exemplos
 
 ## Hello world, Porra!
-´´´
+```
 JAULA SHOW
   CE QUER VER ESSA PORRA: "Hello world, Porra!"
 SAINDO DA JAULA
-´´´
+```
 
 O código acima imprime na tela "Hello world, Porra!" e fecha.
