@@ -89,8 +89,18 @@ mod value {
         } else {
             let fchar = e.chars().collect::<Vec<char>>()[0];
             match fchar {
-                '0'...'9' => {}
+                '0'...'9' => {
+                    if e.contains('.') {
+                        // Ponto flutuante
+                        return Some(Value::FloatP(e.parse::<super::types::MaxFlt>().unwrap()));
+                    } else {
+                        return Some(Value::Integer(e.parse::<super::types::MaxInt>().unwrap()));
+                    }
+                }
                 '\"' => {
+                    if e.len() < 2 {
+                        panic!("Erro: String invalida: {}", expr);
+                    }
                     // last_escape é se o ultimo caractere foi uma barra de escape, ignore ela
                     let (mut value, mut last_escape) = (String::new(), false);
                     let chars = e.chars().collect::<Vec<char>>();
@@ -126,6 +136,13 @@ mod value {
                         }
                         value.push(actual);
                     }
+                }
+                '\'' => {
+                    // É um caractere
+                    if e.len() < 2 {
+                        panic!("Erro: Caractere invalido: {}", expr);
+                    }
+                    return Some(Value::Char(e.chars().collect::<Vec<char>>()[1]));
                 }
                 'a'...'z' | 'A'...'Z' | '_' => {
                     let mut sym = String::new();
