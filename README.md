@@ -14,7 +14,7 @@ Builds estarão disponiveis na pasta *bin* a partir da versão 0.x BETA, que est
 Por enquanto, o interpretador pode ser compilado com a toolset basica de [Rust](https://rust-lang.org/), porém
 não tem toda a funcionalidade implementada.
 
-## Versão 0.1.3 PRÉ-ALFA
+## Versão 0.7.5 ALFA
 
 *Copyleft(ɔ) 2016 Rafael R Nakano. Nenhum direito reservado.*
 
@@ -31,6 +31,8 @@ de forma similar que em assembly[¹], só que com frases e dizeres do mestre bod
 outros não. Optei por deixar o que fizesse ao menos o mínimo de sentido).
 
 [¹] - *Assembly aqui se diz respeito à linguagem assembly para a arquitetura x86, dialeto NASM*
+
+***O interpretador já é capaz de rodar o programa exemplo do "Hello world"!***
 
 # Exemplos
 
