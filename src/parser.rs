@@ -45,6 +45,8 @@ pub mod kw {
     pub const KW_PRINTLN: &'static str = "CE QUER VER ESSA PORRA";
     /// Printa
     pub const KW_PRINT: &'static str = "CE QUER VER";
+    /// Sai do programa
+    pub const KW_QUIT: &'static str = "BIRL";
 }
 
 #[cfg(target_pointer_width = "32")]
@@ -60,6 +62,7 @@ mod types {
 }
 
 /// Representa um valor que pode ser atribuido a uma variavel
+#[derive(Clone)]
 pub enum Value {
     /// Numero inteiro de 64 bits
     Integer(types::MaxInt),
@@ -142,6 +145,7 @@ mod value {
     }
 }
 
+#[derive(Clone)]
 /// Representa um comando, que é executado dentro do contexto atual
 /// Os valores passados aos comandos têm nomes fantasia alfabéticos para exemplificação
 pub enum Command {
@@ -166,17 +170,19 @@ pub enum Command {
     /// Multiplica um valor numa variavel por -1
     Neg(Value),
     /// Declara a variavel com nome a
-    Decl(String),
+    Decl(Value),
     /// Declara a variavel com nome a e valor b
-    DeclWV(String, Value),
+    DeclWV(Value, Value),
     /// Passa a execução para outra seção com nome a, retornando uma instrução à frente
-    Jump(String),
+    Jump(Value),
     /// Compara os valores de a e b, usado em condicionais
     Cmp(Value, Value),
     /// Printa o valor a com uma nova linha em seguida
     Println(Value),
     /// Printa o valor a
     Print(Value),
+    /// Sai do programa
+    Quit,
 }
 
 /// Facil representação dos comandos sem os argumentos
@@ -197,6 +203,7 @@ pub enum CommandType {
     Cmp,
     Println,
     Print,
+    Quit,
 }
 
 /// Procura pelo caractere c em src e retorna quantas vezes ele foi encontrado
@@ -234,6 +241,7 @@ fn check_n_params(command: CommandType, num_params: usize) {
         CommandType::Move => (2, kw::KW_MOVE),
         CommandType::Println => (1, kw::KW_PRINTLN),
         CommandType::Print => (1, kw::KW_PRINT),
+        CommandType::Quit => (0, kw::KW_QUIT),
     };
     if expected != num_params {
         panic!(format!("Erro: \"{}\" espera {} parametros, porém {} foram passados.",
@@ -247,17 +255,23 @@ fn check_n_params(command: CommandType, num_params: usize) {
 fn parse_cmd(cmd: &str) -> Option<Command> {
     // Estrutura de um comando:
     // COMANDO: var1, var2, ...
-    let cmd = cmd.trim();
-    let cmd_parts = cmd.split(':').collect::<Vec<&str>>();
+    let cmd_parts = cmd.split(':').map(|x| x.trim()).collect::<Vec<&str>>();
+    // argumentos
+    let mut arguments: Vec<&str> = Vec::new();
     // Tipo/nome do comando
-    let cmd_type = cmd_parts[0];
-    let mut arguments: Vec<&str> = vec![];
-    if n_of_char(',', cmd_parts[1]) == 0 {
-        // Apenas um argumento
-        arguments.push(cmd_parts[1].trim());
+    let cmd_type = if cmd_parts.len() > 1 {
+        if n_of_char(',', cmd_parts[1]) == 0 {
+            if cmd_parts[1].trim() != "" {
+                // Um argumento
+                arguments.push(cmd_parts[1].trim());
+            }
+        } else {
+            arguments = cmd_parts[1].split(',').map(|arg| arg.trim()).collect();
+        }
+        cmd_parts[0]
     } else {
-        arguments = cmd_parts[1].split(',').map(|arg| arg.trim()).collect::<Vec<&str>>();
-    }
+        cmd.trim()
+    };
     let cmd: Option<Command> = match cmd_type {
         kw::KW_MOVE => {
             check_n_params(CommandType::Move, arguments.len());
@@ -319,18 +333,18 @@ fn parse_cmd(cmd: &str) -> Option<Command> {
         }
         kw::KW_DECL => {
             check_n_params(CommandType::Decl, arguments.len());
-            let name = String::from(arguments[0]);
+            let name = value::parse_expr(arguments[0]).unwrap();
             Some(Command::Decl(name))
         }
         kw::KW_DECLWV => {
             check_n_params(CommandType::DeclWV, arguments.len());
-            let (name, val) = (String::from(arguments[0]),
+            let (name, val) = (value::parse_expr(arguments[0]).unwrap(),
                                value::parse_expr(arguments[1]).unwrap());
             Some(Command::DeclWV(name, val))
         }
         kw::KW_JUMP => {
             check_n_params(CommandType::Jump, arguments.len());
-            let section = String::from(arguments[0]);
+            let section = value::parse_expr(arguments[0]).unwrap();
             Some(Command::Jump(section))
         }
         kw::KW_CMP => {
@@ -349,6 +363,7 @@ fn parse_cmd(cmd: &str) -> Option<Command> {
             let val = value::parse_expr(arguments[0]).unwrap();
             Some(Command::Print(val))
         }
+        kw::KW_QUIT => Some(Command::Quit),
         _ => {
             println!("Erro: Comando \"{}\" não existe.", cmd_type);
             None
@@ -360,9 +375,9 @@ fn parse_cmd(cmd: &str) -> Option<Command> {
 /// Representa uma unidade (arquivo compilado) contendo o conteudo a ser executado
 pub struct Unit {
     /// Conjunto de seções para execução
-    sects: Vec<Section>,
+    pub sects: Vec<Section>,
     /// Conjunto de globais
-    consts: Vec<Global>,
+    pub consts: Vec<Global>,
 }
 
 /// Realiza a interpretação de um arquivo e retorna sua unidade compilada
@@ -381,59 +396,78 @@ pub fn parse(file: &str) -> Unit {
     let reader = BufReader::new(f);
     let mut lines = reader.lines();
     // Se está fazendo parsing de uma seção e o conteudo atual da seção
-    let (mut parsing_section, mut cur_section) = (false, String::new());
+    let mut parsing_section = false;
+    let mut cur_section: Vec<String> = vec![];
     loop {
-        let line = match lines.next() {
+        let line: String = match lines.next() {
             Some(l) => {
                 match l {
-                    Ok(ll) => ll,
-                    Err(_) => break,
+                    Ok(ll) => String::from(ll.trim()),
+                    Err(_) => String::new(),
                 }
             }
             None => break,
         };
-        if parsing_section {
-            cur_section.push_str(&line);
-            if line.trim() == kw::KW_SECTEND {
-                // Encerra seção
-                parsing_section = false;
-                final_unit.sects.push(parse_section(&cur_section));
-                cur_section.clear();
-                continue;
-            }
-        }
         // Divide a string em palavras separadas por um espaço
         let words = line.split(' ').collect::<Vec<&str>>();
         // Verifica a primeira palavra da linha
         match words[0].trim() {
             // Se for declaração de um global, empurra o global pra unit
-            kw::KW_GLOBAL => final_unit.consts.push(parse_global(words[0])),
+            kw::KW_GLOBAL => final_unit.consts.push(parse_global(&line)),
             // Se for declaração de uma seção, começa o parsing da seção
             kw::KW_SECTION => {
-                cur_section.push_str(words[0]);
+                cur_section.push(line.clone());
                 parsing_section = true;
             }
+            // FIXME: Hardcode da palavra, mude depois pra uma forma de verificar dinamicamente
+            "SAINDO" if parsing_section => {
+                cur_section.push(line.clone());
+                if line.trim() == kw::KW_SECTEND {
+                    // Encerra seção
+                    parsing_section = false;
+                    final_unit.sects.push(parse_section(cur_section.clone()));
+                    cur_section.clear();
+                }
+            }
+            // Quando estiver dentro de uma seção, empurre o comando pra seção
+            _ if parsing_section => {
+                cur_section.push(line.clone());
+            }
             // Se não for nenhuma (os comandos só são interpretados dentro da seção)
-            _ => panic!("Erro: \"{}\" não entendida no contexto global."),
+            _ => {
+                panic!("Erro: \"{}\" não entendida no contexto global. Seção: {}",
+                       line,
+                       cur_section[0])
+            }
         }
     }
     final_unit
 }
 
+#[derive(Clone)]
 /// Representa uma área chamável que pode ser executada
 pub struct Section {
     /// Nome da seção
-    name: String,
+    pub name: String,
     /// Conjunto de linhas/comandos para execução
-    lines: Vec<Command>,
+    pub lines: Vec<Command>,
+}
+
+impl Section {
+    pub fn new() -> Section {
+        Section {
+            name: String::new(),
+            lines: vec![],
+        }
+    }
 }
 
 /// Faz parsing de uma seção
-fn parse_section(sect_str: &str) -> Section {
-    // Separa a seção em linhas
-    let lines = sect_str.split('\n').collect::<Vec<&str>>();
+fn parse_section(lines: Vec<String>) -> Section {
+    // Separa a seção em linha
     if lines.len() <= 1 {
-        panic!("Erro fazendo parsing da seção. Número incorreto de linhas.")
+        panic!("Erro fazendo parsing da seção. Número incorreto de linhas: {}.",
+               lines.len())
     } else {
         // Checagens de declaração e finalização são feitas em parse
         // Declaração de uma seção:
@@ -442,13 +476,18 @@ fn parse_section(sect_str: &str) -> Section {
             panic!("Erro na declaração da seção! Falta nome depois da palavra chave");
         }
         let mut sect = Section {
-            name: String::from(lines[0].split(' ').collect::<Vec<&str>>()[0]),
+            name: String::from(lines[0].split(' ').collect::<Vec<&str>>()[1].trim()),
             lines: vec![],
         };
+        // O -1 é pra não contar com a ultima linha, o SAINDO DA JAULA
         for l in 1..lines.len() - 1 {
-            let line = lines[l].trim();
+            let ref line = lines[l];
+            if line.len() <= 0 {
+                continue;
+            }
             // Se a linha não tem nada de util até um comentario, pula ela
-            if line.chars().collect::<Vec<char>>()[0] == '#' {
+            if line.chars().collect::<Vec<char>>()[0] == '#' ||
+               line.chars().collect::<Vec<char>>()[0] == ';' {
                 continue;
             }
             // Parte util da linha, caso haja um comentario
@@ -465,7 +504,7 @@ fn parse_section(sect_str: &str) -> Section {
                 }
                 tmp
             } else {
-                String::from(line)
+                line.clone()
             };
             sect.lines.push(parse_cmd(&util_line).unwrap());
         }
@@ -476,18 +515,18 @@ fn parse_section(sect_str: &str) -> Section {
 /// Representa um valor global, constante
 pub struct Global {
     /// Identificador do valor global
-    identifier: String,
+    pub identifier: String,
     /// Valor do global
-    value: Value,
+    pub value: Value,
 }
 
 /// Faz parsing de um global
 fn parse_global(glb: &str) -> Global {
     // Estrutura da declaração de um global: PALAVRA_CHAVE: nome: valor
     let global = String::from(glb.trim());
-    let words = global.split(':').collect::<Vec<&str>>();
+    let words = global.split(':').map(|x| x.trim()).collect::<Vec<&str>>();
     // Separa o nome e valor do global
-    let (glb_name, glb_value) = (words[1].trim(), words[2].trim());
+    let (glb_name, glb_value) = (words[1], words[2]);
     let glb_value = match value::parse_expr(glb_value) {
         Some(val) => val,
         None => {

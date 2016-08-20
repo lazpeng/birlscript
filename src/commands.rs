@@ -103,3 +103,9 @@ pub fn doc_print() -> String {
              A\nDescrição:\n\tEsse comando imprime o valor de A sem uma nova linha",
             KW_PRINT)
 }
+
+pub fn doc_quit() -> String {
+    format!("Comando:\n\t \"{0}\".\nArgumentos:\n\t <NENHUM>.\nExemplo:\n\t \
+             {0}\nDescrição:\n\tEsse comando faz o programa fechar na sua execução",
+            KW_QUIT)
+}
