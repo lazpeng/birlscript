@@ -41,41 +41,33 @@ pub mod kw {
     pub const KW_JUMP: &'static str = "E HORA DO";
     /// Comparação
     pub const KW_CMP: &'static str = "E ELE QUE A GENTE QUER";
+    /// Printa com nova linha
+    pub const KW_PRINTLN: &'static str = "CE QUER VER ESSA PORRA";
+    /// Printa
+    pub const KW_PRINT: &'static str = "CE QUER VER";
+    /// Sai do programa
+    pub const KW_QUIT: &'static str = "BIRL";
 }
 
-/// Diferenciação dos tipos de diferentes arquiteturas
-pub mod types {
-    #[cfg(target_pointer_width = "32")]
-    /// No caso de um pc de 32 bits, use uint32 como endereço
-    pub type Address = u32;
+#[cfg(target_pointer_width = "32")]
+mod types {
+    pub type MaxInt = i32;
+    pub type MaxFlt = f32;
+}
 
-    #[cfg(target_pointer_width = "32")]
-    /// No caso de um pc de 32 bits, use uint32 como maior valor int signed
-    pub type MaxSInt = i32;
-
-    #[cfg(target_pointer_width = "32")]
-    /// No caso de um pc de 32 bits, use float como maior valor de ponto flutuante
-    pub type MaxFP = f32;
-
-    #[cfg(target_pointer_width = "64")]
-    /// No caso de um p de 64 bits, use uint64 como endereço
-    pub type Address = u64;
-
-    #[cfg(target_pointer_width = "64")]
-    /// No caso de um pc de 32 bits, use uint64 como maior valor int signed
-    pub type MaxSInt = i64;
-
-    #[cfg(target_pointer_width = "64")]
-    /// No caso de um pc de 32 bits, use double como maior valor de ponto flutuante
-    pub type MaxFP = f64;
+#[cfg(target_pointer_width = "64")]
+mod types {
+    pub type MaxInt = i64;
+    pub type MaxFlt = f64;
 }
 
 /// Representa um valor que pode ser atribuido a uma variavel
+#[derive(Clone)]
 pub enum Value {
     /// Numero inteiro de 64 bits
-    Integer(types::MaxSInt),
+    Integer(types::MaxInt),
     /// Numero de ponto flutuante de 64 bits
-    FloatP(types::MaxFP),
+    FloatP(types::MaxFlt),
     /// Caractere UTF-8
     Char(char),
     /// Texto em UTF-8, guarda apenas a referencia ao valor no heap
@@ -136,7 +128,15 @@ mod value {
                     }
                 }
                 'a'...'z' | 'A'...'Z' | '_' => {
-                    return Some(Value::Symbol(e));
+                    let mut sym = String::new();
+                    for c in e.chars() {
+                        match c {
+                            // Checa por um caractere invalido
+                            '+' | '-' | '\\' | '*' | '|' | '(' | ')' | '#' | ';' | '!' => break,
+                            _ => sym.push(c),
+                        }
+                    }
+                    return Some(Value::Symbol(sym));
                 }
                 _ => println!("Erro, caractere \"{}\" encontrado durante parsing.", fchar),
             }
@@ -145,37 +145,44 @@ mod value {
     }
 }
 
+#[derive(Clone)]
 /// Representa um comando, que é executado dentro do contexto atual
 /// Os valores passados aos comandos têm nomes fantasia alfabéticos para exemplificação
 pub enum Command {
     /// Move (copia) o conteudo da variavel no endereco a pro b
-    Move(types::Address, Value),
+    Move(Value, Value),
     /// Limpa o valor da variavel no endereco a
-    Clear(types::Address),
+    Clear(Value),
     /// Aplica xor na variavel no endereco a com o valor b
-    Xor(types::Address, Value),
+    Xor(Value, Value),
     /// Aplica and na variavel no endereco a com o valor b
-    And(types::Address, Value),
+    And(Value, Value),
     /// Aplica or  na variavel no endereco a com o valor b
-    Or(types::Address, Value),
+    Or(Value, Value),
     /// Adiciona b ao valor da variavel no endereco a
-    Add(types::Address, Value),
+    Add(Value, Value),
     /// Remove b do valor da variavel no endereco a
-    Rem(types::Address, types::MaxSInt),
+    Rem(Value, Value),
     /// Divide o valor da variavel no endereco a com o valor b
-    Div(types::Address, types::MaxSInt),
+    Div(Value, Value),
     /// Multiplica o valor da variavel no endereco a com o valor b
-    Mul(types::Address, types::MaxSInt),
+    Mul(Value, Value),
     /// Multiplica um valor numa variavel por -1
-    Neg(types::Address),
+    Neg(Value),
     /// Declara a variavel com nome a
-    Decl(String),
+    Decl(Value),
     /// Declara a variavel com nome a e valor b
-    DeclWV(String, Value),
+    DeclWV(Value, Value),
     /// Passa a execução para outra seção com nome a, retornando uma instrução à frente
-    Jump(String),
+    Jump(Value),
     /// Compara os valores de a e b, usado em condicionais
     Cmp(Value, Value),
+    /// Printa o valor a com uma nova linha em seguida
+    Println(Value),
+    /// Printa o valor a
+    Print(Value),
+    /// Sai do programa
+    Quit,
 }
 
 /// Facil representação dos comandos sem os argumentos
@@ -194,6 +201,9 @@ pub enum CommandType {
     DeclWV,
     Jump,
     Cmp,
+    Println,
+    Print,
+    Quit,
 }
 
 /// Procura pelo caractere c em src e retorna quantas vezes ele foi encontrado
@@ -229,6 +239,9 @@ fn check_n_params(command: CommandType, num_params: usize) {
         CommandType::Xor => (2, kw::KW_XOR),
         CommandType::Clear => (1, kw::KW_CLEAR),
         CommandType::Move => (2, kw::KW_MOVE),
+        CommandType::Println => (1, kw::KW_PRINTLN),
+        CommandType::Print => (1, kw::KW_PRINT),
+        CommandType::Quit => (0, kw::KW_QUIT),
     };
     if expected != num_params {
         panic!(format!("Erro: \"{}\" espera {} parametros, porém {} foram passados.",
@@ -242,90 +255,96 @@ fn check_n_params(command: CommandType, num_params: usize) {
 fn parse_cmd(cmd: &str) -> Option<Command> {
     // Estrutura de um comando:
     // COMANDO: var1, var2, ...
-    let cmd = cmd.trim();
-    let cmd_parts = cmd.split(':').collect::<Vec<&str>>();
+    let cmd_parts = cmd.split(':').map(|x| x.trim()).collect::<Vec<&str>>();
+    // argumentos
+    let mut arguments: Vec<&str> = Vec::new();
     // Tipo/nome do comando
-    let cmd_type = cmd_parts[0];
-    let mut arguments: Vec<&str> = vec![];
-    if n_of_char(',', cmd_parts[1]) == 0 {
-        // Apenas um argumento
-        arguments.push(cmd_parts[1].trim());
+    let cmd_type = if cmd_parts.len() > 1 {
+        if n_of_char(',', cmd_parts[1]) == 0 {
+            if cmd_parts[1].trim() != "" {
+                // Um argumento
+                arguments.push(cmd_parts[1].trim());
+            }
+        } else {
+            arguments = cmd_parts[1].split(',').map(|arg| arg.trim()).collect();
+        }
+        cmd_parts[0]
     } else {
-        arguments = cmd_parts[1].split(',').map(|arg| arg.trim()).collect::<Vec<&str>>();
-    }
+        cmd.trim()
+    };
     let cmd: Option<Command> = match cmd_type {
         kw::KW_MOVE => {
             check_n_params(CommandType::Move, arguments.len());
-            let (addr1, addr2) = (arguments[0].parse::<types::Address>().unwrap(),
+            let (addr1, addr2) = (value::parse_expr(arguments[0]).unwrap(),
                                   value::parse_expr(arguments[1]).unwrap());
             Some(Command::Move(addr1, addr2))
         }
         kw::KW_CLEAR => {
             check_n_params(CommandType::Clear, arguments.len());
-            let addr = arguments[0].parse::<types::Address>().unwrap();
+            let addr = value::parse_expr(arguments[0]).unwrap();
             Some(Command::Clear(addr))
         }
         kw::KW_XOR => {
             check_n_params(CommandType::Xor, arguments.len());
-            let (addr1, addr2) = (arguments[0].parse::<types::Address>().unwrap(),
+            let (addr1, addr2) = (value::parse_expr(arguments[0]).unwrap(),
                                   value::parse_expr(arguments[1]).unwrap());
             Some(Command::Xor(addr1, addr2))
         }
         kw::KW_AND => {
             check_n_params(CommandType::And, arguments.len());
-            let (addr1, addr2) = (arguments[0].parse::<types::Address>().unwrap(),
+            let (addr1, addr2) = (value::parse_expr(arguments[0]).unwrap(),
                                   value::parse_expr(arguments[1]).unwrap());
             Some(Command::And(addr1, addr2))
         }
         kw::KW_OR => {
             check_n_params(CommandType::Or, arguments.len());
-            let (addr1, addr2) = (arguments[0].parse::<types::Address>().unwrap(),
+            let (addr1, addr2) = (value::parse_expr(arguments[0]).unwrap(),
                                   value::parse_expr(arguments[1]).unwrap());
             Some(Command::Or(addr1, addr2))
         }
         kw::KW_ADD => {
             check_n_params(CommandType::Add, arguments.len());
-            let (addr1, addr2) = (arguments[0].parse::<types::Address>().unwrap(),
+            let (addr1, addr2) = (value::parse_expr(arguments[0]).unwrap(),
                                   value::parse_expr(arguments[1]).unwrap());
             Some(Command::Add(addr1, addr2))
         }
         kw::KW_REM => {
             check_n_params(CommandType::Rem, arguments.len());
-            let (addr1, addr2) = (arguments[0].parse::<types::Address>().unwrap(),
-                                  arguments[1].parse::<types::MaxSInt>().unwrap());
+            let (addr1, addr2) = (value::parse_expr(arguments[0]).unwrap(),
+                                  value::parse_expr(arguments[1]).unwrap());
             Some(Command::Rem(addr1, addr2))
         }
         kw::KW_DIV => {
             check_n_params(CommandType::Div, arguments.len());
-            let (addr1, addr2) = (arguments[0].parse::<types::Address>().unwrap(),
-                                  arguments[1].parse::<types::MaxSInt>().unwrap());
+            let (addr1, addr2) = (value::parse_expr(arguments[0]).unwrap(),
+                                  value::parse_expr(arguments[1]).unwrap());
             Some(Command::Div(addr1, addr2))
         }
         kw::KW_MUL => {
             check_n_params(CommandType::Mul, arguments.len());
-            let (addr1, addr2) = (arguments[0].parse::<types::Address>().unwrap(),
-                                  arguments[1].parse::<types::MaxSInt>().unwrap());
+            let (addr1, addr2) = (value::parse_expr(arguments[0]).unwrap(),
+                                  value::parse_expr(arguments[1]).unwrap());
             Some(Command::Mul(addr1, addr2))
         }
         kw::KW_NEG => {
             check_n_params(CommandType::Neg, arguments.len());
-            let addr = arguments[0].parse::<types::Address>().unwrap();
+            let addr = value::parse_expr(arguments[0]).unwrap();
             Some(Command::Neg(addr))
         }
         kw::KW_DECL => {
             check_n_params(CommandType::Decl, arguments.len());
-            let name = String::from(arguments[0]);
+            let name = value::parse_expr(arguments[0]).unwrap();
             Some(Command::Decl(name))
         }
         kw::KW_DECLWV => {
             check_n_params(CommandType::DeclWV, arguments.len());
-            let (name, val) = (String::from(arguments[0]),
+            let (name, val) = (value::parse_expr(arguments[0]).unwrap(),
                                value::parse_expr(arguments[1]).unwrap());
             Some(Command::DeclWV(name, val))
         }
         kw::KW_JUMP => {
             check_n_params(CommandType::Jump, arguments.len());
-            let section = String::from(arguments[0]);
+            let section = value::parse_expr(arguments[0]).unwrap();
             Some(Command::Jump(section))
         }
         kw::KW_CMP => {
@@ -334,6 +353,17 @@ fn parse_cmd(cmd: &str) -> Option<Command> {
                                   value::parse_expr(arguments[1]).unwrap());
             Some(Command::Cmp(addr1, addr2))
         }
+        kw::KW_PRINTLN => {
+            check_n_params(CommandType::Println, arguments.len());
+            let val = value::parse_expr(arguments[0]).unwrap();
+            Some(Command::Println(val))
+        }
+        kw::KW_PRINT => {
+            check_n_params(CommandType::Print, arguments.len());
+            let val = value::parse_expr(arguments[0]).unwrap();
+            Some(Command::Print(val))
+        }
+        kw::KW_QUIT => Some(Command::Quit),
         _ => {
             println!("Erro: Comando \"{}\" não existe.", cmd_type);
             None
@@ -345,9 +375,9 @@ fn parse_cmd(cmd: &str) -> Option<Command> {
 /// Representa uma unidade (arquivo compilado) contendo o conteudo a ser executado
 pub struct Unit {
     /// Conjunto de seções para execução
-    sects: Vec<Section>,
+    pub sects: Vec<Section>,
     /// Conjunto de globais
-    consts: Vec<Global>,
+    pub consts: Vec<Global>,
 }
 
 /// Realiza a interpretação de um arquivo e retorna sua unidade compilada
@@ -366,59 +396,78 @@ pub fn parse(file: &str) -> Unit {
     let reader = BufReader::new(f);
     let mut lines = reader.lines();
     // Se está fazendo parsing de uma seção e o conteudo atual da seção
-    let (mut parsing_section, mut cur_section) = (false, String::new());
+    let mut parsing_section = false;
+    let mut cur_section: Vec<String> = vec![];
     loop {
-        let line = match lines.next() {
+        let line: String = match lines.next() {
             Some(l) => {
                 match l {
-                    Ok(ll) => ll,
-                    Err(_) => break,
+                    Ok(ll) => String::from(ll.trim()),
+                    Err(_) => String::new(),
                 }
             }
             None => break,
         };
-        if parsing_section {
-            cur_section.push_str(&line);
-            if line.trim() == kw::KW_SECTEND {
-                // Encerra seção
-                parsing_section = false;
-                final_unit.sects.push(parse_section(&cur_section));
-                cur_section.clear();
-                continue;
-            }
-        }
         // Divide a string em palavras separadas por um espaço
         let words = line.split(' ').collect::<Vec<&str>>();
         // Verifica a primeira palavra da linha
         match words[0].trim() {
             // Se for declaração de um global, empurra o global pra unit
-            kw::KW_GLOBAL => final_unit.consts.push(parse_global(words[0])),
+            kw::KW_GLOBAL => final_unit.consts.push(parse_global(&line)),
             // Se for declaração de uma seção, começa o parsing da seção
             kw::KW_SECTION => {
-                cur_section.push_str(words[0]);
+                cur_section.push(line.clone());
                 parsing_section = true;
             }
+            // FIXME: Hardcode da palavra, mude depois pra uma forma de verificar dinamicamente
+            "SAINDO" if parsing_section => {
+                cur_section.push(line.clone());
+                if line.trim() == kw::KW_SECTEND {
+                    // Encerra seção
+                    parsing_section = false;
+                    final_unit.sects.push(parse_section(cur_section.clone()));
+                    cur_section.clear();
+                }
+            }
+            // Quando estiver dentro de uma seção, empurre o comando pra seção
+            _ if parsing_section => {
+                cur_section.push(line.clone());
+            }
             // Se não for nenhuma (os comandos só são interpretados dentro da seção)
-            _ => panic!("Erro: \"{}\" não entendida no contexto global."),
+            _ => {
+                panic!("Erro: \"{}\" não entendida no contexto global. Seção: {}",
+                       line,
+                       cur_section[0])
+            }
         }
     }
     final_unit
 }
 
+#[derive(Clone)]
 /// Representa uma área chamável que pode ser executada
 pub struct Section {
     /// Nome da seção
-    name: String,
+    pub name: String,
     /// Conjunto de linhas/comandos para execução
-    lines: Vec<Command>,
+    pub lines: Vec<Command>,
+}
+
+impl Section {
+    pub fn new() -> Section {
+        Section {
+            name: String::new(),
+            lines: vec![],
+        }
+    }
 }
 
 /// Faz parsing de uma seção
-fn parse_section(sect_str: &str) -> Section {
-    // Separa a seção em linhas
-    let lines = sect_str.split('\n').collect::<Vec<&str>>();
+fn parse_section(lines: Vec<String>) -> Section {
+    // Separa a seção em linha
     if lines.len() <= 1 {
-        panic!("Erro fazendo parsing da seção. Número incorreto de linhas.")
+        panic!("Erro fazendo parsing da seção. Número incorreto de linhas: {}.",
+               lines.len())
     } else {
         // Checagens de declaração e finalização são feitas em parse
         // Declaração de uma seção:
@@ -427,21 +476,27 @@ fn parse_section(sect_str: &str) -> Section {
             panic!("Erro na declaração da seção! Falta nome depois da palavra chave");
         }
         let mut sect = Section {
-            name: String::from(lines[0].split(' ').collect::<Vec<&str>>()[0]),
+            name: String::from(lines[0].split(' ').collect::<Vec<&str>>()[1].trim()),
             lines: vec![],
         };
+        // O -1 é pra não contar com a ultima linha, o SAINDO DA JAULA
         for l in 1..lines.len() - 1 {
-            let line = lines[l].trim();
+            let ref line = lines[l];
+            if line.len() <= 0 {
+                continue;
+            }
             // Se a linha não tem nada de util até um comentario, pula ela
-            if line.chars().collect::<Vec<char>>()[0] == '#' {
+            if line.chars().collect::<Vec<char>>()[0] == '#' ||
+               line.chars().collect::<Vec<char>>()[0] == ';' {
                 continue;
             }
             // Parte util da linha, caso haja um comentario
-            let util_line = if line.contains('#') {
+            // Comentarios são feitos com # ou ;
+            let util_line = if line.contains('#') || line.contains(';') {
                 let mut tmp = String::new();
                 for c in line.chars() {
                     // Enquanto o caractere não for um comentário, continue
-                    if c != '#' {
+                    if c != '#' && c != ';' {
                         tmp.push(c);
                     } else {
                         break;
@@ -449,7 +504,7 @@ fn parse_section(sect_str: &str) -> Section {
                 }
                 tmp
             } else {
-                String::from(line)
+                line.clone()
             };
             sect.lines.push(parse_cmd(&util_line).unwrap());
         }
@@ -460,56 +515,27 @@ fn parse_section(sect_str: &str) -> Section {
 /// Representa um valor global, constante
 pub struct Global {
     /// Identificador do valor global
-    identifier: String,
+    pub identifier: String,
     /// Valor do global
-    value: Value,
+    pub value: Value,
 }
 
 /// Faz parsing de um global
 fn parse_global(glb: &str) -> Global {
     // Estrutura da declaração de um global: PALAVRA_CHAVE: nome: valor
     let global = String::from(glb.trim());
-    let words = global.split(':').collect::<Vec<&str>>();
+    let words = global.split(':').map(|x| x.trim()).collect::<Vec<&str>>();
     // Separa o nome e valor do global
-    let (glb_name, glb_value) = (words[1].trim(), words[2].trim());
+    let (glb_name, glb_value) = (words[1], words[2]);
     let glb_value = match value::parse_expr(glb_value) {
         Some(val) => val,
-        None => panic!(),
+        None => {
+            panic!("Erro fazendo parsing do global \"{}\", valor incorreto.",
+                   glb_name)
+        }
     };
     Global {
         identifier: String::from(glb_name),
         value: glb_value,
-    }
-}
-
-/// Modulo de teste
-mod tests {
-
-    #[test]
-    fn command_decl() {
-        let cmd = super::parse_cmd("VEM: MONSTRO").unwrap();
-        match cmd {
-            super::Command::Decl(name) => assert!(name == "MONSTRO"),
-            _ => panic!(),
-        }
-    }
-
-    #[test]
-    fn command_declwv() {
-        let cmd = super::parse_cmd("VEM PORRA: MONSTRO, \"CUMPADE\"").unwrap();
-        match cmd {
-            super::Command::DeclWV(name, val) => {
-                println!("nome: {}", name);
-                assert!(name == "MONSTRO");
-                match val {
-                    super::Value::Str(v) => {
-                        println!("val: {}", v);
-                        assert!(*v == "CUMPADE");
-                    }
-                    _ => panic!(),
-                }
-            }
-            _ => panic!(),
-        }
     }
 }

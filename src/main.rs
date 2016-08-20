@@ -1,5 +1,6 @@
 mod parser;
 mod commands;
+mod interpreter;
 
 /// Imprime mensagem de ajuda
 fn print_help() {
@@ -15,6 +16,9 @@ fn print_help() {
               comando");
     println!("\t-j ou --jaula [nome]                   : Diz ao interpretador pra usar outro \
               ponto de partida. Padrão: SHOW");
+    println!("\t-q ou --quer-ver-tudo                  : Diz ao interpretador para usar modo \
+              verbose.");
+    // TODO: Comando para ajustar stack size
 }
 
 /// Versão numérica
@@ -43,6 +47,8 @@ enum Param {
     CustomInit(String),
     /// Arquivo passado para interpretação
     InputFile(String),
+    /// Pede ao compilador a ser verbose
+    Verbose,
 }
 
 /// Faz parsing dos comandos passados e retorna uma lista deles
@@ -52,7 +58,8 @@ fn get_params() -> Vec<Param> {
     let mut params = env::args();
     // Se o proximo argumento é um valor que deve ser ignorado
     let mut next_is_val = false;
-    if params.len() > 2 {
+    if params.len() >= 2 {
+        params.next(); // Se livra do primeiro argumento
         loop {
             let p = match params.next() {
                 Some(v) => v,
@@ -92,6 +99,8 @@ fn get_params() -> Vec<Param> {
                     };
                     ret.push(Param::CustomInit(section));
                 }
+                "-q" |
+                "--quer-ver-tudo" => ret.push(Param::Verbose),
                 _ => ret.push(Param::InputFile(p)),
             }
         }
@@ -107,7 +116,21 @@ fn command_help(command: &str) {
         KW_MOVE => doc_move(),
         KW_CLEAR => doc_clear(),
         KW_XOR => doc_xor(),
-        _ => String::new(),
+        KW_AND => doc_and(),
+        KW_OR => doc_or(),
+        KW_ADD => doc_add(),
+        KW_REM => doc_rem(),
+        KW_DIV => doc_div(),
+        KW_MUL => doc_mul(),
+        KW_NEG => doc_neg(),
+        KW_DECL => doc_decl(),
+        KW_DECLWV => doc_declwv(),
+        KW_JUMP => doc_jump(),
+        KW_CMP => doc_cmp(),
+        KW_PRINTLN => doc_println(),
+        KW_PRINT => doc_print(),
+        KW_QUIT => doc_quit(),
+        _ => String::from("Comando não encontrado"),
     };
     println!("{}", doc);
 }
@@ -115,20 +138,25 @@ fn command_help(command: &str) {
 fn main() {
     let params = get_params();
     let mut files: Vec<String> = vec![];
+    let mut env_params = interpreter::EnvironmentOptions::new();
     for p in params {
         match p {
             Param::PrintVersion => print_version(),
             Param::PrintHelp => print_help(),
             Param::CommandHelp(cmd) => command_help(&cmd),
-            // TODO: Adicionar nas flags do interpretador a jaula customizada
-            Param::CustomInit(_init) => {}
+            Param::CustomInit(init) => env_params.set_default_section(init),
             Param::InputFile(file) => files.push(file),
+            Param::Verbose => env_params.set_verbose(true),
         }
     }
+    let mut environment = interpreter::Environment::new(env_params);
     if files.len() > 0 {
-        let mut units: Vec<parser::Unit> = vec![];
         for file in files {
-            units.push(parser::parse(&file));
+            environment.interpret(parser::parse(&file))
         }
+        // Executa a jaula principal
+        environment.start_program();
+    } else {
+        println!("Nenhum arquivo passado pra execução!");
     }
 }
