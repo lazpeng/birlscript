@@ -28,6 +28,15 @@ impl Variable {
             constant: true,
         }
     }
+    
+    fn from(vid: String, val: parser::Value, is_const: bool) -> Variable {
+        Variable {
+            id: vid,
+            value: val,
+            address: -1,
+            constant: is_const,
+        }
+    }
 }
 
 /// Opções que podem ser passadas ao ambiente
@@ -191,10 +200,25 @@ impl Environment {
             }
         }
     }
+    
+    /// Configura as variaveis basicas
+    fn init_variables(&mut self) {
+        use std::env;
+        let var_names = vec!["CUMPADE", "UM"];
+        let mut var_cumpade: String = String::from("\"") + &env::var("USER").unwrap();
+        var_cumpade.push('\"');
+        let var_values = vec![parser::value::parse_expr(&var_cumpade).unwrap(), parser::value::parse_expr("1").unwrap()];
+        for i in 0 .. var_names.len() {
+            let (name, val) = (var_names[i], var_values[i].clone());
+            let var = Variable::from(name.to_string(), val, true);
+            self.declare_var(var);
+        }
+    }
 
     /// Executa a seção padrão
     pub fn start_program(&mut self) {
         let name = self.options.default_section.clone();
+        self.init_variables();
         self.execute_section(&name);
     }
 }

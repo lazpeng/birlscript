@@ -77,7 +77,7 @@ pub enum Value {
 }
 
 /// Sub-modulo responsavel por fazer parsing de expressões
-mod value {
+pub mod value {
 
     use super::*;
 
@@ -229,10 +229,24 @@ fn n_of_char(c: char, src: &str) -> i32 {
         0
     } else {
         let mut num = 0i32;
-        for curr in src.chars() {
-            if curr == c {
-                num += 1;
+        let mut last_char = ' ';
+        let mut is_string = false;
+        for cur in src.chars() {
+            if cur == '\"' || cur == '\'' {
+                // String ou caractere, verifica o ultimo caractere
+                if last_char == '\\' {
+                    // caractere de escape, ignora
+                } else {
+                    // inicia ou finaliza string ou char
+                    is_string = !is_string;
+                }
             }
+            if !is_string {
+                if cur == c {
+                    num += 1;
+                }
+            }
+            last_char = cur;
         }
         num
     }
