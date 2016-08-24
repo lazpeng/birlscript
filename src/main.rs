@@ -1,6 +1,7 @@
 mod parser;
 mod commands;
 mod interpreter;
+mod value;
 
 /// Imprime mensagem de ajuda
 fn print_help() {

@@ -2,6 +2,7 @@
 #![allow(dead_code)]
 
 use parser;
+use value;
 
 /// Endereço das variáveis
 type Address = i16;
@@ -12,7 +13,7 @@ pub struct Variable {
     /// Identificador da String
     id: String,
     /// Valor da variavel
-    value: parser::Value,
+    value: value::Value,
     /// Endereço da variavel
     address: Address,
     /// Se a variavel é constante ou não
@@ -23,13 +24,13 @@ impl Variable {
     fn new() -> Variable {
         Variable {
             id: String::new(),
-            value: parser::Value::Symbol(String::new()),
+            value: value::Value::Symbol(String::new()),
             address: -1,
             constant: true,
         }
     }
-    
-    fn from(vid: String, val: parser::Value, is_const: bool) -> Variable {
+
+    fn from(vid: String, val: value::Value, is_const: bool) -> Variable {
         Variable {
             id: vid,
             value: val,
@@ -132,8 +133,8 @@ impl Environment {
     // Inicio da implementação dos comandos
 
     /// Implementação do Print
-    fn command_print(&mut self, message: parser::Value) {
-        use parser::Value;
+    fn command_print(&mut self, message: value::Value) {
+        use value::Value;
         match message {
             Value::Integer(x) => print!("{}", x),
             Value::FloatP(x) => print!("{}", x),
@@ -152,8 +153,8 @@ impl Environment {
     }
 
     /// Implementação do Println
-    fn command_println(&mut self, message: parser::Value) {
-        use parser::Value;
+    fn command_println(&mut self, message: value::Value) {
+        use value::Value;
         match message {
             Value::Integer(x) => println!("{}", x),
             Value::FloatP(x) => println!("{}", x),
@@ -200,15 +201,16 @@ impl Environment {
             }
         }
     }
-    
+
     /// Configura as variaveis basicas
     fn init_variables(&mut self) {
         use std::env;
         let var_names = vec!["CUMPADE", "UM"];
         let mut var_cumpade: String = String::from("\"") + &env::var("USER").unwrap();
         var_cumpade.push('\"');
-        let var_values = vec![parser::value::parse_expr(&var_cumpade).unwrap(), parser::value::parse_expr("1").unwrap()];
-        for i in 0 .. var_names.len() {
+        let var_values = vec![value::parse_expr(&var_cumpade).unwrap(),
+                              value::parse_expr("1").unwrap()];
+        for i in 0..var_names.len() {
             let (name, val) = (var_names[i], var_values[i].clone());
             let var = Variable::from(name.to_string(), val, true);
             self.declare_var(var);
