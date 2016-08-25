@@ -15,58 +15,6 @@ pub fn doc_clear() -> String {
             KW_CLEAR)
 }
 
-pub fn doc_xor() -> String {
-    format!("Comando:\n\t \"{0}\".\nArgumentos:\n\t Variavel, Valor.\nExemplo:\n\t {0}: A, \
-             B\nDescrição:\n\tEsse comando faz a operação binária XOR (eXclusive OR) na variavel \
-             A com o valor B.",
-            KW_XOR)
-}
-
-pub fn doc_and() -> String {
-    format!("Comando:\n\t \"{0}\".\nArgumentos:\n\t Variavel, Valor.\nExemplo:\n\t {0}: A, \
-             B\nDescrição:\n\tEsse comando faz a operação binária And na variavel \
-             A com o valor B.",
-            KW_AND)
-}
-
-pub fn doc_or() -> String {
-    format!("Comando:\n\t \"{0}\".\nArgumentos:\n\t Variavel, Valor.\nExemplo:\n\t {0}: A, \
-             B\nDescrição:\n\tEsse comando faz a operação binária Or na variavel \
-             A com o valor B.",
-            KW_OR)
-}
-
-pub fn doc_add() -> String {
-    format!("Comando:\n\t \"{0}\".\nArgumentos:\n\t Variavel, Valor.\nExemplo:\n\t {0}: A, \
-             B\nDescrição:\n\tEsse comando adiciona o valor B na variavel A. Funciona com números \
-             e com strings.",
-            KW_ADD)
-}
-
-pub fn doc_rem() -> String {
-    format!("Comando:\n\t \"{0}\".\nArgumentos:\n\t Variavel, Valor.\nExemplo:\n\t {0}: A, \
-         B\nDescrição:\n\tEsse comando remove o valor B da variavel A. Não funciona com strings",
-            KW_REM)
-}
-
-pub fn doc_div() -> String {
-    format!("Comando:\n\t \"{0}\".\nArgumentos:\n\t Variavel, Valor.\nExemplo:\n\t {0}: A, \
-         B\nDescrição:\n\tEsse comando divide a variavel A com o valor B.",
-            KW_DIV)
-}
-
-pub fn doc_mul() -> String {
-    format!("Comando:\n\t \"{0}\".\nArgumentos:\n\t Variavel, Valor.\nExemplo:\n\t {0}: A, \
-         B\nDescrição:\n\tEsse comando multiplica o valor de A pelo de B.",
-            KW_MUL)
-}
-
-pub fn doc_neg() -> String {
-    format!("Comando:\n\t \"{0}\".\nArgumentos:\n\t Variavel.\nExemplo:\n\t {0}: \
-             A\nDescrição:\n\tEsse comando multiplica o valor em A por -1.",
-            KW_NEG)
-}
-
 pub fn doc_decl() -> String {
     format!("Comando:\n\t \"{0}\".\nArgumentos:\n\t Variavel (Nome).\nExemplo:\n\t {0}: \
              A\nDescrição:\n\tEsse comando declara uma nova variável com nome de A",

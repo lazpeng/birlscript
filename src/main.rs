@@ -1,6 +1,7 @@
 mod parser;
 mod commands;
 mod interpreter;
+mod value;
 
 /// Imprime mensagem de ajuda
 fn print_help() {
@@ -115,14 +116,6 @@ fn command_help(command: &str) {
     let doc = match command {
         KW_MOVE => doc_move(),
         KW_CLEAR => doc_clear(),
-        KW_XOR => doc_xor(),
-        KW_AND => doc_and(),
-        KW_OR => doc_or(),
-        KW_ADD => doc_add(),
-        KW_REM => doc_rem(),
-        KW_DIV => doc_div(),
-        KW_MUL => doc_mul(),
-        KW_NEG => doc_neg(),
         KW_DECL => doc_decl(),
         KW_DECLWV => doc_declwv(),
         KW_JUMP => doc_jump(),
@@ -133,6 +126,20 @@ fn command_help(command: &str) {
         _ => String::from("Comando não encontrado"),
     };
     println!("{}", doc);
+}
+
+/// Modulo de testes
+mod testes {
+    #[test]
+    /// Testa o exemplo hello world
+    fn exemplo_helloworld() {
+        use {interpreter, parser};
+        let mut env_params = interpreter::EnvironmentOptions::new();
+        env_params.set_verbose(true);
+        let mut env = interpreter::Environment::new(env_params);
+        env.interpret(parser::parse("exemplos/hello_world.birl"));
+        env.start_program();
+    }
 }
 
 fn main() {
