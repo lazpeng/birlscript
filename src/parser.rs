@@ -17,22 +17,6 @@ pub mod kw {
     pub const KW_MOVE: &'static str = "BORA";
     /// Limpa o valor de uma variavel
     pub const KW_CLEAR: &'static str = "NUM VAI DA NAO";
-    /// Xor (operador binário)
-    pub const KW_XOR: &'static str = "TRAPEZIO DESCENDENTE";
-    /// And (operador binário)
-    pub const KW_AND: &'static str = "FIBRA";
-    /// Or (operador binário)
-    pub const KW_OR: &'static str = "TRAPEZIO";
-    /// Adição
-    pub const KW_ADD: &'static str = "CONSTROI";
-    /// Diminuição
-    pub const KW_REM: &'static str = "MENOS CUMPADE";
-    /// Divisão
-    pub const KW_DIV: &'static str = "DIVIDE CUMPADE";
-    /// Multiplicação
-    pub const KW_MUL: &'static str = "CONSTROI FIBRA";
-    /// Multiplica por -1
-    pub const KW_NEG: &'static str = "NEGATIVA BAMBAM";
     /// Declara uma variável
     pub const KW_DECL: &'static str = "VEM";
     /// Declara uma variável com um valor
@@ -61,45 +45,26 @@ mod types {
     pub type MaxFlt = f64;
 }
 
-use value;
-use value::Value;
-
 #[derive(Clone)]
 /// Representa um comando, que é executado dentro do contexto atual
 /// Os valores passados aos comandos têm nomes fantasia alfabéticos para exemplificação
 pub enum Command {
     /// Move (copia) o conteudo da variavel no endereco a pro b
-    Move(Value, Value),
+    Move(String, String),
     /// Limpa o valor da variavel no endereco a
-    Clear(Value),
-    /// Aplica xor na variavel no endereco a com o valor b
-    Xor(Value, Value),
-    /// Aplica and na variavel no endereco a com o valor b
-    And(Value, Value),
-    /// Aplica or  na variavel no endereco a com o valor b
-    Or(Value, Value),
-    /// Adiciona b ao valor da variavel no endereco a
-    Add(Value, Value),
-    /// Remove b do valor da variavel no endereco a
-    Rem(Value, Value),
-    /// Divide o valor da variavel no endereco a com o valor b
-    Div(Value, Value),
-    /// Multiplica o valor da variavel no endereco a com o valor b
-    Mul(Value, Value),
-    /// Multiplica um valor numa variavel por -1
-    Neg(Value),
+    Clear(String),
     /// Declara a variavel com nome a
-    Decl(Value),
+    Decl(String),
     /// Declara a variavel com nome a e valor b
-    DeclWV(Value, Value),
+    DeclWV(String, String),
     /// Passa a execução para outra seção com nome a, retornando uma instrução à frente
-    Jump(Value),
+    Jump(String),
     /// Compara os valores de a e b, usado em condicionais
-    Cmp(Value, Value),
+    Cmp(String, String),
     /// Printa o valor a com uma nova linha em seguida
-    Println(Value),
+    Println(String),
     /// Printa o valor a
-    Print(Value),
+    Print(String),
     /// Sai do programa
     Quit,
 }
@@ -108,14 +73,6 @@ pub enum Command {
 pub enum CommandType {
     Move,
     Clear,
-    Xor,
-    And,
-    Or,
-    Add,
-    Rem,
-    Div,
-    Mul,
-    Neg,
     Decl,
     DeclWV,
     Jump,
@@ -162,14 +119,6 @@ fn check_n_params(command: CommandType, num_params: usize) {
         CommandType::Jump => (1, kw::KW_JUMP),
         CommandType::DeclWV => (2, kw::KW_DECLWV),
         CommandType::Decl => (1, kw::KW_DECL),
-        CommandType::Neg => (1, kw::KW_NEG),
-        CommandType::Mul => (2, kw::KW_MUL),
-        CommandType::Div => (2, kw::KW_DIV),
-        CommandType::Rem => (2, kw::KW_REM),
-        CommandType::Add => (2, kw::KW_ADD),
-        CommandType::Or => (2, kw::KW_OR),
-        CommandType::And => (2, kw::KW_AND),
-        CommandType::Xor => (2, kw::KW_XOR),
         CommandType::Clear => (1, kw::KW_CLEAR),
         CommandType::Move => (2, kw::KW_MOVE),
         CommandType::Println => (1, kw::KW_PRINTLN),
@@ -208,93 +157,38 @@ fn parse_cmd(cmd: &str) -> Option<Command> {
     let cmd: Option<Command> = match cmd_type {
         kw::KW_MOVE => {
             check_n_params(CommandType::Move, arguments.len());
-            let (addr1, addr2) = (value::parse_expr(arguments[0]).unwrap(),
-                                  value::parse_expr(arguments[1]).unwrap());
+            let (addr1, addr2) = (String::from(arguments[0]), String::from(arguments[1]));
             Some(Command::Move(addr1, addr2))
         }
         kw::KW_CLEAR => {
             check_n_params(CommandType::Clear, arguments.len());
-            let addr = value::parse_expr(arguments[0]).unwrap();
-            Some(Command::Clear(addr))
-        }
-        kw::KW_XOR => {
-            check_n_params(CommandType::Xor, arguments.len());
-            let (addr1, addr2) = (value::parse_expr(arguments[0]).unwrap(),
-                                  value::parse_expr(arguments[1]).unwrap());
-            Some(Command::Xor(addr1, addr2))
-        }
-        kw::KW_AND => {
-            check_n_params(CommandType::And, arguments.len());
-            let (addr1, addr2) = (value::parse_expr(arguments[0]).unwrap(),
-                                  value::parse_expr(arguments[1]).unwrap());
-            Some(Command::And(addr1, addr2))
-        }
-        kw::KW_OR => {
-            check_n_params(CommandType::Or, arguments.len());
-            let (addr1, addr2) = (value::parse_expr(arguments[0]).unwrap(),
-                                  value::parse_expr(arguments[1]).unwrap());
-            Some(Command::Or(addr1, addr2))
-        }
-        kw::KW_ADD => {
-            check_n_params(CommandType::Add, arguments.len());
-            let (addr1, addr2) = (value::parse_expr(arguments[0]).unwrap(),
-                                  value::parse_expr(arguments[1]).unwrap());
-            Some(Command::Add(addr1, addr2))
-        }
-        kw::KW_REM => {
-            check_n_params(CommandType::Rem, arguments.len());
-            let (addr1, addr2) = (value::parse_expr(arguments[0]).unwrap(),
-                                  value::parse_expr(arguments[1]).unwrap());
-            Some(Command::Rem(addr1, addr2))
-        }
-        kw::KW_DIV => {
-            check_n_params(CommandType::Div, arguments.len());
-            let (addr1, addr2) = (value::parse_expr(arguments[0]).unwrap(),
-                                  value::parse_expr(arguments[1]).unwrap());
-            Some(Command::Div(addr1, addr2))
-        }
-        kw::KW_MUL => {
-            check_n_params(CommandType::Mul, arguments.len());
-            let (addr1, addr2) = (value::parse_expr(arguments[0]).unwrap(),
-                                  value::parse_expr(arguments[1]).unwrap());
-            Some(Command::Mul(addr1, addr2))
-        }
-        kw::KW_NEG => {
-            check_n_params(CommandType::Neg, arguments.len());
-            let addr = value::parse_expr(arguments[0]).unwrap();
-            Some(Command::Neg(addr))
+            Some(Command::Clear(String::from(arguments[0])))
         }
         kw::KW_DECL => {
             check_n_params(CommandType::Decl, arguments.len());
-            let name = value::parse_expr(arguments[0]).unwrap();
-            Some(Command::Decl(name))
+            Some(Command::Decl(String::from(arguments[0])))
         }
         kw::KW_DECLWV => {
             check_n_params(CommandType::DeclWV, arguments.len());
-            let (name, val) = (value::parse_expr(arguments[0]).unwrap(),
-                               value::parse_expr(arguments[1]).unwrap());
+            let (name, val) = (String::from(arguments[0]), String::from(arguments[1]));
             Some(Command::DeclWV(name, val))
         }
         kw::KW_JUMP => {
             check_n_params(CommandType::Jump, arguments.len());
-            let section = value::parse_expr(arguments[0]).unwrap();
-            Some(Command::Jump(section))
+            Some(Command::Jump(String::from(arguments[0])))
         }
         kw::KW_CMP => {
             check_n_params(CommandType::Cmp, arguments.len());
-            let (addr1, addr2) = (value::parse_expr(arguments[0]).unwrap(),
-                                  value::parse_expr(arguments[1]).unwrap());
+            let (addr1, addr2) = (String::from(arguments[0]), String::from(arguments[1]));
             Some(Command::Cmp(addr1, addr2))
         }
         kw::KW_PRINTLN => {
             check_n_params(CommandType::Println, arguments.len());
-            let val = value::parse_expr(arguments[0]).unwrap();
-            Some(Command::Println(val))
+            Some(Command::Println(String::from(arguments[0])))
         }
         kw::KW_PRINT => {
             check_n_params(CommandType::Print, arguments.len());
-            let val = value::parse_expr(arguments[0]).unwrap();
-            Some(Command::Print(val))
+            Some(Command::Print(String::from(arguments[0])))
         }
         kw::KW_QUIT => Some(Command::Quit),
         _ => {
@@ -450,7 +344,7 @@ pub struct Global {
     /// Identificador do valor global
     pub identifier: String,
     /// Valor do global
-    pub value: Value,
+    pub value: String,
 }
 
 /// Faz parsing de um global
@@ -459,14 +353,7 @@ fn parse_global(glb: &str) -> Global {
     let global = String::from(glb.trim());
     let words = global.split(':').map(|x| x.trim()).collect::<Vec<&str>>();
     // Separa o nome e valor do global
-    let (glb_name, glb_value) = (words[1], words[2]);
-    let glb_value = match value::parse_expr(glb_value) {
-        Some(val) => val,
-        None => {
-            panic!("Erro fazendo parsing do global \"{}\", valor incorreto.",
-                   glb_name)
-        }
-    };
+    let (glb_name, glb_value) = (words[1], String::from(words[2]));
     Global {
         identifier: String::from(glb_name),
         value: glb_value,
