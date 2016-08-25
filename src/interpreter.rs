@@ -2,6 +2,7 @@
 #![allow(dead_code)]
 
 use parser;
+use value;
 
 /// Endereço das variáveis
 type Address = i16;
@@ -10,9 +11,9 @@ type Address = i16;
 #[derive(Clone)]
 pub struct Variable {
     /// Identificador da String
-    id: String,
+    pub id: String,
     /// Valor da variavel
-    value: parser::Value,
+    pub value: value::Value,
     /// Endereço da variavel
     address: Address,
     /// Se a variavel é constante ou não
@@ -23,9 +24,18 @@ impl Variable {
     fn new() -> Variable {
         Variable {
             id: String::new(),
-            value: parser::Value::Symbol(String::new()),
+            value: value::Value::Number(0.0),
             address: -1,
             constant: true,
+        }
+    }
+
+    fn from(vid: String, val: value::Value, is_const: bool) -> Variable {
+        Variable {
+            id: vid,
+            value: val,
+            address: -1,
+            constant: is_const,
         }
     }
 }
@@ -93,7 +103,7 @@ impl Environment {
         for const_var in file.consts {
             let var = Variable {
                 id: const_var.identifier,
-                value: const_var.value,
+                value: value::parse_expr(&const_var.value, self),
                 address: 0,
                 constant: true,
             };
@@ -105,14 +115,14 @@ impl Environment {
     }
 
     /// Pega uma variavel do ambiente
-    fn get_var(&self, name: String) -> Variable {
+    pub fn get_var(&self, name: &str) -> Option<Variable> {
         if self.variables.len() <= 0 {
-            Variable::new()
+            None
         } else {
-            let mut ret = Variable::new();
+            let mut ret: Option<Variable> = None;
             for var in &self.variables {
                 if var.id == name {
-                    ret = var.clone();
+                    ret = Some(var.clone());
                     break;
                 }
             }
@@ -123,51 +133,27 @@ impl Environment {
     // Inicio da implementação dos comandos
 
     /// Implementação do Print
-    fn command_print(&mut self, message: parser::Value) {
-        use parser::Value;
-        match message {
-            Value::Integer(x) => print!("{}", x),
-            Value::FloatP(x) => print!("{}", x),
-            Value::Char(x) => print!("{}", x),
-            Value::Str(x) => print!("{}", x),
-            Value::Symbol(name) => {
-                match self.get_var(name).value {
-                    Value::Integer(x) => print!("{}", x),
-                    Value::FloatP(x) => print!("{}", x),
-                    Value::Char(x) => print!("{}", x),
-                    Value::Str(x) => print!("{}", x),
-                    _ => (),
-                }
-            }
-        }
+    fn command_print(&mut self, message: value::Value) {
+        print!("{}", message);
     }
 
     /// Implementação do Println
-    fn command_println(&mut self, message: parser::Value) {
-        use parser::Value;
-        match message {
-            Value::Integer(x) => println!("{}", x),
-            Value::FloatP(x) => println!("{}", x),
-            Value::Char(x) => println!("{}", x),
-            Value::Str(x) => println!("{}", x),
-            Value::Symbol(name) => {
-                match self.get_var(name).value {
-                    Value::Integer(x) => println!("{}", x),
-                    Value::FloatP(x) => println!("{}", x),
-                    Value::Char(x) => println!("{}", x),
-                    Value::Str(x) => println!("{}", x),
-                    _ => (),
-                }
-            }
-        }
+    fn command_println(&mut self, message: value::Value) {
+        println!("{}", message);
     }
 
     /// Executa um comando
     fn execute_command(&mut self, cmd: parser::Command) {
         use parser::Command;
         match cmd {
-            Command::Print(msg) => self.command_print(msg),
-            Command::Println(msg) => self.command_println(msg),
+            Command::Print(msg) => {
+                let msg = value::parse_expr(&msg, self);
+                self.command_print(msg);
+            }
+            Command::Println(msg) => {
+                let msg = value::parse_expr(&msg, self);
+                self.command_println(msg);
+            }
             _ => {}
         }
     }
@@ -192,9 +178,26 @@ impl Environment {
         }
     }
 
+    /// Configura as variaveis basicas
+    fn init_variables(&mut self) {
+        use std::env;
+        let var_names = vec!["CUMPADE", "UM", "BODYBUILDER"];
+        let mut var_cumpade: String = String::from("\"") + &env::var("USER").unwrap();
+        var_cumpade.push('\"');
+        let var_values = vec![value::Value::Str(var_cumpade),
+                              value::Value::Number(1.0),
+                              value::Value::Str(String::from("BAMBAM"))];
+        for i in 0..var_names.len() {
+            let (name, val) = (var_names[i], var_values[i].clone());
+            let var = Variable::from(name.to_string(), val, true);
+            self.declare_var(var);
+        }
+    }
+
     /// Executa a seção padrão
     pub fn start_program(&mut self) {
         let name = self.options.default_section.clone();
+        self.init_variables();
         self.execute_section(&name);
     }
 }
