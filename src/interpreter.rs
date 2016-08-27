@@ -1,11 +1,8 @@
 //! Responsável pela execução do programa
-#![allow(dead_code)]
 
 use parser;
 use value;
-
-/// Endereço das variáveis
-type Address = i16;
+use error;
 
 /// Variavel que tem um nome e um valor
 #[derive(Clone)]
@@ -14,60 +11,44 @@ pub struct Variable {
     pub id: String,
     /// Valor da variavel
     pub value: value::Value,
-    /// Endereço da variavel
-    address: Address,
     /// Se a variavel é constante ou não
     constant: bool,
 }
 
 impl Variable {
-    fn new() -> Variable {
-        Variable {
-            id: String::new(),
-            value: value::Value::Number(0.0),
-            address: -1,
-            constant: true,
-        }
-    }
 
+    /// Cria uma variavel com uma serie de informações
     fn from(vid: String, val: value::Value, is_const: bool) -> Variable {
         Variable {
             id: vid,
             value: val,
-            address: -1,
             constant: is_const,
         }
     }
 }
 
-/// Opções que podem ser passadas ao ambiente
-pub struct EnvironmentOptions {
-    /// Nome da seção padrão na hora de inicializar o programa
-    default_section: String,
-    /// Se o interpretador deve se comportar de forma verbosa
-    verbose: bool,
+/// Representação de uma comparação
+pub enum Comparision {
+    /// Igual
+    Equals,
+    /// Diferente
+    NotEquals,
+    /// Menor
+    Less,
+    /// Menor ou igual
+    LessOrEquals,
+    /// Maior
+    More,
+    /// Maior ou igual
+    MoreOrEquals,
+    /// Nenhum dos anteriores (valor inicial)
+    None,
 }
 
-/// Implementação
-impl EnvironmentOptions {
-    /// Constre um novo base
-    pub fn new() -> EnvironmentOptions {
-        EnvironmentOptions {
-            default_section: String::from("SHOW"),
-            verbose: false,
-        }
+    /// Compara dois valores e retorna um resultado
+    fn compare(val1: value::Value, val2: value::Value) -> Comparision {
+        unimplemented!()
     }
-
-    /// Define a variavel verbose
-    pub fn set_verbose(&mut self, value: bool) {
-        self.verbose = value;
-    }
-
-    /// Define a variavel default_section
-    pub fn set_default_section(&mut self, value: String) {
-        self.default_section = value;
-    }
-}
 
 /// É o ambiente onde rodam os scripts BIRL
 pub struct Environment {
@@ -75,38 +56,39 @@ pub struct Environment {
     variables: Vec<Variable>,
     /// Coleção de seções para serem executadas
     sections: Vec<parser::Section>,
-    /// Opções
-    options: EnvironmentOptions,
+    /// Ponto de entrada para o programa
+    entry: String,
+    /// O resultado da ultima Comparação
+    last_cmp: Comparision
 }
 
 impl Environment {
     /// Cria um novo ambiente
-    pub fn new(opts: EnvironmentOptions) -> Environment {
+    pub fn new(entry_point: String) -> Environment {
         Environment {
             variables: vec![],
             sections: vec![],
-            options: opts,
+            entry: entry_point,
+            last_cmp: Comparision::None,
         }
     }
 
     /// Declara uma variavel e retorna seu endereço
-    fn declare_var(&mut self, var: Variable) -> i16 {
-        let addr: i16 = self.variables.len() as i16;
-        let mut vcpy = var.clone();
-        vcpy.address = addr;
-        self.variables.push(vcpy);
-        addr
+    fn declare_var(&mut self, var: Variable) {
+        if self.variables.len() > 0 {
+            for v in &self.variables {
+                if v.id == var.id {
+                    error::abort(&format!("Variavel \"{}\" já declarada", var.id));
+                }
+            }
+        }
+        self.variables.push(var);
     }
 
     /// Interpreta uma unidade sem executá-la
     pub fn interpret(&mut self, file: parser::Unit) {
         for const_var in file.consts {
-            let var = Variable {
-                id: const_var.identifier,
-                value: value::parse_expr(&const_var.value, self),
-                address: 0,
-                constant: true,
-            };
+            let var = Variable::from(const_var.identifier, value::parse_expr(&const_var.value, self), true);
             self.declare_var(var);
         }
         for sect in file.sects {
@@ -130,7 +112,69 @@ impl Environment {
         }
     }
 
+    /// Modifica o valor de uma variavel
+    pub fn mod_var(&mut self, var: &str, newval: value::Value) {
+        if self.variables.len() <= 0 {
+            error::abort(&format!("Variavel não encontrada: \"{}\"", var));
+        }
+        let (mut index, mut found) = (0, false);
+        loop {
+            if index >= self.variables.len() - 1 {
+                break;
+            }
+            let ref mut v = self.variables[index];
+            if v.id == var {
+                v.value = newval;
+                found = true;
+                break;
+            }
+            index += 1;
+        }
+        if !found {
+            error::abort(&format!("Variavel não encontrada: \"{}\"", var));
+        }
+    }
+
     // Inicio da implementação dos comandos
+
+    /// Seta o valor de uma variável
+    fn command_move(&mut self, target: String, val: value::Value) {
+        self.mod_var(&target, val);
+    }
+
+    /// Limpa o valor de uma variavel
+    fn command_clear(&mut self, target: String) {
+        self.mod_var(&target, value::Value::Number(0.0));
+    }
+
+    /// Declara uma variavel com o valor padrão
+    fn command_decl(&mut self, name: String) {
+        let var = Variable::from(name, value::Value::Number(0.0), false);
+        self.declare_var(var);
+    }
+
+    /// Declara uma variavel com um valor padrão
+    fn command_declwv(&mut self, name: String, val: value::Value) {
+        let var = Variable::from(name, val, false);
+        self.declare_var(var);
+    }
+
+    /// Passa a execução para outra seção
+    fn command_jump(&mut self, section: String) {
+        self.execute_section(&section);
+    }
+
+    /// Compara dois valores
+    fn command_cmp(&mut self, val1: value::Value, val2: value::Value) {
+        self.last_cmp = compare(val1, val2);
+    }
+
+    /// Executa uma seção caso comparação de equals
+    fn command_cmp_eq(&mut self, sect: String) {
+        if let Comparision::Equals = self.last_cmp {
+            self.execute_section(&sect);
+        }
+    }
 
     /// Implementação do Print
     fn command_print(&mut self, message: value::Value) {
@@ -142,10 +186,33 @@ impl Environment {
         println!("{}", message);
     }
 
+    /// Quit
+    fn command_quit(&mut self) {
+        use std::process;
+        process::exit(0);
+    }
+
     /// Executa um comando
     fn execute_command(&mut self, cmd: parser::Command) {
         use parser::Command;
         match cmd {
+            Command::Move(trg, val) => {
+                let val = value::parse_expr(&val, self);
+                self.command_move(trg, val);
+            }
+            Command::Clear(trg) => self.command_clear(trg),
+            Command::Decl(trg) => self.command_decl(trg),
+            Command::DeclWV(trg, val) => {
+                let val = value::parse_expr(&val, self);
+                self.command_declwv(trg, val);
+            }
+            Command::Jump(sect) => self.command_jump(sect),
+            Command::Cmp(val1, val2) => {
+                let val1 = value::parse_expr(&val1, self);
+                let val2 = value::parse_expr(&val2, self);
+                self.command_cmp(val1, val2);
+            }
+            Command::CmpEq(sect) => self.command_cmp_eq(sect),
             Command::Print(msg) => {
                 let msg = value::parse_expr(&msg, self);
                 self.command_print(msg);
@@ -154,7 +221,9 @@ impl Environment {
                 let msg = value::parse_expr(&msg, self);
                 self.command_println(msg);
             }
-            _ => {}
+            Command::Quit => {
+                self.command_quit();
+            }
         }
     }
 
@@ -170,7 +239,7 @@ impl Environment {
             }
         }
         if !found {
-            panic!("Erro: Seção não encontrada: \"{}\".", sect_name);
+            error::abort(&format!("Seção não encontrada: \"{}\".", sect_name));
         } else {
             for cmd in section.lines {
                 self.execute_command(cmd);
@@ -182,9 +251,18 @@ impl Environment {
     fn init_variables(&mut self) {
         use std::env;
         let var_names = vec!["CUMPADE", "UM", "BODYBUILDER"];
-        let mut var_cumpade: String = String::from("\"") + &env::var("USER").unwrap();
+        let user_varenv = if cfg!(windows) {
+            // No windows, a variavel de ambiente que contem o nome de usuario é diferente
+            "USERNAME"
+        } else {
+            "USER"
+        };
+        let mut var_cumpade: String = String::from("\"") + &(match env::var(user_varenv) {
+            Ok(usr) => usr,
+            Err(_) => var_names[0].to_string(), // CUMPADE
+        });
         var_cumpade.push('\"');
-        let var_values = vec![value::Value::Str(var_cumpade),
+        let var_values = vec![value::Value::Str(var_cumpade.to_uppercase()),
                               value::Value::Number(1.0),
                               value::Value::Str(String::from("BAMBAM"))];
         for i in 0..var_names.len() {
@@ -196,8 +274,8 @@ impl Environment {
 
     /// Executa a seção padrão
     pub fn start_program(&mut self) {
-        let name = self.options.default_section.clone();
         self.init_variables();
-        self.execute_section(&name);
+        let entry = self.entry.clone();
+        self.execute_section(&entry);
     }
 }

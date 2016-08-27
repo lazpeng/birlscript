@@ -1,6 +1,6 @@
 //! Responsavel pelo parsing e de gerar a AST do programa BIRL
 
-#![allow(dead_code)]
+use error;
 
 /// Representa as keywords da linguagem
 pub mod kw {
@@ -25,6 +25,8 @@ pub mod kw {
     pub const KW_JUMP: &'static str = "E HORA DO";
     /// Comparação
     pub const KW_CMP: &'static str = "E ELE QUE A GENTE QUER";
+    /// Comparação resultou em igual
+    pub const KW_CMP_EQ: &'static str = "E ELE MEMO";
     /// Printa com nova linha
     pub const KW_PRINTLN: &'static str = "CE QUER VER ESSA PORRA";
     /// Printa
@@ -61,6 +63,8 @@ pub enum Command {
     Jump(String),
     /// Compara os valores de a e b, usado em condicionais
     Cmp(String, String),
+    /// Executa seção a caso ultima comparação seja igual
+    CmpEq(String),
     /// Printa o valor a com uma nova linha em seguida
     Println(String),
     /// Printa o valor a
@@ -69,6 +73,8 @@ pub enum Command {
     Quit,
 }
 
+// Por algum motivo, o compilador acusa Quit como dead_code :/
+#[allow(dead_code)]
 /// Facil representação dos comandos sem os argumentos
 pub enum CommandType {
     Move,
@@ -77,6 +83,7 @@ pub enum CommandType {
     DeclWV,
     Jump,
     Cmp,
+    CmpEq,
     Println,
     Print,
     Quit,
@@ -111,11 +118,27 @@ fn n_of_char(c: char, src: &str) -> i32 {
     }
 }
 
+/// Troca caracteres acentuados para suas versões sem acento
+fn change_accents(src: &str) -> String {
+    let mut nstr = String::new();
+    for c in src.chars() {
+        nstr.push(match c {
+            'Á' | 'Ã'| 'À' => 'A',
+            'É' => 'E',
+            'Õ' | 'Ô' => 'O',
+            'Í' => 'I',
+            _ => c,
+        });
+    }
+    nstr
+}
+
 /// Verifica se foi passada a quantidade correta de argumentos para um comando
 fn check_n_params(command: CommandType, num_params: usize) {
     // Pra cada comando, retorne um valor inteiro para o numero de parametros
     let (expected, id) = match command {
         CommandType::Cmp => (2, kw::KW_CMP),
+        CommandType::CmpEq => (1, kw::KW_CMP_EQ),
         CommandType::Jump => (1, kw::KW_JUMP),
         CommandType::DeclWV => (2, kw::KW_DECLWV),
         CommandType::Decl => (1, kw::KW_DECL),
@@ -123,10 +146,10 @@ fn check_n_params(command: CommandType, num_params: usize) {
         CommandType::Move => (2, kw::KW_MOVE),
         CommandType::Println => (1, kw::KW_PRINTLN),
         CommandType::Print => (1, kw::KW_PRINT),
-        CommandType::Quit => (0, kw::KW_QUIT),
+        CommandType::Quit => (0, kw::KW_QUIT)
     };
     if expected != num_params {
-        panic!(format!("Erro: \"{}\" espera {} parametros, porém {} foram passados.",
+        error::abort(&format!("\"{}\" espera {} parametros, porém {} foram passados.",
                        id,
                        expected,
                        num_params));
@@ -134,7 +157,7 @@ fn check_n_params(command: CommandType, num_params: usize) {
 }
 
 /// Faz parsing de um comando
-fn parse_cmd(cmd: &str) -> Option<Command> {
+fn parse_cmd(cmd: &str) -> Command {
     // Estrutura de um comando:
     // COMANDO: var1, var2, ...
     let cmd_parts = cmd.split(':').map(|x| x.trim()).collect::<Vec<&str>>();
@@ -154,46 +177,50 @@ fn parse_cmd(cmd: &str) -> Option<Command> {
     } else {
         cmd.trim()
     };
-    let cmd: Option<Command> = match cmd_type {
+    let cmd: Command = match cmd_type {
         kw::KW_MOVE => {
             check_n_params(CommandType::Move, arguments.len());
             let (addr1, addr2) = (String::from(arguments[0]), String::from(arguments[1]));
-            Some(Command::Move(addr1, addr2))
+            Command::Move(addr1, addr2)
         }
         kw::KW_CLEAR => {
             check_n_params(CommandType::Clear, arguments.len());
-            Some(Command::Clear(String::from(arguments[0])))
+            Command::Clear(String::from(arguments[0]))
         }
         kw::KW_DECL => {
             check_n_params(CommandType::Decl, arguments.len());
-            Some(Command::Decl(String::from(arguments[0])))
+            Command::Decl(String::from(arguments[0]))
         }
         kw::KW_DECLWV => {
             check_n_params(CommandType::DeclWV, arguments.len());
             let (name, val) = (String::from(arguments[0]), String::from(arguments[1]));
-            Some(Command::DeclWV(name, val))
+            Command::DeclWV(name, val)
         }
         kw::KW_JUMP => {
             check_n_params(CommandType::Jump, arguments.len());
-            Some(Command::Jump(String::from(arguments[0])))
+            Command::Jump(String::from(arguments[0]))
         }
         kw::KW_CMP => {
             check_n_params(CommandType::Cmp, arguments.len());
             let (addr1, addr2) = (String::from(arguments[0]), String::from(arguments[1]));
-            Some(Command::Cmp(addr1, addr2))
+            Command::Cmp(addr1, addr2)
+        }
+        kw::KW_CMP_EQ => {
+            check_n_params(CommandType::CmpEq, arguments.len());
+            Command::CmpEq(arguments[0].to_string())
         }
         kw::KW_PRINTLN => {
             check_n_params(CommandType::Println, arguments.len());
-            Some(Command::Println(String::from(arguments[0])))
+            Command::Println(String::from(arguments[0]))
         }
         kw::KW_PRINT => {
             check_n_params(CommandType::Print, arguments.len());
-            Some(Command::Print(String::from(arguments[0])))
+            Command::Print(String::from(arguments[0]))
         }
-        kw::KW_QUIT => Some(Command::Quit),
+        kw::KW_QUIT => Command::Quit,
         _ => {
-            println!("Erro: Comando \"{}\" não existe.", cmd_type);
-            None
+            error::abort(&format!("Comando \"{}\" não existe.", cmd_type));
+            unreachable!()
         }
     };
     cmd
@@ -213,7 +240,7 @@ pub fn parse(file: &str) -> Unit {
     use std::io::{BufRead, BufReader};
     let f = match fs::File::open(file) {
         Ok(a) => a,
-        Err(e) => panic!(e),
+        Err(e) => panic!("Erro abrindo arquivo \"{}\": \"{}\"", file, e),
     };
     // Valor de retorno
     let mut final_unit = Unit {
@@ -235,6 +262,9 @@ pub fn parse(file: &str) -> Unit {
             }
             None => break,
         };
+        if line.trim() == "" {
+            continue;
+        }
         // Divide a string em palavras separadas por um espaço
         let words = line.split(' ').collect::<Vec<&str>>();
         // Verifica a primeira palavra da linha
@@ -246,7 +276,6 @@ pub fn parse(file: &str) -> Unit {
                 cur_section.push(line.clone());
                 parsing_section = true;
             }
-            // FIXME: Hardcode da palavra, mude depois pra uma forma de verificar dinamicamente
             "SAINDO" if parsing_section => {
                 cur_section.push(line.clone());
                 if line.trim() == kw::KW_SECTEND {
@@ -258,13 +287,14 @@ pub fn parse(file: &str) -> Unit {
             }
             // Quando estiver dentro de uma seção, empurre o comando pra seção
             _ if parsing_section => {
-                cur_section.push(line.clone());
+                // Mude os acentos para que aceite comandos com acento
+                cur_section.push(change_accents(&line));
             }
             // Se não for nenhuma (os comandos só são interpretados dentro da seção)
             _ => {
-                panic!("Erro: \"{}\" não entendida no contexto global. Seção: {}",
+                error::abort(&format!("\"{}\" não entendida no contexto global. Seção: {}",
                        line,
-                       cur_section[0])
+                       cur_section[0]))
             }
         }
     }
@@ -293,14 +323,15 @@ impl Section {
 fn parse_section(lines: Vec<String>) -> Section {
     // Separa a seção em linha
     if lines.len() <= 1 {
-        panic!("Erro fazendo parsing da seção. Número incorreto de linhas: {}.",
-               lines.len())
+        error::abort(&format!("Erro fazendo parsing da seção. Número incorreto de linhas: {}.",
+               lines.len()));
+        unreachable!() // O abort sai do programa, logo esse codigo nunca sera executado
     } else {
         // Checagens de declaração e finalização são feitas em parse
         // Declaração de uma seção:
         // PALAVRA_CHAVE nome
         if !lines[0].contains(' ') {
-            panic!("Erro na declaração da seção! Falta nome depois da palavra chave");
+            error::abort("Erro na declaração da seção! Falta nome depois da palavra chave");
         }
         let mut sect = Section {
             name: String::from(lines[0].split(' ').collect::<Vec<&str>>()[1].trim()),
@@ -333,7 +364,7 @@ fn parse_section(lines: Vec<String>) -> Section {
             } else {
                 line.clone()
             };
-            sect.lines.push(parse_cmd(&util_line).unwrap());
+            sect.lines.push(parse_cmd(&util_line));
         }
         sect
     }

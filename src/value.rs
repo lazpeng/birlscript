@@ -1,7 +1,5 @@
 //! Responsável pelo parsing de expressões
 
-#![allow(dead_code)]
-
 /// Biblioteca do parser de expressões
 extern crate meval;
 
@@ -16,6 +14,7 @@ pub enum Value {
 }
 
 use std::fmt;
+use error;
 
 impl fmt::Display for Value {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -57,7 +56,10 @@ fn expand_syms(expr: &mut String, env: &mut Environment) {
                     ' ' | '+' | '-' | '/' | '*' | '&' | '|' | '%' => {
                         is_sym = false;
                         let var: Variable = match env.get_var(&sym) {
-                            None => panic!("Erro: Simbolo \"{}\" não reconhecido.", sym),
+                            None => {
+                                error::abort(&format!("Simbolo \"{}\" não reconhecido.", sym));
+                                unreachable!()
+                            }
                             Some(v) => v,
                         };
                         newexpr.push_str(&var.value.as_str());
@@ -90,7 +92,10 @@ fn expand_syms(expr: &mut String, env: &mut Environment) {
         // Verifica se um simbolo ficou para traz
         if is_sym && sym != "" {
             let var: Variable = match env.get_var(&sym) {
-                None => panic!("Erro: Simbolo \"{}\" não reconhecido.", sym),
+                None => {
+                    error::abort(&format!("Simbolo \"{}\" não reconhecido.", sym));
+                    unreachable!()
+                }
                 Some(v) => v,
             };
             newexpr.push_str(&var.value.as_str());
@@ -111,7 +116,7 @@ enum ValueType {
 /// Descobre o tipo de uma expressão
 fn expr_type(expr: &str) -> ValueType {
     if expr == "" {
-        panic!("Erro: Expressão vazia!");
+        error::abort("Expressão vazia!");
     }
     // Tenta descobrir o tipo da expressão por meio dos seus primeiros caracteres
     let mut chars = expr.chars();
@@ -120,12 +125,18 @@ fn expr_type(expr: &str) -> ValueType {
         '-' => {
             match chars.nth(1).unwrap() {
                 '0'...'9' => ValueType::Number,
-                _ => panic!("Erro: Operador \"-\" atribuido a uma expressão que não o suporta."),
+                _ => {
+                    error::abort("Operador \"-\" atribuido a uma expressão que não o suporta.");
+                    unreachable!()
+                }
             }
         }
         '\'' => ValueType::Char,
         '\"' => ValueType::Str,
-        _ => panic!("Erro: Tipo de expressão invalido."),
+        _ => {
+            error::abort("Tipo de expressão invalido.");
+            unreachable!()
+        }
     }
 }
 
@@ -141,8 +152,9 @@ fn parse_char(expr: &str) -> Value {
     let mut chars = expr.chars();
     if expr.len() != 3 {
         // Um para o ', o valor e outro '
-        panic!("Erro na expressão do caractere: Numero incorreto de expressões: {}",
-               expr.len());
+        error::abort(&format!("Erro na expressão do caractere: Numero incorreto de expressões: {}",
+               expr.len()));
+        unreachable!() // abort aborta, então esse codigo não será executado
     } else {
         Value::Char(chars.nth(1).unwrap())
     }
@@ -166,7 +178,7 @@ fn parse_str_tokenize(expr: &str) -> Vec<String> {
             }
             '\"' if !in_str => {
                 if !last_op {
-                    panic!("Erro: No meio de duas strings so deve haver um operador!");
+                    error::abort("No meio de duas strings so deve haver um operador!");
                 } else {
                     last_op = false;
                     in_str = true;
@@ -177,7 +189,7 @@ fn parse_str_tokenize(expr: &str) -> Vec<String> {
             '\'' if !in_str && !in_char => {
                 // Caractere
                 if !last_op {
-                    panic!("Erro: No meio de duas strings so deve haver um operador!");
+                    error::abort("No meio de duas strings so deve haver um operador!");
                 }
                 in_char = true;
                 index += 1;
@@ -190,12 +202,12 @@ fn parse_str_tokenize(expr: &str) -> Vec<String> {
                 last_op = true;
             }
             '-' | '*' | '/' if !in_str => {
-                panic!("Operador {} não permitido em strings!", c);
+                error::abort(&format!("Operador {} não permitido em strings!", c));
             }
             _ if in_char => {
                 tokens[index].push(c);
             }
-            ' ' if !in_str => {} // Pula espaços se de fora de uma string
+            _ if !in_str => {} // Pula outros caracteres se de fora de uma string
             _ => tokens[index].push(c),
         }
     }
