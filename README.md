@@ -10,13 +10,12 @@ Use o interpretador com a flag *-a* ou *--ajuda-o-maluco-ta-doente* para ver uma
 de opções que podem ser passadas. Use *-e* ou *--ele-que-a-gente-quer* junto com o nome
 de um comando para ver mais sobre ele, ou *-t* ou *--tudo-cumpade* para uma lista de comandos.
 
-Builds estarão disponiveis na pasta *bin* a partir da versão 0.x BETA, que estará funcional.
-Por enquanto, o interpretador pode ser compilado com a toolset basica de [Rust](https://rust-lang.org/), porém
-não tem toda a funcionalidade implementada.
+Builds estarão disponiveis na pasta *bin* a partir da versão 1.x BETA, que estará funcional.
 
-## Versão 0.7.5 ALFA
+## Versão 0.9.0 PRÉ-BETA
 
 *Copyleft(ɔ) 2016 Rafael R Nakano. Nenhum direito reservado.*
+*Contato: lazpeng@gmail.com*
 
 ## Sobre
 BIRLSCRIPT (ou BIRLASM) é uma espécie de dialeto assembly[¹] com algumas pequenas (ou grandes)
@@ -32,15 +31,12 @@ outros não. Optei por deixar o que fizesse ao menos o mínimo de sentido).
 
 [¹] - *Assembly aqui se diz respeito à linguagem assembly para a arquitetura x86, dialeto NASM*
 
-***O interpretador já é capaz de rodar o programa exemplo do "Hello world"!***
-
 # Exemplos
 
-## Hello world, Porra!
+## Hello world, cumpade!
 ```rust
 JAULA SHOW
-  CE QUER VER ESSA PORRA: "Hello world, Porra!"
+  CE QUER VER ESSA PORRA: "BORA, " + CUMPADE + "!"
 SAINDO DA JAULA
 ```
-
-O código acima imprime na tela "Hello world, Porra!" e fecha.
+***mais exemplos em breve***
