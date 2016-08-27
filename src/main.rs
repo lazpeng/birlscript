@@ -1,3 +1,4 @@
+mod error;
 mod parser;
 mod commands;
 mod interpreter;
@@ -17,15 +18,12 @@ fn print_help() {
               comando");
     println!("\t-j ou --jaula [nome]                   : Diz ao interpretador pra usar outro \
               ponto de partida. Padrão: SHOW");
-    println!("\t-q ou --quer-ver-tudo                  : Diz ao interpretador para usar modo \
-              verbose.");
-    // TODO: Comando para ajustar stack size
 }
 
 /// Versão numérica
-pub static BIRLSCRIPT_VERSION: &'static str = "0.1.3";
+pub static BIRLSCRIPT_VERSION: &'static str = "0.9.0";
 /// Release, como alfa, beta, etc
-pub static BIRLSCRIPT_RELEASE: &'static str = "ALFA";
+pub static BIRLSCRIPT_RELEASE: &'static str = "PRÉ-BETA";
 
 /// Imprime a mensagem de versão
 fn print_version() {
@@ -48,8 +46,6 @@ enum Param {
     CustomInit(String),
     /// Arquivo passado para interpretação
     InputFile(String),
-    /// Pede ao compilador a ser verbose
-    Verbose,
 }
 
 /// Faz parsing dos comandos passados e retorna uma lista deles
@@ -82,7 +78,7 @@ fn get_params() -> Vec<Param> {
                     let cmd = match params.next() {
                         Some(name) => name,
                         None => {
-                            println!("Erro: a flag \"-e ou --ele-que-a-gente-quer\" espera um \
+                            error::warn("A flag \"-e ou --ele-que-a-gente-quer\" espera um \
                                       valor.");
                             break;
                         }
@@ -94,14 +90,12 @@ fn get_params() -> Vec<Param> {
                     let section = match params.next() {
                         Some(sect) => sect,
                         None => {
-                            println!("Erro: a flag \"-j ou --jaula\" espera um valor.");
+                            error::warn("A flag \"-j ou --jaula\" espera um valor.");
                             break;
                         }
                     };
                     ret.push(Param::CustomInit(section));
                 }
-                "-q" |
-                "--quer-ver-tudo" => ret.push(Param::Verbose),
                 _ => ret.push(Param::InputFile(p)),
             }
         }
@@ -128,35 +122,20 @@ fn command_help(command: &str) {
     println!("{}", doc);
 }
 
-/// Modulo de testes
-mod testes {
-    #[test]
-    /// Testa o exemplo hello world
-    fn exemplo_helloworld() {
-        use {interpreter, parser};
-        let mut env_params = interpreter::EnvironmentOptions::new();
-        env_params.set_verbose(true);
-        let mut env = interpreter::Environment::new(env_params);
-        env.interpret(parser::parse("exemplos/hello_world.birl"));
-        env.start_program();
-    }
-}
-
 fn main() {
     let params = get_params();
     let mut files: Vec<String> = vec![];
-    let mut env_params = interpreter::EnvironmentOptions::new();
+    let mut env_default_sect = String::from("SHOW"); // JAULA padrão do ponto de entrada do programa
     for p in params {
         match p {
             Param::PrintVersion => print_version(),
             Param::PrintHelp => print_help(),
             Param::CommandHelp(cmd) => command_help(&cmd),
-            Param::CustomInit(init) => env_params.set_default_section(init),
+            Param::CustomInit(init) => env_default_sect = init,
             Param::InputFile(file) => files.push(file),
-            Param::Verbose => env_params.set_verbose(true),
         }
     }
-    let mut environment = interpreter::Environment::new(env_params);
+    let mut environment = interpreter::Environment::new(env_default_sect);
     if files.len() > 0 {
         for file in files {
             environment.interpret(parser::parse(&file))
