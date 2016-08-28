@@ -31,24 +31,99 @@ impl Variable {
 pub enum Comparision {
     /// Igual
     Equals,
-    /// Diferente
-    NotEquals,
     /// Menor
     Less,
-    /// Menor ou igual
-    LessOrEquals,
     /// Maior
     More,
-    /// Maior ou igual
-    MoreOrEquals,
     /// Nenhum dos anteriores (valor inicial)
     None,
 }
 
-    /// Compara dois valores e retorna um resultado
-    fn compare(val1: value::Value, val2: value::Value) -> Comparision {
-        unimplemented!()
+/// Compara duas strings
+fn compare_str(str1: value::Value, str2: value::Value) -> Comparision {
+    if let value::Value::Str(value1) = str1 {
+        if let value::Value::Str(value2) = str2 {
+            let ret: Comparision = if value1 == value2 {
+                Comparision::Equals
+            } else if value1.len() < value2.len() {
+                Comparision::Less
+            }
+            else if value1 != value2 {
+                Comparision::None
+            } else {
+                Comparision::More
+            };
+            ret
+        } else {
+            error::abort("Comparação de string com outro tipo");
+            unreachable!()
+        }
+    } else {
+        unreachable!()
     }
+}
+
+/// Compara dois numeros
+fn compare_num(num1: value::Value, num2: value::Value) -> Comparision {
+    if let value::Value::Number(value1) = num1 {
+        if let value::Value::Number(value2) = num2 {
+            let ret: Comparision = if value1 == value2 {
+                Comparision::Equals
+            } else if value1 < value2 {
+                Comparision::Less
+            } else {
+                Comparision::More
+            };
+            ret
+        } else {
+            error::abort("Comparação de caractere com outro tipo");
+            unreachable!()
+        }
+    } else {
+        unreachable!()
+    }
+}
+
+/// Compara dois caracteres
+fn compare_char(c1: value::Value, c2: value::Value) -> Comparision {
+    if let value::Value::Char(value1) = c1 {
+        if let value::Value::Char(value2) = c2 {
+            let ret: Comparision = if value1 == value2 {
+                Comparision::Equals
+            } else if value1 < value2 {
+                Comparision::Less
+            } else {
+                Comparision::More
+            };
+            ret
+        } else {
+            error::abort("Comparação de caractere com outro tipo");
+            unreachable!()
+        }
+    } else {
+        unreachable!()
+    }
+}
+
+/// Compara dois valores e retorna um resultado
+fn compare(val1: value::Value, val2: value::Value) -> Comparision {
+    match val1 {
+        value::Value::Str(_) => compare_str(val1, val2),
+        value::Value::Number(_) => compare_num(val1, val2),
+        value::Value::Char(_) => compare_char(val1, val2),
+    }
+}
+
+/// Retorna o input da entrada padrão
+fn get_input() -> String {
+    use std::io;
+    let mut buffer = String::new();
+    match io::stdin().read_line(&mut buffer) {
+        Ok(_) => {},
+        Err(e) => error::abort(&format!("Erro ao ler a entrada padrão! \"{}\"", e)),
+    }
+    buffer.trim().to_string()
+}
 
 /// É o ambiente onde rodam os scripts BIRL
 pub struct Environment {
@@ -114,12 +189,12 @@ impl Environment {
 
     /// Modifica o valor de uma variavel
     pub fn mod_var(&mut self, var: &str, newval: value::Value) {
-        if self.variables.len() <= 0 {
-            error::abort(&format!("Variavel não encontrada: \"{}\"", var));
+        if self.variables.len() < 1 {
+            error::abort("Nenhuma variavel declarada!");
         }
         let (mut index, mut found) = (0, false);
         loop {
-            if index >= self.variables.len() - 1 {
+            if index >= self.variables.len() {
                 break;
             }
             let ref mut v = self.variables[index];
@@ -176,20 +251,88 @@ impl Environment {
         }
     }
 
+    /// Executa uma seção caso comparação dê not equals
+    fn command_cmp_neq(&mut self, sect: String) {
+        if let Comparision::More = self.last_cmp {
+            self.execute_section(&sect);
+        } else if let Comparision::None = self.last_cmp {
+            self.execute_section(&sect);   
+        }else if let Comparision::Less = self.last_cmp {
+            self.execute_section(&sect);
+        }
+    }
+
+    /// Menos/Menor
+    fn command_cmp_less(&mut self, sect: String) {
+        if let Comparision::Less = self.last_cmp {
+            self.execute_section(&sect);
+        }
+    }
+
+    /// Menos/Menor ou igual
+    fn command_cmp_lesseq(&mut self, sect: String) {
+        if let Comparision::Less = self.last_cmp {
+            self.execute_section(&sect);
+        } else if let Comparision::Equals = self.last_cmp {
+            self.execute_section(&sect);
+        }
+    }
+
+    /// Maior
+    fn command_cmp_more(&mut self, sect: String) {
+        if let Comparision::More = self.last_cmp {
+            self.execute_section(&sect);
+        }
+    }
+
+    /// Maior ou igual
+    fn command_cmp_moreeq(&mut self, sect: String) {
+        if let Comparision::More = self.last_cmp {
+            self.execute_section(&sect);
+        } else if let Comparision::Equals = self.last_cmp {
+            self.execute_section(&sect);
+        }
+    }
+
     /// Implementação do Print
-    fn command_print(&mut self, message: value::Value) {
-        print!("{}", message);
+    fn command_print(&mut self, messages: Vec<String>) {
+        for message in messages {
+            print!("{}", value::parse_expr(&message, self));
+        }
     }
 
     /// Implementação do Println
-    fn command_println(&mut self, message: value::Value) {
-        println!("{}", message);
+    fn command_println(&mut self, messages: Vec<String>) {
+        if messages.len() > 0 {
+            for msg in messages {
+                print!("{}", value::parse_expr(&msg, self));
+            }
+        }
+        println!("");
     }
 
     /// Quit
     fn command_quit(&mut self) {
         use std::process;
         process::exit(0);
+    }
+
+    /// Input
+    fn command_input(&mut self, var: String) {
+        let input = get_input();
+        let mut res = String::from("\"");
+        res.push_str(&input);
+        res.push('\"');
+        self.mod_var(&var, value::Value::Str(res));
+    }
+
+    /// Input upper
+    fn command_input_upper(&mut self, var: String) {
+        let input = get_input().to_uppercase();
+        let mut res = String::from("\"");
+        res.push_str(&input);
+        res.push('\"');
+        self.mod_var(&var, value::Value::Str(res));
     }
 
     /// Executa um comando
@@ -213,16 +356,25 @@ impl Environment {
                 self.command_cmp(val1, val2);
             }
             Command::CmpEq(sect) => self.command_cmp_eq(sect),
+            Command::CmpNEq(sect) => self.command_cmp_neq(sect),
+            Command::CmpLess(s) => self.command_cmp_less(s),
+            Command::CmpLessEq(s) => self.command_cmp_lesseq(s),
+            Command::CmpMore(s) => self.command_cmp_more(s),
+            Command::CmpMoreEq(s) => self.command_cmp_moreeq(s),
             Command::Print(msg) => {
-                let msg = value::parse_expr(&msg, self);
                 self.command_print(msg);
             }
             Command::Println(msg) => {
-                let msg = value::parse_expr(&msg, self);
                 self.command_println(msg);
             }
             Command::Quit => {
                 self.command_quit();
+            }
+            Command::Input(var) => {
+                self.command_input(var);
+            }
+            Command::InputUpper(var) => {
+                self.command_input_upper(var);
             }
         }
     }
