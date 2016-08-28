@@ -30,11 +30,11 @@ pub mod kw {
     /// Comparação resultou em diferente
     pub const KW_CMP_NEQ: &'static str = "NUM E ELE";
     /// Comparação resultou em menor
-    pub const KW_CMP_LESS: &'static str = "MENOR CUMPADE";
+    pub const KW_CMP_LESS: &'static str = "MENOR, CUMPADE";
     /// Comparação resultou em menor ou igual
     pub const KW_CMP_LESSEQ: &'static str = "MENOR OU E MEMO";
     /// Comparação resultou em maior
-    pub const KW_CMP_MORE: &'static str = "MAIOR CUMPADE";
+    pub const KW_CMP_MORE: &'static str = "MAIOR, CUMPADE";
     /// Comparação resultou em maior ou igual
     pub const KW_CMP_MOREEQ: &'static str = "MAIOR OU E MEMO";
     /// Printa com nova linha
