@@ -44,10 +44,10 @@ outros não. Optei por deixar o que fizesse ao menos o mínimo de sentido).
 ## Variáveis
 ```python
 JAULA SHOW
-  VEM: MONSTRO ; Declara variavel com o valor padrão, 0
-  VEM, PORRA: IBIRAPUERA, "BIRL" ; Declara IBIRAPUERA com valor "BIRL"
-  BORA: MONSTRO, 2 ; Da o valor 2 para MONSTRO
-  BORA: MONSTRO, MONSTRO * 2 ; Multiplica o valor de MONSTRO por 2
+  VEM: MONSTRO # Declara variavel com o valor padrão, 0
+  VEM, PORRA: IBIRAPUERA, "BIRL" # Declara IBIRAPUERA com valor "BIRL"
+  BORA: MONSTRO, 2 # Da o valor 2 para MONSTRO
+  BORA: MONSTRO, MONSTRO * 2 # Multiplica o valor de MONSTRO por 2
   CE QUER VER ESSA PORRA: "MONSTRO: ", MONSTRO, "IBIRAPUERA: " + IBIRAPUERA
 SAINDO DA JAULA
 ```
@@ -70,10 +70,10 @@ JAULA DIFERENTE
 SAINDO DA JAULA
 
 JAULA SHOW
-  É HORA DO: OUTRO ; Passa a execução pra OUTRO
+  E HORA DO: OUTRO # Passa a execução pra OUTRO
   VEM, PORRA: MUTANTE, "FIBRA"
-  É ELE QUE A GENTE QUER: MUTANTE, "AGUA COM MUSCULO" ; Compara MUTANTE com "AGUA COM MUSCULO"
-  NUM É ELE: DIFERENTE ; Caso seja diferente, execute DIFERENTE
+  E ELE QUE A GENTE QUER: MUTANTE, "AGUA COM MUSCULO" # Compara MUTANTE com "AGUA COM MUSCULO"
+  NUM E ELE: DIFERENTE # Caso seja diferente, execute DIFERENTE
 SAINDO DA JAULA
 ```
 
@@ -85,18 +85,18 @@ JAULA PRINT
  SAINDO DA JAULA
  
  JAULA FATORIAL
-  É ELE QUE A GENTE QUER: NUMERO, 1 # Compara NUMERO com 1
-  MENOR OU É MEMO: PRINT # Caso de igual, printe e saia
+  E ELE QUE A GENTE QUER: NUMERO, 1 # Compara NUMERO com 1
+  MENOR OU E MEMO: PRINT # Caso de igual, printe e saia
   BORA: NUMERO, NUMERO - 1 # Diminui o valor de 1
   BORA: RESULTADO, RESULTADO * NUMERO # Multiplica RESULTADO por NUMERO
-  É HORA DO: FATORIAL # Chama FATORIAL de novo
+  E HORA DO: FATORIAL # Chama FATORIAL de novo
  SAINDO DA JAULA
  
  JAULA SHOW
   VEM, PORRA: NUMERO, 3 # Declara NUMERO com valor 3
   CE QUER VER ESSA PORRA: "Calculando o fatorial de ", NUMERO
   VEM, PORRA: RESULTADO, NUMERO # Da o valor de NUMERO para RESULTADO
-  É HORA DO: FATORIAL # Chama fatorial
+  E HORA DO: FATORIAL # Chama fatorial
  SAINDO DA JAULA
 ```
 
@@ -111,10 +111,10 @@ JAULA OUTRO
 SAINDO DA JAULA
 
 JAULA SHOW
-    VEM: EMISSORA ; Cria variavel EMISSORA
-    BORA CUMPADE, PORRA: EMISSORA ; Guarda valor da entrada em EMISSORA com letras maiusculas
-    E ELE QUE A GENTE QUER: EMISSORA, "BANDEIRANTES" ; Compara com bandeirantes
-    E ELE MEMO: BANDEIRANTES ; Caso seja igual, execute bandeirantes
-    NUM E ELE: OUTRO ; Diferente? Execute outro
+    VEM: EMISSORA # Cria variavel EMISSORA
+    BORA CUMPADE, PORRA: EMISSORA # Guarda valor da entrada em EMISSORA com letras maiusculas
+    E ELE QUE A GENTE QUER: EMISSORA, "BANDEIRANTES" # Compara com bandeirantes
+    E ELE MEMO: BANDEIRANTES # Caso seja igual, execute bandeirantes
+    NUM E ELE: OUTRO # Diferente, execute outro
 SAINDO DA JAULA
 ```
