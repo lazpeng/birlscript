@@ -1,0 +1,15 @@
+JAULA BANDEIRANTES
+    CE QUER VER ESSA PORRA: "NÃO QUERO FALAR COM BANDEIRANTES"
+SAINDO DA JAULA
+
+JAULA OUTRO
+    CE QUER VER ESSA PORRA: "COM " + EMISSORA + " EU FALO"
+SAINDO DA JAULA
+
+JAULA SHOW
+    VEM: EMISSORA ; Cria variavel EMISSORA
+    BORA CUMPADE, PORRA: EMISSORA ; Guarda valor da entrada em EMISSORA com letras maiusculas
+    E ELE QUE A GENTE QUER: EMISSORA, "BANDEIRANTES" ; Compara com bandeirantes
+    E ELE MEMO: BANDEIRANTES ; Caso seja igual, execute bandeirantes
+    NUM E ELE: OUTRO ; Diferente? Execute outro
+SAINDO DA JAULA
