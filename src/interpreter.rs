@@ -41,7 +41,26 @@ pub enum Comparision {
 
 /// Compara duas strings
 fn compare_str(str1: value::Value, str2: value::Value) -> Comparision {
-    unimplemented!()
+    if let value::Value::Str(value1) = str1 {
+        if let value::Value::Str(value2) = str2 {
+            let ret: Comparision = if value1 == value2 {
+                Comparision::Equals
+            } else if value1.len() < value2.len() {
+                Comparision::Less
+            }
+            else if value1 != value2 {
+                Comparision::None
+            } else {
+                Comparision::More
+            };
+            ret
+        } else {
+            error::abort("Comparação de string com outro tipo");
+            unreachable!()
+        }
+    } else {
+        unreachable!()
+    }
 }
 
 /// Compara dois numeros
@@ -236,7 +255,9 @@ impl Environment {
     fn command_cmp_neq(&mut self, sect: String) {
         if let Comparision::More = self.last_cmp {
             self.execute_section(&sect);
-        } else if let Comparision::Less = self.last_cmp {
+        } else if let Comparision::None = self.last_cmp {
+            self.execute_section(&sect);   
+        }else if let Comparision::Less = self.last_cmp {
             self.execute_section(&sect);
         }
     }
