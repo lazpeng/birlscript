@@ -31,7 +31,7 @@ impl Value {
         let fmted = match self {
             &Value::Number(x) => format!("{}", x),
             &Value::Char(x) => format!("'{}'", x),
-            &Value::Str(ref x) => format!("{}", x),
+            &Value::Str(ref x) => format!("\"{}\"", x),
         };
         String::from(fmted)
     }
@@ -136,7 +136,7 @@ fn expr_type(expr: &str) -> ValueType {
         '\'' => ValueType::Char,
         '\"' => ValueType::Str,
         _ => {
-            error::abort(&format!("Tipo de expressão invalido. expressão: {}", expr));
+            error::abort(&format!("Tipo de expressão invalido. Expressão: {}", expr));
             unreachable!()
         }
     }
@@ -160,7 +160,7 @@ fn parse_char(expr: &str) -> Value {
         error::abort(&format!("Erro na expressão do caractere: Numero incorreto de expressões: \
                                {}",
                               expr.len()));
-        unreachable!() // abort aborta, então esse codigo não será executado
+        unreachable!() // abort, então esse codigo não será executado
     } else {
         Value::Char(chars.nth(1).unwrap())
     }
@@ -184,7 +184,9 @@ fn parse_str_tokenize(expr: &str) -> Vec<String> {
             }
             '\"' if !in_str => {
                 if !last_op {
-                    error::abort(&format!("No meio de duas strings so deve haver um operador! expr: {}", expr));
+                    error::abort(&format!("No meio de duas strings so deve haver um operador! \
+                                           expr: {}",
+                                          expr));
                 } else {
                     last_op = false;
                     in_str = true;
