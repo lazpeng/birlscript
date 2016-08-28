@@ -21,9 +21,9 @@ fn print_help() {
 }
 
 /// Versão numérica
-pub static BIRLSCRIPT_VERSION: &'static str = "0.9.0";
+pub static BIRLSCRIPT_VERSION: &'static str = "1.0.0";
 /// Release, como alfa, beta, etc
-pub static BIRLSCRIPT_RELEASE: &'static str = "PRÉ-BETA";
+pub static BIRLSCRIPT_RELEASE: &'static str = "BETA";
 
 /// Imprime a mensagem de versão
 fn print_version() {

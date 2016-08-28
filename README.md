@@ -12,7 +12,15 @@ de um comando para ver mais sobre ele, ou *-t* ou *--tudo-cumpade* para uma list
 
 Builds estarão disponiveis na pasta *bin* a partir da versão 1.x BETA, que estará funcional.
 
-## Versão 0.9.0 PRÉ-BETA
+## Versão 1.0.0 BETA
+
+## Builds:
+*Windows (64-bits): Disponível
+*Windows (32-bits): Em breve
+*Linux   (64-bits): Em breve
+*Linux   (32-bits): Em breve
+*OS X    (64-bits): Não disponível
+*OS X    (32-bits): Não disponível
 
 *Copyleft(ɔ) 2016 Rafael R Nakano. Nenhum direito reservado.*
 *Contato: lazpeng@gmail.com*
@@ -33,10 +41,56 @@ outros não. Optei por deixar o que fizesse ao menos o mínimo de sentido).
 
 # Exemplos
 
+## Variáveis
+```rust
+JAULA SHOW
+  VEM: MONSTRO ; Declara variavel com o valor padrão, 0
+  VEM, PORRA: IBIRAPUERA, "BIRL" ; Declara IBIRAPUERA com valor "BIRL"
+  BORA: MONSTRO, 2 ; Da o valor 2 para MONSTRO
+  BORA: MONSTRO, MONSTRO * 2 ; Multiplica o valor de MONSTRO por 2
+  CE QUER VER ESSA PORRA: "MONSTRO: ", MONSTRO, "IBIRAPUERA: " + IBIRAPUERA
+SAINDO DA JAULA
+```
+
 ## Hello world, cumpade!
 ```rust
 JAULA SHOW
   CE QUER VER ESSA PORRA: "BORA, " + CUMPADE + "!"
 SAINDO DA JAULA
 ```
-***mais exemplos em breve***
+
+## Seções e condicionais
+```rust
+JAULA OUTRO
+  CE QUER VER ESSA PORRA: "estou em outra"
+SAINDO DA JAULA
+
+JAULA DIFERENTE
+  CE QUER VER ESSA PORRA: "deu diferente"
+
+JAULA SHOW
+  É HORA DO: OUTRO ; Passa a execução pra OUTRO
+  VEM, PORRA: MUTANTE, "FIBRA"
+  É ELE QUE A GENTE QUER: MUTANTE, "AGUA COM MUSCULO" ; Compara MUTANTE com "AGUA COM MUSCULO"
+  NUM É ELE: DIFERENTE ; Caso seja diferente, execute DIFERENTE
+SAINDO DA JAULA
+```
+
+## Não quero falar com bandeirantes!
+```rust
+JAULA BANDEIRANTES
+    CE QUER VER ESSA PORRA: "NÃO QUERO FALAR COM BANDEIRANTES"
+SAINDO DA JAULA
+
+JAULA OUTRO
+    CE QUER VER ESSA PORRA: "COM " + EMISSORA + " EU FALO"
+SAINDO DA JAULA
+
+JAULA SHOW
+    VEM: EMISSORA ; Cria variavel EMISSORA
+    BORA CUMPADE, PORRA: EMISSORA ; Guarda valor da entrada em EMISSORA com letras maiusculas
+    E ELE QUE A GENTE QUER: EMISSORA, "BANDEIRANTES" ; Compara com bandeirantes
+    E ELE MEMO: BANDEIRANTES ; Caso seja igual, execute bandeirantes
+    NUM E ELE: OUTRO ; Diferente? Execute outro
+SAINDO DA JAULA
+```

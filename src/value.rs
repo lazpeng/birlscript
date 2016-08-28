@@ -46,8 +46,8 @@ fn expand_syms(expr: &mut String, env: &mut Environment) {
         let mut is_str = false;
         // Se o ultimo caractere foi de escape
         let mut last_escape = false;
-        // O ultimo simbolo e se esta no meio de um simbolo
-        let (mut sym, mut is_sym) = (String::new(), false);
+        // O ultimo simbolo, se esta no meio de um simbolo e se esta no meio de um caractere
+        let (mut sym, mut is_sym, mut is_char) = (String::new(), false, false);
         // A nova string
         let mut newexpr = String::new();
         for c in expr.chars() {
@@ -55,7 +55,7 @@ fn expand_syms(expr: &mut String, env: &mut Environment) {
                 match c {
                     ' ' | '+' | '-' | '/' | '*' | '&' | '|' | '%' => {
                         is_sym = false;
-                        let var: Variable = match env.get_var(&sym) {
+                        let var = match env.get_var(&sym) {
                             None => {
                                 error::abort(&format!("Simbolo \"{}\" não reconhecido.", sym));
                                 unreachable!()
@@ -63,6 +63,7 @@ fn expand_syms(expr: &mut String, env: &mut Environment) {
                             Some(v) => v,
                         };
                         newexpr.push_str(&var.value.as_str());
+                        newexpr.push(c);
                         sym.clear();
                     }
                     _ => sym.push(c),
@@ -79,11 +80,12 @@ fn expand_syms(expr: &mut String, env: &mut Environment) {
                     '\\' if is_str => {
                         last_escape = !last_escape;
                     }
-                    'a'...'z' | 'A'...'Z' | '_' if !is_str => {
+                    'a'...'z' | 'A'...'Z' | '_' if !is_str && !is_char => {
                         is_sym = true;
                         sym.push(c);
                         continue;
                     }
+                    '\'' if !is_str => is_char = !is_char,
                     _ => {}
                 }
                 newexpr.push(c);
@@ -134,7 +136,7 @@ fn expr_type(expr: &str) -> ValueType {
         '\'' => ValueType::Char,
         '\"' => ValueType::Str,
         _ => {
-            error::abort("Tipo de expressão invalido.");
+            error::abort(&format!("Tipo de expressão invalido. expressão: {}", expr));
             unreachable!()
         }
     }
@@ -142,6 +144,9 @@ fn expr_type(expr: &str) -> ValueType {
 
 /// Faz parsing de um numero
 fn parse_num(expr: &str) -> Value {
+    if expr.contains('\"') || expr.contains('\'') {
+        error::abort("Uma expressão com números não deve conter strings ou caracteres");
+    }
     let res: f64 = meval::eval_str(expr).unwrap();
     Value::Number(res)
 }
@@ -149,11 +154,12 @@ fn parse_num(expr: &str) -> Value {
 /// Faz parsing do valor de um caractere
 fn parse_char(expr: &str) -> Value {
     // Numa expressão que possui apenas um caractere, nenhum operador é permitido
-    let mut chars = expr.chars();
+    let mut chars = expr.trim().chars();
     if expr.len() != 3 {
         // Um para o ', o valor e outro '
-        error::abort(&format!("Erro na expressão do caractere: Numero incorreto de expressões: {}",
-               expr.len()));
+        error::abort(&format!("Erro na expressão do caractere: Numero incorreto de expressões: \
+                               {}",
+                              expr.len()));
         unreachable!() // abort aborta, então esse codigo não será executado
     } else {
         Value::Char(chars.nth(1).unwrap())
@@ -178,7 +184,7 @@ fn parse_str_tokenize(expr: &str) -> Vec<String> {
             }
             '\"' if !in_str => {
                 if !last_op {
-                    error::abort("No meio de duas strings so deve haver um operador!");
+                    error::abort(&format!("No meio de duas strings so deve haver um operador! expr: {}", expr));
                 } else {
                     last_op = false;
                     in_str = true;
@@ -189,7 +195,7 @@ fn parse_str_tokenize(expr: &str) -> Vec<String> {
             '\'' if !in_str && !in_char => {
                 // Caractere
                 if !last_op {
-                    error::abort("No meio de duas strings so deve haver um operador!");
+                    error::abort("No meio de uma string e um caractere so deve haver um operador!");
                 }
                 in_char = true;
                 index += 1;
@@ -202,10 +208,13 @@ fn parse_str_tokenize(expr: &str) -> Vec<String> {
                 last_op = true;
             }
             '-' | '*' | '/' if !in_str => {
-                error::abort(&format!("Operador {} não permitido em strings!", c));
+                error::abort(&format!("O operador {} não é permitido em strings!", c));
             }
             _ if in_char => {
                 tokens[index].push(c);
+            }
+            '0'...'9' if !in_str && !in_char => {
+                error::abort("Números não devem ser usados em operações com strings ou caracteres");
             }
             _ if !in_str => {} // Pula outros caracteres se de fora de uma string
             _ => tokens[index].push(c),
