@@ -20,31 +20,33 @@ pub mod kw {
     /// Declara uma variável
     pub const KW_DECL: &'static str = "VEM";
     /// Declara uma variável com um valor
-    pub const KW_DECLWV: &'static str = "VEM PORRA";
+    pub const KW_DECLWV: &'static str = "VEM, PORRA";
     /// Realiza um "pulo" de uma seção para outra
     pub const KW_JUMP: &'static str = "E HORA DO";
     /// Comparação
     pub const KW_CMP: &'static str = "E ELE QUE A GENTE QUER";
     /// Comparação resultou em igual
     pub const KW_CMP_EQ: &'static str = "E ELE MEMO";
+    /// Comparação resultou em diferente
+    pub const KW_CMP_NEQ: &'static str = "NUM E ELE";
+    /// Comparação resultou em menor
+    pub const KW_CMP_LESS: &'static str = "MENOR CUMPADE";
+    /// Comparação resultou em menor ou igual
+    pub const KW_CMP_LESSEQ: &'static str = "MENOR OU E MEMO";
+    /// Comparação resultou em maior
+    pub const KW_CMP_MORE: &'static str = "MAIOR CUMPADE";
+    /// Comparação resultou em maior ou igual
+    pub const KW_CMP_MOREEQ: &'static str = "MAIOR OU E MEMO";
     /// Printa com nova linha
     pub const KW_PRINTLN: &'static str = "CE QUER VER ESSA PORRA";
     /// Printa
     pub const KW_PRINT: &'static str = "CE QUER VER";
     /// Sai do programa
     pub const KW_QUIT: &'static str = "BIRL";
-}
-
-#[cfg(target_pointer_width = "32")]
-mod types {
-    pub type MaxInt = i32;
-    pub type MaxFlt = f32;
-}
-
-#[cfg(target_pointer_width = "64")]
-mod types {
-    pub type MaxInt = i64;
-    pub type MaxFlt = f64;
+    /// Pega uma string da entrada padrão
+    pub const KW_INPUT: &'static str = "BORA CUMPADE";
+    /// Pega uma string da entrada padrão com letras maiusculas
+    pub const KW_INPUT_UP: &'static str = "BORA CUMPADE, PORRA";
 }
 
 #[derive(Clone)]
@@ -65,12 +67,26 @@ pub enum Command {
     Cmp(String, String),
     /// Executa seção a caso ultima comparação seja igual
     CmpEq(String),
-    /// Printa o valor a com uma nova linha em seguida
-    Println(String),
-    /// Printa o valor a
-    Print(String),
+    /// Executa seção caso a ultima comparação seja diferente
+    CmpNEq(String),
+    /// Executa a seção caso a ultima comparação seja menor
+    CmpLess(String),
+    /// Executa a seção caso a ultima comparação seja menor ou igual
+    CmpLessEq(String),
+    /// Executa a seção caso a ultima comparação seja maior
+    CmpMore(String),
+    /// Executa a seção caso a ultima comparação seja maior ou igual
+    CmpMoreEq(String),
+    /// Printa uma série de valores com uma nova linha em seguida
+    Println(Vec<String>),
+    /// Printa uma série de valores
+    Print(Vec<String>),
     /// Sai do programa
     Quit,
+    /// Le a entrada padrão pra uma variavel
+    Input(String),
+    /// Le a entrada padrão e retorna um uppercase
+    InputUpper(String),
 }
 
 // Por algum motivo, o compilador acusa Quit como dead_code :/
@@ -84,9 +100,16 @@ pub enum CommandType {
     Jump,
     Cmp,
     CmpEq,
+    CmpNEq,
+    CmpLess,
+    CmpLessEq,
+    CmpMore,
+    CmpMoreEq,
     Println,
     Print,
     Quit,
+    Input,
+    InputUpper,
 }
 
 /// Procura pelo caractere c em src e retorna quantas vezes ele foi encontrado
@@ -139,14 +162,32 @@ fn check_n_params(command: CommandType, num_params: usize) {
     let (expected, id) = match command {
         CommandType::Cmp => (2, kw::KW_CMP),
         CommandType::CmpEq => (1, kw::KW_CMP_EQ),
+        CommandType::CmpNEq => (1, kw::KW_CMP_NEQ),
+        CommandType::CmpLess => (1, kw::KW_CMP_LESS),
+        CommandType::CmpLessEq => (1, kw::KW_CMP_LESSEQ),
+        CommandType::CmpMore => (1, kw::KW_CMP_MORE),
+        CommandType::CmpMoreEq => (1, kw::KW_CMP_MOREEQ),
         CommandType::Jump => (1, kw::KW_JUMP),
         CommandType::DeclWV => (2, kw::KW_DECLWV),
         CommandType::Decl => (1, kw::KW_DECL),
         CommandType::Clear => (1, kw::KW_CLEAR),
         CommandType::Move => (2, kw::KW_MOVE),
-        CommandType::Println => (1, kw::KW_PRINTLN),
-        CommandType::Print => (1, kw::KW_PRINT),
-        CommandType::Quit => (0, kw::KW_QUIT)
+        // No caso do print e println, eles aceitam mais de um argumento, então faça uma checagem adicional
+        CommandType::Println => {
+            // No caso do println, ele pode ser usado sem um argumento, assim printando apenas uma nova linha
+            (num_params, kw::KW_PRINTLN)
+        }
+        CommandType::Print => {
+            // Print não
+            if num_params < 1 {
+                (1, kw::KW_PRINT)
+            } else {
+                (num_params, kw::KW_PRINTLN)
+            }   
+        }
+        CommandType::Quit => (0, kw::KW_QUIT),
+        CommandType::Input => (1, kw::KW_INPUT),
+        CommandType::InputUpper => (1, kw::KW_INPUT_UP),
     };
     if expected != num_params {
         error::abort(&format!("\"{}\" espera {} parametros, porém {} foram passados.",
@@ -156,22 +197,92 @@ fn check_n_params(command: CommandType, num_params: usize) {
     }
 }
 
+fn split_arguments(args: String) -> Vec<String> {
+    if args == "" {
+        vec![]
+    } else {
+        let mut result: Vec<String> = vec![];
+        let (mut in_str, mut in_char, mut last_escape) = (false, false, false);
+        let mut last_arg = String::new();
+        for c in args.chars() {
+            match c {
+                '\"' if in_str => {
+                    if last_escape {
+                        last_escape = false;
+                        last_arg.push_str("\\\"");
+                    } else {
+                        in_str = false;
+                        last_arg.push('\"');
+                    }
+                }
+                '\"' => {
+                    in_str = true;
+                    last_arg.push('\"');
+                }
+                '\'' => {
+                    last_arg.push(c);
+                    if !in_str {
+                        in_char = !in_char;
+                    }
+                }
+                '\\' => {
+                    if last_escape {
+                        last_arg.push('\\');
+                        last_escape = false;
+                    } else {
+                        last_escape = true;
+                    }
+                }
+                ',' if !in_str && !in_char => {
+                    result.push(last_arg.clone());
+                    last_arg.clear();
+                }
+                ' ' if !in_str && !in_char => {}
+                _ => last_arg.push(c),
+            }
+        }
+        if last_arg != "" {
+            result.push(last_arg.clone());
+        }
+        result.iter().map(|arg| arg.trim().to_string()).collect::<Vec<String>>()
+    }
+}
+
+fn split_command(cmd: String) -> Vec<String> {
+    let mut has_args = true; // Se o comando possui argumentos
+    let index = match cmd.find(':') {
+        Some(i) => i,
+        None => {
+            has_args = false;
+            cmd.len()
+        }
+    };
+    let cmd_name = &cmd[..index];
+    let cmd_args: &str = if has_args {
+        &cmd[index+1..]
+    } else {
+        ""
+    };
+    vec![cmd_name.to_string(), cmd_args.to_string()]
+}
+
 /// Faz parsing de um comando
 fn parse_cmd(cmd: &str) -> Command {
     // Estrutura de um comando:
     // COMANDO: var1, var2, ...
-    let cmd_parts = cmd.split(':').map(|x| x.trim()).collect::<Vec<&str>>();
+    let cmd_parts = split_command(cmd.to_string());
+    let cmd_parts = cmd_parts.iter().map(|part| part.trim()).collect::<Vec<&str>>();
     // argumentos
-    let mut arguments: Vec<&str> = Vec::new();
+    let mut arguments: Vec<String> = Vec::new();
     // Tipo/nome do comando
     let cmd_type = if cmd_parts.len() > 1 {
         if n_of_char(',', cmd_parts[1]) == 0 {
             if cmd_parts[1].trim() != "" {
                 // Um argumento
-                arguments.push(cmd_parts[1].trim());
+                arguments.push(cmd_parts[1].trim().to_string());
             }
         } else {
-            arguments = cmd_parts[1].split(',').map(|arg| arg.trim()).collect();
+            arguments = split_arguments(cmd_parts[1].trim().to_string());
         }
         cmd_parts[0]
     } else {
@@ -180,44 +291,75 @@ fn parse_cmd(cmd: &str) -> Command {
     let cmd: Command = match cmd_type {
         kw::KW_MOVE => {
             check_n_params(CommandType::Move, arguments.len());
-            let (addr1, addr2) = (String::from(arguments[0]), String::from(arguments[1]));
+            let (addr1, addr2) = (arguments[0].clone(), arguments[1].clone());
             Command::Move(addr1, addr2)
         }
         kw::KW_CLEAR => {
             check_n_params(CommandType::Clear, arguments.len());
-            Command::Clear(String::from(arguments[0]))
+            Command::Clear(arguments[0].clone())
         }
         kw::KW_DECL => {
             check_n_params(CommandType::Decl, arguments.len());
-            Command::Decl(String::from(arguments[0]))
+            Command::Decl(arguments[0].clone())
         }
         kw::KW_DECLWV => {
             check_n_params(CommandType::DeclWV, arguments.len());
-            let (name, val) = (String::from(arguments[0]), String::from(arguments[1]));
+            let (name, val) = (arguments[0].clone(), arguments[1].clone());
             Command::DeclWV(name, val)
         }
         kw::KW_JUMP => {
             check_n_params(CommandType::Jump, arguments.len());
-            Command::Jump(String::from(arguments[0]))
+            Command::Jump(arguments[0].clone())
         }
         kw::KW_CMP => {
             check_n_params(CommandType::Cmp, arguments.len());
-            let (addr1, addr2) = (String::from(arguments[0]), String::from(arguments[1]));
+            let (addr1, addr2) = (arguments[0].clone(), arguments[1].clone());
             Command::Cmp(addr1, addr2)
         }
         kw::KW_CMP_EQ => {
             check_n_params(CommandType::CmpEq, arguments.len());
             Command::CmpEq(arguments[0].to_string())
         }
+        kw::KW_CMP_NEQ => {
+            check_n_params(CommandType::CmpNEq, arguments.len());
+            Command::CmpNEq(arguments[0].to_string())
+        }
+        kw::KW_CMP_LESS => {
+            check_n_params(CommandType::CmpLess, arguments.len());
+            Command::CmpLess(arguments[0].to_string())
+        }
+        kw::KW_CMP_LESSEQ => {
+            check_n_params(CommandType::CmpLessEq, arguments.len());
+            Command::CmpLessEq(arguments[0].to_string())
+        }
+        kw::KW_CMP_MORE => {
+            check_n_params(CommandType::CmpMore, arguments.len());
+            Command::CmpMore(arguments[0].to_string())
+        }
+        kw::KW_CMP_MOREEQ => {
+            check_n_params(CommandType::CmpMoreEq, arguments.len());
+            Command::CmpMoreEq(arguments[0].to_string())
+        }
         kw::KW_PRINTLN => {
             check_n_params(CommandType::Println, arguments.len());
-            Command::Println(String::from(arguments[0]))
+            Command::Println(arguments.iter().map(|arg| arg.to_string()).collect::<Vec<String>>())
         }
         kw::KW_PRINT => {
             check_n_params(CommandType::Print, arguments.len());
-            Command::Print(String::from(arguments[0]))
+            Command::Print(arguments.iter().map(|arg| arg.to_string()).collect::<Vec<String>>())
         }
-        kw::KW_QUIT => Command::Quit,
+        kw::KW_QUIT => {
+            check_n_params(CommandType::Quit, arguments.len());
+            Command::Quit
+        }
+        kw::KW_INPUT => {
+            check_n_params(CommandType::Input, arguments.len());
+            Command::Input(arguments[0].to_string())
+        }
+        kw::KW_INPUT_UP => {
+            check_n_params(CommandType::InputUpper, arguments.len());
+            Command::InputUpper(arguments[0].to_string())
+        }
         _ => {
             error::abort(&format!("Comando \"{}\" não existe.", cmd_type));
             unreachable!()
