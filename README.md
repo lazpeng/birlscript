@@ -15,12 +15,12 @@ Builds estarão disponiveis na pasta *bin* a partir da versão 1.x BETA, que est
 ## Versão 1.0.0 BETA
 
 ## Builds:
-*Windows (64-bits): Disponível
-*Windows (32-bits): Em breve
-*Linux   (64-bits): Em breve
-*Linux   (32-bits): Em breve
-*OS X    (64-bits): Não disponível
-*OS X    (32-bits): Não disponível
+* Windows (64-bits): Disponível
+* Windows (32-bits): Em breve
+* Linux   (64-bits): Disponível
+* Linux   (32-bits): Em breve
+* OS X    (64-bits): Não disponível
+* OS X    (32-bits): Não disponível
 
 *Copyleft(ɔ) 2016 Rafael R Nakano. Nenhum direito reservado.*
 *Contato: lazpeng@gmail.com*
@@ -42,7 +42,7 @@ outros não. Optei por deixar o que fizesse ao menos o mínimo de sentido).
 # Exemplos
 
 ## Variáveis
-```rust
+```python
 JAULA SHOW
   VEM: MONSTRO ; Declara variavel com o valor padrão, 0
   VEM, PORRA: IBIRAPUERA, "BIRL" ; Declara IBIRAPUERA com valor "BIRL"
@@ -53,20 +53,21 @@ SAINDO DA JAULA
 ```
 
 ## Hello world, cumpade!
-```rust
+```python
 JAULA SHOW
   CE QUER VER ESSA PORRA: "BORA, " + CUMPADE + "!"
 SAINDO DA JAULA
 ```
 
 ## Seções e condicionais
-```rust
+```python
 JAULA OUTRO
   CE QUER VER ESSA PORRA: "estou em outra"
 SAINDO DA JAULA
 
 JAULA DIFERENTE
   CE QUER VER ESSA PORRA: "deu diferente"
+SAINDO DA JAULA
 
 JAULA SHOW
   É HORA DO: OUTRO ; Passa a execução pra OUTRO
@@ -76,8 +77,31 @@ JAULA SHOW
 SAINDO DA JAULA
 ```
 
+## Fatorial
+```python
+JAULA PRINT
+  CE QUER VER ESSA PORRA: RESULTADO # Printa o resultado
+  BIRL # Sai
+ SAINDO DA JAULA
+ 
+ JAULA FATORIAL
+  É ELE QUE A GENTE QUER: NUMERO, 1 # Compara NUMERO com 1
+  MENOR OU É MEMO: PRINT # Caso de igual, printe e saia
+  BORA: NUMERO, NUMERO - 1 # Diminui o valor de 1
+  BORA: RESULTADO, RESULTADO * NUMERO # Multiplica RESULTADO por NUMERO
+  É HORA DO: FATORIAL # Chama FATORIAL de novo
+ SAINDO DA JAULA
+ 
+ JAULA SHOW
+  VEM, PORRA: NUMERO, 3 # Declara NUMERO com valor 3
+  CE QUER VER ESSA PORRA: "Calculando o fatorial de ", NUMERO
+  VEM, PORRA: RESULTADO, NUMERO # Da o valor de NUMERO para RESULTADO
+  É HORA DO: FATORIAL # Chama fatorial
+ SAINDO DA JAULA
+```
+
 ## Não quero falar com bandeirantes!
-```rust
+```python
 JAULA BANDEIRANTES
     CE QUER VER ESSA PORRA: "NÃO QUERO FALAR COM BANDEIRANTES"
 SAINDO DA JAULA
