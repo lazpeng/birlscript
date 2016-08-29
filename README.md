@@ -10,9 +10,7 @@ Use o interpretador com a flag *-a* ou *--ajuda-o-maluco-ta-doente* para ver uma
 de opções que podem ser passadas. Use *-e* ou *--ele-que-a-gente-quer* junto com o nome
 de um comando para ver mais sobre ele, ou *-t* ou *--tudo-cumpade* para uma lista de comandos.
 
-Builds estarão disponiveis na pasta *bin* a partir da versão 1.x BETA, que estará funcional.
-
-## Versão 1.0.0 BETA
+## Versão 1.0.0
 
 ## Builds:
 * Windows (64-bits): Disponível
@@ -83,7 +81,7 @@ JAULA PRINT
   CE QUER VER ESSA PORRA: RESULTADO # Printa o resultado
   BIRL # Sai
  SAINDO DA JAULA
- 
+
  JAULA FATORIAL
   E ELE QUE A GENTE QUER: NUMERO, 1 # Compara NUMERO com 1
   MENOR OU E MEMO: PRINT # Caso de igual, printe e saia
@@ -91,7 +89,7 @@ JAULA PRINT
   BORA: RESULTADO, RESULTADO * NUMERO # Multiplica RESULTADO por NUMERO
   E HORA DO: FATORIAL # Chama FATORIAL de novo
  SAINDO DA JAULA
- 
+
  JAULA SHOW
   VEM, PORRA: NUMERO, 3 # Declara NUMERO com valor 3
   CE QUER VER ESSA PORRA: "Calculando o fatorial de ", NUMERO
