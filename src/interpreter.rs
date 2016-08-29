@@ -16,7 +16,6 @@ pub struct Variable {
 }
 
 impl Variable {
-
     /// Cria uma variavel com uma serie de informações
     fn from(vid: String, val: value::Value, is_const: bool) -> Variable {
         Variable {
@@ -47,8 +46,7 @@ fn compare_str(str1: value::Value, str2: value::Value) -> Comparision {
                 Comparision::Equals
             } else if value1.len() < value2.len() {
                 Comparision::Less
-            }
-            else if value1 != value2 {
+            } else if value1 != value2 {
                 Comparision::None
             } else {
                 Comparision::More
@@ -119,7 +117,7 @@ fn get_input() -> String {
     use std::io;
     let mut buffer = String::new();
     match io::stdin().read_line(&mut buffer) {
-        Ok(_) => {},
+        Ok(_) => {}
         Err(e) => error::abort(&format!("Erro ao ler a entrada padrão! \"{}\"", e)),
     }
     buffer.trim().to_string()
@@ -134,7 +132,7 @@ pub struct Environment {
     /// Ponto de entrada para o programa
     entry: String,
     /// O resultado da ultima Comparação
-    last_cmp: Comparision
+    last_cmp: Comparision,
 }
 
 impl Environment {
@@ -160,10 +158,22 @@ impl Environment {
         self.variables.push(var);
     }
 
+    /// Remove a declração de variaveis quando se encerra a execução de uma seção
+    fn undeclare_vars(&mut self, declared: usize) {
+        if self.variables.len() >= declared {
+            for _ in 0..declared {
+                // Joga fora a ultima variavel alocada
+                self.variables.pop();
+            }
+        }
+    }
+
     /// Interpreta uma unidade sem executá-la
     pub fn interpret(&mut self, file: parser::Unit) {
         for const_var in file.consts {
-            let var = Variable::from(const_var.identifier, value::parse_expr(&const_var.value, self), true);
+            let var = Variable::from(const_var.identifier,
+                                     value::parse_expr(&const_var.value, self),
+                                     true);
             self.declare_var(var);
         }
         for sect in file.sects {
@@ -223,9 +233,10 @@ impl Environment {
     }
 
     /// Declara uma variavel com o valor padrão
-    fn command_decl(&mut self, name: String) {
+    fn command_decl(&mut self, name: String, declared_vars: &mut u32) {
         let var = Variable::from(name, value::Value::Number(0.0), false);
         self.declare_var(var);
+        *declared_vars += 1;
     }
 
     /// Declara uma variavel com um valor padrão
@@ -256,8 +267,8 @@ impl Environment {
         if let Comparision::More = self.last_cmp {
             self.execute_section(&sect);
         } else if let Comparision::None = self.last_cmp {
-            self.execute_section(&sect);   
-        }else if let Comparision::Less = self.last_cmp {
+            self.execute_section(&sect);
+        } else if let Comparision::Less = self.last_cmp {
             self.execute_section(&sect);
         }
     }
@@ -336,7 +347,7 @@ impl Environment {
     }
 
     /// Executa um comando
-    fn execute_command(&mut self, cmd: parser::Command) {
+    fn execute_command(&mut self, cmd: parser::Command, declared_vars: &mut u32) {
         use parser::Command;
         match cmd {
             Command::Move(trg, val) => {
@@ -344,7 +355,7 @@ impl Environment {
                 self.command_move(trg, val);
             }
             Command::Clear(trg) => self.command_clear(trg),
-            Command::Decl(trg) => self.command_decl(trg),
+            Command::Decl(trg) => self.command_decl(trg, declared_vars),
             Command::DeclWV(trg, val) => {
                 let val = value::parse_expr(&val, self);
                 self.command_declwv(trg, val);
@@ -393,9 +404,12 @@ impl Environment {
         if !found {
             error::abort(&format!("Seção não encontrada: \"{}\".", sect_name));
         } else {
+            // Numero de variaveis declaradas
+            let mut declared = 0u32;
             for cmd in section.lines {
-                self.execute_command(cmd);
+                self.execute_command(cmd, &mut declared);
             }
+            self.undeclare_vars(declared as usize);
         }
     }
 
@@ -409,11 +423,10 @@ impl Environment {
         } else {
             "USER"
         };
-        let mut var_cumpade: String = String::from("\"") + &(match env::var(user_varenv) {
+        let var_cumpade: String = match env::var(user_varenv) {
             Ok(usr) => usr,
             Err(_) => var_names[0].to_string(), // CUMPADE
-        });
-        var_cumpade.push('\"');
+        };
         let var_values = vec![value::Value::Str(var_cumpade.to_uppercase()),
                               value::Value::Number(1.0),
                               value::Value::Str(String::from("BAMBAM"))];

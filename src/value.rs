@@ -3,12 +3,18 @@
 /// Biblioteca do parser de expressões
 extern crate meval;
 
-// O parsing de expressões deve ocorrer em tempo de execução para que se faça uso das variaveis
+mod arch {
+    #[cfg(target_pointer_width = "32")]
+    pub type MaxNum = f32;
+
+    #[cfg(target_pointer_width = "64")]
+    pub type MaxNum = f64;
+}
 
 /// Resultado de uma expressão
 #[derive(Clone)]
 pub enum Value {
-    Number(f64),
+    Number(arch::MaxNum),
     Char(char),
     Str(String),
 }
@@ -31,7 +37,7 @@ impl Value {
         let fmted = match self {
             &Value::Number(x) => format!("{}", x),
             &Value::Char(x) => format!("'{}'", x),
-            &Value::Str(ref x) => format!("{}", x),
+            &Value::Str(ref x) => format!("\"{}\"", x),
         };
         String::from(fmted)
     }
@@ -136,7 +142,7 @@ fn expr_type(expr: &str) -> ValueType {
         '\'' => ValueType::Char,
         '\"' => ValueType::Str,
         _ => {
-            error::abort(&format!("Tipo de expressão invalido. expressão: {}", expr));
+            error::abort(&format!("Tipo de expressão invalido. Expressão: {}", expr));
             unreachable!()
         }
     }
@@ -147,7 +153,7 @@ fn parse_num(expr: &str) -> Value {
     if expr.contains('\"') || expr.contains('\'') {
         error::abort("Uma expressão com números não deve conter strings ou caracteres");
     }
-    let res: f64 = meval::eval_str(expr).unwrap();
+    let res: arch::MaxNum = meval::eval_str(expr).unwrap();
     Value::Number(res)
 }
 
@@ -160,7 +166,7 @@ fn parse_char(expr: &str) -> Value {
         error::abort(&format!("Erro na expressão do caractere: Numero incorreto de expressões: \
                                {}",
                               expr.len()));
-        unreachable!() // abort aborta, então esse codigo não será executado
+        unreachable!() // abort, então esse codigo não será executado
     } else {
         Value::Char(chars.nth(1).unwrap())
     }
@@ -184,7 +190,9 @@ fn parse_str_tokenize(expr: &str) -> Vec<String> {
             }
             '\"' if !in_str => {
                 if !last_op {
-                    error::abort(&format!("No meio de duas strings so deve haver um operador! expr: {}", expr));
+                    error::abort(&format!("No meio de duas strings so deve haver um operador! \
+                                           expr: {}",
+                                          expr));
                 } else {
                     last_op = false;
                     in_str = true;

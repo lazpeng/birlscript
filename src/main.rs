@@ -16,21 +16,18 @@ fn print_help() {
     println!("\t-v ou --vers[ã ou a]o-dessa-porra      : Imprime a versão do programa");
     println!("\t-e ou --ele-que-a-gente-quer [comando] : Imprime uma mensagem de ajuda para o \
               comando");
+    println!("\t-t ou --tudo-cumpade                   : Imprime todos os comandos disponíveis");
     println!("\t-j ou --jaula [nome]                   : Diz ao interpretador pra usar outro \
               ponto de partida. Padrão: SHOW");
 }
 
 /// Versão numérica
 pub static BIRLSCRIPT_VERSION: &'static str = "1.0.0";
-/// Release, como alfa, beta, etc
-pub static BIRLSCRIPT_RELEASE: &'static str = "BETA";
 
 /// Imprime a mensagem de versão
 fn print_version() {
     println!("Versão dessa porra, cumpade:");
-    println!("Interpretador BIRLSCRIPT v{} - {}",
-             BIRLSCRIPT_VERSION,
-             BIRLSCRIPT_RELEASE);
+    println!("Interpretador BIRLSCRIPT v{}", BIRLSCRIPT_VERSION);
     println!("Copyleft(ɔ) 2016 Rafael R Nakano - Nenhum direito reservado");
 }
 
@@ -46,6 +43,8 @@ enum Param {
     CustomInit(String),
     /// Arquivo passado para interpretação
     InputFile(String),
+    /// Mostra todos os comandos disponiveis
+    ShowCmds,
 }
 
 /// Faz parsing dos comandos passados e retorna uma lista deles
@@ -85,6 +84,7 @@ fn get_params() -> Vec<Param> {
                     };
                     ret.push(Param::CommandHelp(cmd));
                 }
+                "-t" | "--tudo-cumpade" => ret.push(Param::ShowCmds),
                 "-j" | "--jaula" => {
                     next_is_val = true;
                     let section = match params.next() {
@@ -122,6 +122,33 @@ fn command_help(command: &str) {
     println!("{}", doc);
 }
 
+/// Imprime na tela todos os comandos disponíveis
+fn show_cmds() {
+    println!("Todos os comandos BIRL!");
+    use parser::kw::*;
+    let commands = vec![KW_MOVE,
+                        KW_CLEAR,
+                        KW_CMP,
+                        KW_CMP_EQ,
+                        KW_CMP_NEQ,
+                        KW_CMP_LESS,
+                        KW_CMP_LESSEQ,
+                        KW_CMP_MORE,
+                        KW_CMP_MOREEQ,
+                        KW_DECL,
+                        KW_DECLWV,
+                        KW_JUMP,
+                        KW_PRINT,
+                        KW_PRINTLN,
+                        KW_QUIT,
+                        KW_INPUT,
+                        KW_INPUT,
+                        KW_INPUT_UP];
+    for cmd in &commands {
+        println!("{}", cmd);
+    }
+}
+
 fn main() {
     let params = get_params();
     let mut files: Vec<String> = vec![];
@@ -133,6 +160,7 @@ fn main() {
             Param::CommandHelp(cmd) => command_help(&cmd),
             Param::CustomInit(init) => env_default_sect = init,
             Param::InputFile(file) => files.push(file),
+            Param::ShowCmds => show_cmds(),
         }
     }
     let mut environment = interpreter::Environment::new(env_default_sect);
