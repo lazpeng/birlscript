@@ -23,15 +23,11 @@ fn print_help() {
 
 /// Versão numérica
 pub static BIRLSCRIPT_VERSION: &'static str = "1.0.0";
-/// Release, como alfa, beta, etc
-pub static BIRLSCRIPT_RELEASE: &'static str = "BETA";
 
 /// Imprime a mensagem de versão
 fn print_version() {
     println!("Versão dessa porra, cumpade:");
-    println!("Interpretador BIRLSCRIPT v{} - {}",
-             BIRLSCRIPT_VERSION,
-             BIRLSCRIPT_RELEASE);
+    println!("Interpretador BIRLSCRIPT v{}", BIRLSCRIPT_VERSION);
     println!("Copyleft(ɔ) 2016 Rafael R Nakano - Nenhum direito reservado");
 }
 
