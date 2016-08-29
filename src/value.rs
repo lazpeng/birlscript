@@ -3,12 +3,18 @@
 /// Biblioteca do parser de expressões
 extern crate meval;
 
-// O parsing de expressões deve ocorrer em tempo de execução para que se faça uso das variaveis
+mod arch {
+    #[cfg(target_pointer_width = "32")]
+    pub type MaxNum = f32;
+
+    #[cfg(target_pointer_width = "64")]
+    pub type MaxNum = f64;
+}
 
 /// Resultado de uma expressão
 #[derive(Clone)]
 pub enum Value {
-    Number(f64),
+    Number(arch::MaxNum),
     Char(char),
     Str(String),
 }
@@ -147,7 +153,7 @@ fn parse_num(expr: &str) -> Value {
     if expr.contains('\"') || expr.contains('\'') {
         error::abort("Uma expressão com números não deve conter strings ou caracteres");
     }
-    let res: f64 = meval::eval_str(expr).unwrap();
+    let res: arch::MaxNum = meval::eval_str(expr).unwrap();
     Value::Number(res)
 }
 
