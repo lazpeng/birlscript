@@ -156,14 +156,27 @@ fn main() {
     let params = get_params();
     let mut files: Vec<String> = vec![];
     let mut env_default_sect = String::from("SHOW"); // JAULA padrão do ponto de entrada do programa
+    let mut printed_something = false; // Se algo foi printado. Para que não jogue o erro quando pedir help, comandos ou version
     for p in params {
         match p {
-            Param::PrintVersion => print_version(),
-            Param::PrintHelp => print_help(),
-            Param::CommandHelp(cmd) => command_help(&cmd),
+            Param::PrintVersion => {
+                printed_something = true;
+                print_version()
+            }
+            Param::PrintHelp => {
+                printed_something = true;
+                print_help()
+            }
+            Param::CommandHelp(cmd) => {
+                printed_something = true;
+                command_help(&cmd)
+            }
             Param::CustomInit(init) => env_default_sect = init,
             Param::InputFile(file) => files.push(file),
-            Param::ShowCmds => show_cmds(),
+            Param::ShowCmds => {
+                printed_something = true;
+                show_cmds()
+            }
         }
     }
     let mut environment = interpreter::Environment::new(env_default_sect);
@@ -174,6 +187,8 @@ fn main() {
         // Executa a jaula principal
         environment.start_program();
     } else {
-        abort!("Nenhum arquivo passado para execução")
+        if !printed_something {
+            abort!("Nenhum arquivo passado para a execução")
+        }
     }
 }
