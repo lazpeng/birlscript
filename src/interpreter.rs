@@ -3,6 +3,8 @@
 use parser;
 use value;
 
+pub const BIRL_MAIN: &'static str = "SHOW";
+
 /// Variavel que tem um nome e um valor
 #[derive(Clone)]
 pub struct Variable {
@@ -125,6 +127,8 @@ pub struct Environment {
     variables: Vec<Variable>,
     /// Coleção de seções para serem executadas
     sections: Vec<parser::Section>,
+    /// Comandos globais a serem executados
+    glb_cmds: Vec<parser::Command>,
     /// Ponto de entrada para o programa
     entry: String,
     /// O resultado da ultima Comparação
@@ -137,6 +141,7 @@ impl Environment {
         Environment {
             variables: vec![],
             sections: vec![],
+            glb_cmds: vec![],
             entry: entry_point,
             last_cmp: Comparision::None,
         }
@@ -174,6 +179,9 @@ impl Environment {
         }
         for sect in file.sects {
             self.sections.push(sect);
+        }
+        for cmd in file.glb_cmds {
+            self.glb_cmds.push(cmd);
         }
     }
 
@@ -433,10 +441,39 @@ impl Environment {
         }
     }
 
+    /// Verifica se nos arquivos interpretados há menção do main
+    fn has_main(&self, main_sect: &str) -> bool {
+        if self.sections.len() < 1 {
+            false
+        } else {
+            let mut res = false;
+            for sect in &self.sections {
+                if sect.name == main_sect {
+                    res = true;
+                    break;
+                }
+            }
+            res
+        }
+    }
+
     /// Executa a seção padrão
     pub fn start_program(&mut self) {
         self.init_variables();
-        let entry = self.entry.clone();
-        self.execute_section(&entry);
+        let mut declared_vars = 0u32;
+        if self.glb_cmds.len() > 0 {
+            for i in 0..self.glb_cmds.len() {
+                let cmd = self.glb_cmds[i].clone();
+                self.execute_command(cmd, &mut declared_vars);
+            }
+        }
+        let has_main = self.has_main(&self.entry);
+        if has_main {
+            let entryp = self.entry.clone();
+            self.execute_section(&entryp);
+        }
+        if declared_vars > 0 {
+            self.undeclare_vars(declared_vars as usize);
+        }
     }
 }

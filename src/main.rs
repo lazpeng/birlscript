@@ -155,7 +155,7 @@ fn show_cmds() {
 fn main() {
     let params = get_params();
     let mut files: Vec<String> = vec![];
-    let mut env_default_sect = String::from("SHOW"); // JAULA padrão do ponto de entrada do programa
+    let mut env_default_sect = String::from(interpreter::BIRL_MAIN);
     let mut printed_something = false; // Se algo foi printado. Para que não jogue o erro quando pedir help, comandos ou version
     for p in params {
         match p {
