@@ -18,7 +18,7 @@ pub mod kw {
     /// Declara uma variável
     pub const KW_DECL: &'static str = "VEM";
     /// Declara uma variável com um valor
-    pub const KW_DECLWV: &'static str = "VEM, PORRA";
+    pub const KW_DECLWV: &'static str = "VEM, CUMPADE";
     /// Realiza um "pulo" de uma seção para outra
     pub const KW_JUMP: &'static str = "E HORA DO";
     /// Comparação
@@ -36,15 +36,15 @@ pub mod kw {
     /// Comparação resultou em maior ou igual
     pub const KW_CMP_MOREEQ: &'static str = "MAIOR OU E MEMO";
     /// Printa com nova linha
-    pub const KW_PRINTLN: &'static str = "CE QUER VER ESSA PORRA";
+    pub const KW_PRINTLN: &'static str = "CE QUER VER ISSO";
     /// Printa
     pub const KW_PRINT: &'static str = "CE QUER VER";
     /// Sai do programa
     pub const KW_QUIT: &'static str = "BIRL";
     /// Pega uma string da entrada padrão
-    pub const KW_INPUT: &'static str = "BORA CUMPADE";
+    pub const KW_INPUT: &'static str = "BORA, CUMPADE";
     /// Pega uma string da entrada padrão com letras maiusculas
-    pub const KW_INPUT_UP: &'static str = "BORA CUMPADE, PORRA";
+    pub const KW_INPUT_UP: &'static str = "BORA, CUMPADE!!!";
 }
 
 #[derive(Clone)]
@@ -256,11 +256,7 @@ fn split_command(cmd: String) -> Vec<String> {
         }
     };
     let cmd_name = &cmd[..index];
-    let cmd_args: &str = if has_args {
-        &cmd[index + 1..]
-    } else {
-        ""
-    };
+    let cmd_args: &str = if has_args { &cmd[index + 1..] } else { "" };
     vec![cmd_name.to_string(), cmd_args.to_string()]
 }
 
@@ -369,6 +365,8 @@ pub struct Unit {
     pub sects: Vec<Section>,
     /// Conjunto de globais
     pub consts: Vec<Global>,
+    /// Conjunto de comandos fora de funções para serem executadas no inicio do programa
+    pub glb_cmds: Vec<Command>,
 }
 
 /// Realiza a interpretação de um arquivo e retorna sua unidade compilada
@@ -376,17 +374,18 @@ pub fn parse(file: &str) -> Unit {
     use std::fs;
     use std::io::{BufRead, BufReader};
     let f = match fs::File::open(file) {
-        Ok(a) => a,
-        Err(e) => {
+        Ok(ff) => ff,
+        Err(err) => {
             abort!("Não foi possivel abrir o arquivo \"{}\". Erro: {}",
                    file,
-                   e)
+                   err)
         }
     };
     // Valor de retorno
     let mut final_unit = Unit {
         sects: vec![],
         consts: vec![],
+        glb_cmds: vec![],
     };
     let reader = BufReader::new(f);
     let mut lines = reader.lines();
@@ -435,7 +434,7 @@ pub fn parse(file: &str) -> Unit {
                 cur_section.push(change_accents(&line));
             }
             // Se não for nenhuma (os comandos só são interpretados dentro da seção)
-            _ => abort!("\"{}\" não entendida no contexto global.", line),
+            _ => final_unit.glb_cmds.push(parse_cmd(&line)),
         }
     }
     final_unit
