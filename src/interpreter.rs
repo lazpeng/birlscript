@@ -2,7 +2,6 @@
 
 use parser;
 use value;
-use error;
 
 /// Variavel que tem um nome e um valor
 #[derive(Clone)]
@@ -53,8 +52,7 @@ fn compare_str(str1: value::Value, str2: value::Value) -> Comparision {
             };
             ret
         } else {
-            error::abort("Comparação de string com outro tipo");
-            unreachable!()
+            abort!("Comparação de string com outro tipo")
         }
     } else {
         unreachable!()
@@ -74,8 +72,7 @@ fn compare_num(num1: value::Value, num2: value::Value) -> Comparision {
             };
             ret
         } else {
-            error::abort("Comparação de caractere com outro tipo");
-            unreachable!()
+            abort!("Comparação de caractere com outro tipo")
         }
     } else {
         unreachable!()
@@ -95,8 +92,7 @@ fn compare_char(c1: value::Value, c2: value::Value) -> Comparision {
             };
             ret
         } else {
-            error::abort("Comparação de caractere com outro tipo");
-            unreachable!()
+            abort!("Comparação de caractere com outro tipo")
         }
     } else {
         unreachable!()
@@ -118,7 +114,7 @@ fn get_input() -> String {
     let mut buffer = String::new();
     match io::stdin().read_line(&mut buffer) {
         Ok(_) => {}
-        Err(e) => error::abort(&format!("Erro ao ler a entrada padrão! \"{}\"", e)),
+        Err(e) => abort!("Erro ao ler a entrada padrão! \"{}\"", e),
     }
     buffer.trim().to_string()
 }
@@ -151,7 +147,7 @@ impl Environment {
         if self.variables.len() > 0 {
             for v in &self.variables {
                 if v.id == var.id {
-                    error::abort(&format!("Variavel \"{}\" já declarada", var.id));
+                    abort!("Variavel \"{}\" já declarada", var.id)
                 }
             }
         }
@@ -200,7 +196,7 @@ impl Environment {
     /// Modifica o valor de uma variavel
     pub fn mod_var(&mut self, var: &str, newval: value::Value) {
         if self.variables.len() < 1 {
-            error::abort("Nenhuma variavel declarada!");
+            abort!("Nenhuma variavel declarada!")
         }
         let (mut index, mut found) = (0, false);
         loop {
@@ -216,7 +212,7 @@ impl Environment {
             index += 1;
         }
         if !found {
-            error::abort(&format!("Variavel não encontrada: \"{}\"", var));
+            abort!("Variavel não encontrada: \"{}\"", var)
         }
     }
 
@@ -402,7 +398,7 @@ impl Environment {
             }
         }
         if !found {
-            error::abort(&format!("Seção não encontrada: \"{}\".", sect_name));
+            abort!("Seção não encontrada: \"{}\".", sect_name)
         } else {
             // Numero de variaveis declaradas
             let mut declared = 0u32;

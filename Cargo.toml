@@ -8,3 +8,4 @@ repository = "https://github.com/lazpeng/birl"
 
 [dependencies]
 meval = "*"
+ansi_term = "0.9"
