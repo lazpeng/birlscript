@@ -1,7 +1,5 @@
 //! Responsavel pelo parsing e de gerar a AST do programa BIRL
 
-use error;
-
 /// Representa as keywords da linguagem
 pub mod kw {
     // Definições
@@ -190,10 +188,10 @@ fn check_n_params(command: CommandType, num_params: usize) {
         CommandType::InputUpper => (1, kw::KW_INPUT_UP),
     };
     if expected != num_params {
-        error::abort(&format!("\"{}\" espera {} parametros, porém {} foram passados.",
-                              id,
-                              expected,
-                              num_params));
+        abort!("\"{}\" espera {} parametros, porém {} foram passados.",
+               id,
+               expected,
+               num_params)
     }
 }
 
@@ -356,10 +354,7 @@ fn parse_cmd(cmd: &str) -> Command {
             check_n_params(CommandType::InputUpper, arguments.len());
             Command::InputUpper(arguments[0].to_string())
         }
-        _ => {
-            error::abort(&format!("Comando \"{}\" não existe.", cmd_type));
-            unreachable!()
-        }
+        _ => abort!("Comando \"{}\" não existe.", cmd_type),
     };
     cmd
 }
@@ -379,10 +374,9 @@ pub fn parse(file: &str) -> Unit {
     let f = match fs::File::open(file) {
         Ok(a) => a,
         Err(e) => {
-            error::abort(&format!("Não foi possivel abrir o arquivo \"{}\". Erro: {}",
-                                  file,
-                                  e));
-            unreachable!()
+            abort!("Não foi possivel abrir o arquivo \"{}\". Erro: {}",
+                   file,
+                   e)
         }
     };
     // Valor de retorno
@@ -411,7 +405,7 @@ pub fn parse(file: &str) -> Unit {
         // Divide a string em palavras separadas por um espaço
         let words = line.split(' ').collect::<Vec<&str>>();
         if words.len() < 2 {
-            error::abort("Comando não possui espaços.");
+            abort!("Comando não possui espaços.")
         }
         // Verifica a primeira palavra da linha
         match words[0] {
@@ -437,7 +431,7 @@ pub fn parse(file: &str) -> Unit {
                 cur_section.push(change_accents(&line));
             }
             // Se não for nenhuma (os comandos só são interpretados dentro da seção)
-            _ => error::abort(&format!("\"{}\" não entendida no contexto global.", line)),
+            _ => abort!("\"{}\" não entendida no contexto global.", line),
         }
     }
     final_unit
@@ -465,15 +459,14 @@ impl Section {
 fn parse_section(lines: Vec<String>) -> Section {
     // Separa a seção em linha
     if lines.len() < 2 {
-        error::abort(&format!("Erro fazendo parsing da seção. Número incorreto de linhas: {}.",
-                              lines.len()));
-        unreachable!() // O abort sai do programa, logo esse codigo nunca sera executado
+        abort!("Erro fazendo parsing da seção. Número incorreto de linhas: {}.",
+               lines.len())
     } else {
         // Checagens de declaração e finalização são feitas em parse
         // Declaração de uma seção:
         // PALAVRA_CHAVE nome
         if !lines[0].contains(' ') {
-            error::abort("Erro na declaração da seção! Falta nome depois da palavra chave");
+            abort!("Erro na declaração da seção! Falta nome depois da palavra chave")
         }
         let mut sect = Section {
             name: String::from(lines[0].split(' ').collect::<Vec<&str>>()[1].trim()),
@@ -525,23 +518,17 @@ pub struct Global {
 fn split_global<'a>(glb: &'a str) -> Vec<&'a str> {
     let index = match glb.find(':') {
         Some(i) => i,
-        None => {
-            error::abort("Numero incorreto de ':' na declaração de um global.");
-            unreachable!()
-        }
+        None => abort!("Numero incorreto de ':' na declaração de um global."),
     };
     if index >= glb.len() - 1 {
-        error::abort("Faltam informações depois do primeiro ':'");
+        abort!("Faltam informações depois do primeiro ':'")
     }
     let nindex = match glb[index + 1..].find(':') {
         Some(i) => i,
-        None => {
-            error::abort("Numero incorreto de ':' na declaração de um global.");
-            unreachable!()
-        }
+        None => abort!("Numero incorreto de ':' na declaração de um global."),
     };
     if nindex >= glb.len() - 1 {
-        error::abort("Faltam informações após o segundo ':'");
+        abort!("Faltam informações após o segundo ':'")
     }
     vec![&glb[..index].trim(),
          &glb[index + 1..nindex + index + 1].trim(),
@@ -553,8 +540,8 @@ fn parse_global(glb: &str) -> Global {
     // Estrutura da declaração de um global: PALAVRA_CHAVE: nome: valor
     let words = split_global(glb.trim());
     if words.len() != 3 {
-        error::abort(&format!("Problema na declaração do global. Número incorreto de ':': {}",
-                              words.len()));
+        abort!("Problema na declaração do global. Número incorreto de ':': {}",
+               words.len())
     }
     // Separa o nome e valor do global
     let (glb_name, glb_value) = (words[1].clone(), String::from(words[2]));

@@ -4,6 +4,8 @@ mod commands;
 mod interpreter;
 mod value;
 
+extern crate ansi_term;
+
 /// Imprime mensagem de ajuda
 fn print_help() {
     println!("Ta querendo ajuda, cumpade?");
@@ -66,6 +68,7 @@ fn get_params() -> Vec<Param> {
                 continue;
             }
             match p.as_str() {
+                "-" | "--" => warn!("Flag vazia passada."),
                 "-a" |
                 "--ajuda-o-maluco-ta-doente" => ret.push(Param::PrintHelp),
                 "-v" |
@@ -77,7 +80,7 @@ fn get_params() -> Vec<Param> {
                     let cmd = match params.next() {
                         Some(name) => name,
                         None => {
-                            error::warn("A flag \"-e ou --ele-que-a-gente-quer\" espera um \
+                            warn!("A flag \"-e ou --ele-que-a-gente-quer\" espera um \
                                       valor.");
                             break;
                         }
@@ -90,7 +93,7 @@ fn get_params() -> Vec<Param> {
                     let section = match params.next() {
                         Some(sect) => sect,
                         None => {
-                            error::warn("A flag \"-j ou --jaula\" espera um valor.");
+                            warn!("A flag \"-j ou --jaula\" espera um valor.");
                             break;
                         }
                     };

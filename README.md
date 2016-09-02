@@ -53,7 +53,7 @@ SAINDO DA JAULA
 ## Hello world, cumpade!
 ```python
 JAULA SHOW
-  CE QUER VER ESSA PORRA: "BORA, " + CUMPADE + "!"
+  CE QUER VER ESSA PORRA: "BORA, " + CUMPADE + "!" # Printa "Bora, " mais seu username
 SAINDO DA JAULA
 ```
 
