@@ -174,6 +174,6 @@ fn main() {
         // Executa a jaula principal
         environment.start_program();
     } else {
-        println!("Nenhum arquivo passado pra execução!");
+        abort!("Nenhum arquivo passado para execução")
     }
 }

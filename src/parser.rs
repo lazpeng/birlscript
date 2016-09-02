@@ -256,7 +256,11 @@ fn split_command(cmd: String) -> Vec<String> {
         }
     };
     let cmd_name = &cmd[..index];
-    let cmd_args: &str = if has_args { &cmd[index + 1..] } else { "" };
+    let cmd_args: &str = if has_args {
+        &cmd[index + 1..]
+    } else {
+        ""
+    };
     vec![cmd_name.to_string(), cmd_args.to_string()]
 }
 
