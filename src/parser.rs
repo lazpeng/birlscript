@@ -3,8 +3,10 @@
 /// Representa as keywords da linguagem
 pub mod kw {
     // Definições
-    /// Usada para declaração de globais
-    pub const _KW_GLOBAL: &'static str = "SAI DE CASA";
+    /// Usada para declaração de globais constantes
+    pub const KW_GLOBAL: &'static str = "SAI DE CASA";
+    /// Usada pra declaração de globais variáveis
+    pub const KW_VAR_GLOBAL: &'static str = "IBIRAPUERA";
     /// Usada para definição de seções
     pub const KW_SECTION: &'static str = "JAULA";
     /// Usada para finalizar a definição de seções
@@ -363,8 +365,8 @@ fn parse_cmd(cmd: &str) -> Command {
 pub struct Unit {
     /// Conjunto de seções para execução
     pub sects: Vec<Section>,
-    /// Conjunto de globais
-    pub consts: Vec<Global>,
+    /// Conjunto de globais, constantes ou variaveis
+    pub globals: Vec<Global>,
     /// Conjunto de comandos fora de funções para serem executadas no inicio do programa
     pub glb_cmds: Vec<Command>,
 }
@@ -384,7 +386,7 @@ pub fn parse(file: &str) -> Unit {
     // Valor de retorno
     let mut final_unit = Unit {
         sects: vec![],
-        consts: vec![],
+        globals: vec![],
         glb_cmds: vec![],
     };
     let reader = BufReader::new(f);
@@ -405,15 +407,35 @@ pub fn parse(file: &str) -> Unit {
         if line == "" {
             continue;
         }
+        // Retira os comentarios das linhas
+        let line = if line.contains('#') || line.contains(';') {
+            let mut tmp = String::new();
+            for c in line.chars() {
+                // Enquanto o caractere não for um comentário, continue
+                if c != '#' && c != ';' {
+                    tmp.push(c);
+                } else {
+                    break;
+                }
+            }
+            tmp
+        } else {
+            line
+        };
         // Divide a string em palavras separadas por um espaço
-        let words = line.split(' ').collect::<Vec<&str>>();
+        let mut words = line.split(' ').collect::<Vec<&str>>();
         if words.len() < 2 {
-            abort!("Comando não possui espaços.")
+            // Comando de uma palavra só, separa por :
+            words = line.split(':').collect::<Vec<&str>>();
+            if words.len() < 2 {
+                abort!("Comando/palavra-chave não compreendido(a): {}", line);
+            }
         }
         // Verifica a primeira palavra da linha
         match words[0] {
-            // Se for declaração de um global, empurra o global pra unit
-            "SAI" if !parsing_section => final_unit.consts.push(parse_global(&line)),
+            // Se for declaração de um global constante, empurra o global pra unit
+            "SAI" |
+            kw::KW_VAR_GLOBAL if !parsing_section => final_unit.globals.push(parse_global(&line)),
             // Se for declaração de uma seção, começa o parsing da seção
             kw::KW_SECTION if !parsing_section => {
                 cur_section.push(line.clone());
@@ -434,7 +456,7 @@ pub fn parse(file: &str) -> Unit {
                 cur_section.push(change_accents(&line));
             }
             // Se não for nenhuma (os comandos só são interpretados dentro da seção)
-            _ => final_unit.glb_cmds.push(parse_cmd(&line)),
+            _ => final_unit.glb_cmds.push(parse_cmd(&change_accents(&line))),
         }
     }
     final_unit
@@ -486,35 +508,22 @@ fn parse_section(lines: Vec<String>) -> Section {
                    line.chars().collect::<Vec<char>>()[0] == ';' {
                     continue;
                 }
-                // Parte util da linha, caso haja um comentario
-                // Comentarios são feitos com # ou ;
-                let util_line = if line.contains('#') || line.contains(';') {
-                    let mut tmp = String::new();
-                    for c in line.chars() {
-                        // Enquanto o caractere não for um comentário, continue
-                        if c != '#' && c != ';' {
-                            tmp.push(c);
-                        } else {
-                            break;
-                        }
-                    }
-                    tmp
-                } else {
-                    line.clone()
-                };
-                sect.lines.push(parse_cmd(&util_line));
+                sect.lines.push(parse_cmd(&line));
             }
         }
         sect
     }
 }
 
+#[derive(Clone)]
 /// Representa um valor global, constante
 pub struct Global {
     /// Identificador do valor global
     pub identifier: String,
     /// Valor do global
     pub value: String,
+    /// Se o global é constante ou não
+    pub is_const: bool,
 }
 
 /// Divide a declaração do global
@@ -546,10 +555,16 @@ fn parse_global(glb: &str) -> Global {
         abort!("Problema na declaração do global. Número incorreto de ':': {}",
                words.len())
     }
+    let is_const = match words[0].trim() {
+        kw::KW_GLOBAL => true,
+        kw::KW_VAR_GLOBAL => false,
+        _ => unreachable!(),
+    };
     // Separa o nome e valor do global
     let (glb_name, glb_value) = (words[1].clone(), String::from(words[2]));
     Global {
         identifier: String::from(glb_name),
         value: glb_value,
+        is_const: is_const,
     }
 }
