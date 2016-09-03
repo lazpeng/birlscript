@@ -15,38 +15,36 @@ mod arch {
 #[derive(Clone)]
 pub enum Value {
     Number(arch::MaxNum),
-    Char(char),
-    Str(String),
+    Str(Box<String>),
 }
 
 use std::fmt;
-use error;
 
 impl fmt::Display for Value {
+    /// Função que torna possivel printar values diretamente
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             &Value::Number(x) => write!(f, "{}", x),
-            &Value::Char(x) => write!(f, "{}", x),
             &Value::Str(ref x) => write!(f, "{}", x),
         }
     }
 }
 
 impl Value {
-    fn as_str(&self) -> String {
+    /// Retorna uma representação em string do valor atual
+    pub fn as_str(&self) -> String {
         let fmted = match self {
             &Value::Number(x) => format!("{}", x),
-            &Value::Char(x) => format!("'{}'", x),
             &Value::Str(ref x) => format!("\"{}\"", x),
         };
         String::from(fmted)
     }
 }
 
-use interpreter::{Environment, Variable};
+use interpreter::Environment;
 
 /// Expande os simbolos do ambiente atual para seus valores
-fn expand_syms(expr: &mut String, env: &mut Environment) {
+fn expand_syms(expr: &mut String, env: &Environment) {
     if expr != "" {
         // Se esta no meio de uma string
         let mut is_str = false;
@@ -61,14 +59,8 @@ fn expand_syms(expr: &mut String, env: &mut Environment) {
                 match c {
                     ' ' | '+' | '-' | '/' | '*' | '&' | '|' | '%' => {
                         is_sym = false;
-                        let var = match env.get_var(&sym) {
-                            None => {
-                                error::abort(&format!("Simbolo \"{}\" não reconhecido.", sym));
-                                unreachable!()
-                            }
-                            Some(v) => v,
-                        };
-                        newexpr.push_str(&var.value.as_str());
+                        let var_val = env.get_var(&sym);
+                        newexpr.push_str(&var_val.as_str());
                         newexpr.push(c);
                         sym.clear();
                     }
@@ -99,32 +91,27 @@ fn expand_syms(expr: &mut String, env: &mut Environment) {
         }
         // Verifica se um simbolo ficou para traz
         if is_sym && sym != "" {
-            let var: Variable = match env.get_var(&sym) {
-                None => {
-                    error::abort(&format!("Simbolo \"{}\" não reconhecido.", sym));
-                    unreachable!()
-                }
-                Some(v) => v,
-            };
-            newexpr.push_str(&var.value.as_str());
+            let var = env.get_var(&sym);
+            newexpr.push_str(&var.as_str());
             sym.clear();
         }
         expr.clear();
         expr.push_str(&newexpr);
+    } else {
+        abort!("Expressão vazia!")
     }
 }
 
 /// Tipo do valor a ser interpretado
 enum ValueType {
     Number,
-    Char,
     Str,
 }
 
 /// Descobre o tipo de uma expressão
 fn expr_type(expr: &str) -> ValueType {
     if expr == "" {
-        error::abort("Expressão vazia!");
+        abort!("Expressão vazia!")
     }
     // Tenta descobrir o tipo da expressão por meio dos seus primeiros caracteres
     let mut chars = expr.chars();
@@ -133,43 +120,21 @@ fn expr_type(expr: &str) -> ValueType {
         '-' => {
             match chars.nth(1).unwrap() {
                 '0'...'9' => ValueType::Number,
-                _ => {
-                    error::abort("Operador \"-\" atribuido a uma expressão que não o suporta.");
-                    unreachable!()
-                }
+                _ => abort!("Operador \"-\" atribuido a uma expressão que não o suporta."),
             }
         }
-        '\'' => ValueType::Char,
-        '\"' => ValueType::Str,
-        _ => {
-            error::abort(&format!("Tipo de expressão invalido. Expressão: {}", expr));
-            unreachable!()
-        }
+        '\'' | '\"' => ValueType::Str,
+        _ => abort!("Tipo de expressão invalido. Expressão: {}", expr),
     }
 }
 
 /// Faz parsing de um numero
 fn parse_num(expr: &str) -> Value {
     if expr.contains('\"') || expr.contains('\'') {
-        error::abort("Uma expressão com números não deve conter strings ou caracteres");
+        abort!("Uma expressão com números não deve conter strings ou caracteres")
     }
     let res: arch::MaxNum = meval::eval_str(expr).unwrap();
     Value::Number(res)
-}
-
-/// Faz parsing do valor de um caractere
-fn parse_char(expr: &str) -> Value {
-    // Numa expressão que possui apenas um caractere, nenhum operador é permitido
-    let mut chars = expr.trim().chars();
-    if expr.len() != 3 {
-        // Um para o ', o valor e outro '
-        error::abort(&format!("Erro na expressão do caractere: Numero incorreto de expressões: \
-                               {}",
-                              expr.len()));
-        unreachable!() // abort, então esse codigo não será executado
-    } else {
-        Value::Char(chars.nth(1).unwrap())
-    }
 }
 
 /// Separa uma expressão de Strings em varios tokens
@@ -190,9 +155,9 @@ fn parse_str_tokenize(expr: &str) -> Vec<String> {
             }
             '\"' if !in_str => {
                 if !last_op {
-                    error::abort(&format!("No meio de duas strings so deve haver um operador! \
+                    abort!("No meio de duas strings so deve haver um operador! \
                                            expr: {}",
-                                          expr));
+                           expr)
                 } else {
                     last_op = false;
                     in_str = true;
@@ -203,7 +168,7 @@ fn parse_str_tokenize(expr: &str) -> Vec<String> {
             '\'' if !in_str && !in_char => {
                 // Caractere
                 if !last_op {
-                    error::abort("No meio de uma string e um caractere so deve haver um operador!");
+                    abort!("No meio de uma string e um caractere so deve haver um operador!")
                 }
                 in_char = true;
                 index += 1;
@@ -215,14 +180,12 @@ fn parse_str_tokenize(expr: &str) -> Vec<String> {
             '+' if !in_str => {
                 last_op = true;
             }
-            '-' | '*' | '/' if !in_str => {
-                error::abort(&format!("O operador {} não é permitido em strings!", c));
-            }
+            '-' | '*' | '/' if !in_str => abort!("O operador {} não é permitido em strings!", c),
             _ if in_char => {
                 tokens[index].push(c);
             }
             '0'...'9' if !in_str && !in_char => {
-                error::abort("Números não devem ser usados em operações com strings ou caracteres");
+                abort!("Números não devem ser usados em operações com strings ou caracteres")
             }
             _ if !in_str => {} // Pula outros caracteres se de fora de uma string
             _ => tokens[index].push(c),
@@ -238,23 +201,22 @@ fn parse_str(expr: &str) -> Value {
     // Se há multiplas strings, é porque foi usado o operador +, se nao houve um erro
     if tokens.len() == 1 {
         // Só há uma string
-        Value::Str(tokens[0].clone())
+        Value::Str(Box::new(tokens[0].clone()))
     } else {
         let mut result = String::new();
         for token in tokens {
             result.push_str(&token);
         }
-        Value::Str(result)
+        Value::Str(Box::new(result))
     }
 }
 
 /// Faz o parsing de uma expressão
-pub fn parse_expr(expr: &str, env: &mut Environment) -> Value {
+pub fn parse_expr(expr: &str, env: &Environment) -> Value {
     let mut nexp = expr.trim().to_string();
     expand_syms(&mut nexp, env);
     match expr_type(&nexp) {
         ValueType::Number => parse_num(&nexp),
-        ValueType::Char => parse_char(&nexp),
         ValueType::Str => parse_str(&nexp),
     }
 }

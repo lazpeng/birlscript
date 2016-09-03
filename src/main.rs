@@ -4,6 +4,8 @@ mod commands;
 mod interpreter;
 mod value;
 
+extern crate ansi_term;
+
 /// Imprime mensagem de ajuda
 fn print_help() {
     println!("Ta querendo ajuda, cumpade?");
@@ -66,6 +68,7 @@ fn get_params() -> Vec<Param> {
                 continue;
             }
             match p.as_str() {
+                "-" | "--" => warn!("Flag vazia passada."),
                 "-a" |
                 "--ajuda-o-maluco-ta-doente" => ret.push(Param::PrintHelp),
                 "-v" |
@@ -77,7 +80,7 @@ fn get_params() -> Vec<Param> {
                     let cmd = match params.next() {
                         Some(name) => name,
                         None => {
-                            error::warn("A flag \"-e ou --ele-que-a-gente-quer\" espera um \
+                            warn!("A flag \"-e ou --ele-que-a-gente-quer\" espera um \
                                       valor.");
                             break;
                         }
@@ -90,7 +93,7 @@ fn get_params() -> Vec<Param> {
                     let section = match params.next() {
                         Some(sect) => sect,
                         None => {
-                            error::warn("A flag \"-j ou --jaula\" espera um valor.");
+                            warn!("A flag \"-j ou --jaula\" espera um valor.");
                             break;
                         }
                     };
@@ -152,15 +155,28 @@ fn show_cmds() {
 fn main() {
     let params = get_params();
     let mut files: Vec<String> = vec![];
-    let mut env_default_sect = String::from("SHOW"); // JAULA padrão do ponto de entrada do programa
+    let mut env_default_sect = String::from(interpreter::BIRL_MAIN);
+    let mut printed_something = false; // Se algo foi printado. Para que não jogue o erro quando pedir help, comandos ou version
     for p in params {
         match p {
-            Param::PrintVersion => print_version(),
-            Param::PrintHelp => print_help(),
-            Param::CommandHelp(cmd) => command_help(&cmd),
+            Param::PrintVersion => {
+                printed_something = true;
+                print_version()
+            }
+            Param::PrintHelp => {
+                printed_something = true;
+                print_help()
+            }
+            Param::CommandHelp(cmd) => {
+                printed_something = true;
+                command_help(&cmd)
+            }
             Param::CustomInit(init) => env_default_sect = init,
             Param::InputFile(file) => files.push(file),
-            Param::ShowCmds => show_cmds(),
+            Param::ShowCmds => {
+                printed_something = true;
+                show_cmds()
+            }
         }
     }
     let mut environment = interpreter::Environment::new(env_default_sect);
@@ -171,6 +187,8 @@ fn main() {
         // Executa a jaula principal
         environment.start_program();
     } else {
-        println!("Nenhum arquivo passado pra execução!");
+        if !printed_something {
+            abort!("Nenhum arquivo passado para a execução")
+        }
     }
 }

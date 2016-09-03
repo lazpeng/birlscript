@@ -1,4 +1,7 @@
 # BIRLSCRIPT
+
+[![Status do projeto](https://www.openhub.net/p/birlscript/widgets/project_thin_badge?format=gif&ref=Thin+badge)](https://www.openhub.net/p/birlscript)
+
 É a linguagem de scripting dos programadores codebuilders! Dos que não saem de casa
 sem codar pra caralho! Se você ta achando que é moleza, ta enganado, aqui não é
 café com músculo, aqui se constrói código, porra!
@@ -43,33 +46,33 @@ outros não. Optei por deixar o que fizesse ao menos o mínimo de sentido).
 ```python
 JAULA SHOW
   VEM: MONSTRO # Declara variavel com o valor padrão, 0
-  VEM, PORRA: IBIRAPUERA, "BIRL" # Declara IBIRAPUERA com valor "BIRL"
+  VEM, CUMPADE: IBIRAPUERA, "BIRL" # Declara IBIRAPUERA com valor "BIRL"
   BORA: MONSTRO, 2 # Da o valor 2 para MONSTRO
   BORA: MONSTRO, MONSTRO * 2 # Multiplica o valor de MONSTRO por 2
-  CE QUER VER ESSA PORRA: "MONSTRO: ", MONSTRO, "IBIRAPUERA: " + IBIRAPUERA
+  CE QUER VER ISSO: "MONSTRO: ", MONSTRO, "IBIRAPUERA: " + IBIRAPUERA
 SAINDO DA JAULA
 ```
 
 ## Hello world, cumpade!
 ```python
 JAULA SHOW
-  CE QUER VER ESSA PORRA: "BORA, " + CUMPADE + "!" # Printa "Bora, " mais seu username
+  CE QUER VER ISSO: "BORA, " + CUMPADE + "!" # Printa "Bora, " mais seu username
 SAINDO DA JAULA
 ```
 
 ## Seções e condicionais
 ```python
 JAULA OUTRO
-  CE QUER VER ESSA PORRA: "estou em outra"
+  CE QUER VER ISSO: "estou em outra"
 SAINDO DA JAULA
 
 JAULA DIFERENTE
-  CE QUER VER ESSA PORRA: "deu diferente"
+  CE QUER VER ISSO: "deu diferente"
 SAINDO DA JAULA
 
 JAULA SHOW
   E HORA DO: OUTRO # Passa a execução pra OUTRO
-  VEM, PORRA: MUTANTE, "FIBRA"
+  VEM, CUMPADE: MUTANTE, "FIBRA"
   E ELE QUE A GENTE QUER: MUTANTE, "AGUA COM MUSCULO" # Compara MUTANTE com "AGUA COM MUSCULO"
   NUM E ELE: DIFERENTE # Caso seja diferente, execute DIFERENTE
 SAINDO DA JAULA
@@ -78,7 +81,7 @@ SAINDO DA JAULA
 ## Fatorial
 ```python
 JAULA PRINT
-  CE QUER VER ESSA PORRA: RESULTADO # Printa o resultado
+  CE QUER VER ISSO: RESULTADO # Printa o resultado
   BIRL # Sai
  SAINDO DA JAULA
 
@@ -91,9 +94,9 @@ JAULA PRINT
  SAINDO DA JAULA
 
  JAULA SHOW
-  VEM, PORRA: NUMERO, 3 # Declara NUMERO com valor 3
-  CE QUER VER ESSA PORRA: "Calculando o fatorial de ", NUMERO
-  VEM, PORRA: RESULTADO, NUMERO # Da o valor de NUMERO para RESULTADO
+  VEM, CUMPADE: NUMERO, 3 # Declara NUMERO com valor 3
+  CE QUER VER ISSO: "Calculando o fatorial de ", NUMERO
+  VEM, CUMPADE: RESULTADO, NUMERO # Da o valor de NUMERO para RESULTADO
   E HORA DO: FATORIAL # Chama fatorial
  SAINDO DA JAULA
 ```
@@ -101,16 +104,16 @@ JAULA PRINT
 ## Não quero falar com bandeirantes!
 ```python
 JAULA BANDEIRANTES
-    CE QUER VER ESSA PORRA: "NÃO QUERO FALAR COM BANDEIRANTES"
+    CE QUER VER ISSO: "NÃO QUERO FALAR COM BANDEIRANTES"
 SAINDO DA JAULA
 
 JAULA OUTRO
-    CE QUER VER ESSA PORRA: "COM " + EMISSORA + " EU FALO"
+    CE QUER VER ISSO: "COM " + EMISSORA + " EU FALO"
 SAINDO DA JAULA
 
 JAULA SHOW
     VEM: EMISSORA # Cria variavel EMISSORA
-    BORA CUMPADE, PORRA: EMISSORA # Guarda valor da entrada em EMISSORA com letras maiusculas
+    BORA, CUMPADE!!!: EMISSORA # Guarda valor da entrada em EMISSORA com letras maiusculas
     E ELE QUE A GENTE QUER: EMISSORA, "BANDEIRANTES" # Compara com bandeirantes
     E ELE MEMO: BANDEIRANTES # Caso seja igual, execute bandeirantes
     NUM E ELE: OUTRO # Diferente, execute outro

@@ -2,7 +2,8 @@
 
 use parser;
 use value;
-use error;
+
+pub const BIRL_MAIN: &'static str = "SHOW";
 
 /// Variavel que tem um nome e um valor
 #[derive(Clone)]
@@ -11,17 +12,17 @@ pub struct Variable {
     pub id: String,
     /// Valor da variavel
     pub value: value::Value,
-    /// Se a variavel é constante ou não
-    constant: bool,
+    /// Se a variavel pode ser modificada, no caso da conversão de um global
+    pub is_const: bool,
 }
 
 impl Variable {
     /// Cria uma variavel com uma serie de informações
-    fn from(vid: String, val: value::Value, is_const: bool) -> Variable {
+    fn from(vid: String, val: value::Value) -> Variable {
         Variable {
             id: vid,
             value: val,
-            constant: is_const,
+            is_const: false,
         }
     }
 }
@@ -53,8 +54,7 @@ fn compare_str(str1: value::Value, str2: value::Value) -> Comparision {
             };
             ret
         } else {
-            error::abort("Comparação de string com outro tipo");
-            unreachable!()
+            abort!("Comparação de string com outro tipo")
         }
     } else {
         unreachable!()
@@ -74,29 +74,7 @@ fn compare_num(num1: value::Value, num2: value::Value) -> Comparision {
             };
             ret
         } else {
-            error::abort("Comparação de caractere com outro tipo");
-            unreachable!()
-        }
-    } else {
-        unreachable!()
-    }
-}
-
-/// Compara dois caracteres
-fn compare_char(c1: value::Value, c2: value::Value) -> Comparision {
-    if let value::Value::Char(value1) = c1 {
-        if let value::Value::Char(value2) = c2 {
-            let ret: Comparision = if value1 == value2 {
-                Comparision::Equals
-            } else if value1 < value2 {
-                Comparision::Less
-            } else {
-                Comparision::More
-            };
-            ret
-        } else {
-            error::abort("Comparação de caractere com outro tipo");
-            unreachable!()
+            abort!("Comparação de caractere com outro tipo")
         }
     } else {
         unreachable!()
@@ -108,7 +86,6 @@ fn compare(val1: value::Value, val2: value::Value) -> Comparision {
     match val1 {
         value::Value::Str(_) => compare_str(val1, val2),
         value::Value::Number(_) => compare_num(val1, val2),
-        value::Value::Char(_) => compare_char(val1, val2),
     }
 }
 
@@ -118,17 +95,39 @@ fn get_input() -> String {
     let mut buffer = String::new();
     match io::stdin().read_line(&mut buffer) {
         Ok(_) => {}
-        Err(e) => error::abort(&format!("Erro ao ler a entrada padrão! \"{}\"", e)),
+        Err(e) => abort!("Erro ao ler a entrada padrão! \"{}\"", e),
     }
     buffer.trim().to_string()
 }
 
+/// Ambiente em que são executados os comandos
+pub struct SectionEnvironment {
+    /// Variaveis alocadas nessa seção
+    vars: Vec<Variable>,
+}
+
+impl SectionEnvironment {
+    /// Retorna o contexto primario de seção, a seção global
+    pub fn root() -> SectionEnvironment {
+        SectionEnvironment { vars: vec![] }
+    }
+
+    /// Retorna um contexto com um nome especifico
+    pub fn new() -> SectionEnvironment {
+        SectionEnvironment { vars: vec![] }
+    }
+}
+
 /// É o ambiente onde rodam os scripts BIRL
 pub struct Environment {
-    /// Pilha de variaveis do ambiente
-    variables: Vec<Variable>,
+    /// Pilha de seções
+    sectenvs: Vec<SectionEnvironment>,
     /// Coleção de seções para serem executadas
     sections: Vec<parser::Section>,
+    /// Comandos globais a serem executados
+    glb_cmds: Vec<parser::Command>,
+    /// Globais
+    glbs: Vec<parser::Global>,
     /// Ponto de entrada para o programa
     entry: String,
     /// O resultado da ultima Comparação
@@ -136,11 +135,23 @@ pub struct Environment {
 }
 
 impl Environment {
+    /// Retorna o ultimo sectenv
+    fn last_sectenv<'a>(&'a mut self) -> &'a mut SectionEnvironment {
+        if self.sectenvs.len() == 0 {
+            unreachable!()
+        } else {
+            let len = self.sectenvs.len();
+            &mut self.sectenvs[len - 1]
+        }
+    }
+
     /// Cria um novo ambiente
     pub fn new(entry_point: String) -> Environment {
         Environment {
-            variables: vec![],
+            sectenvs: vec![SectionEnvironment::root()],
             sections: vec![],
+            glb_cmds: vec![],
+            glbs: vec![],
             entry: entry_point,
             last_cmp: Comparision::None,
         }
@@ -148,75 +159,112 @@ impl Environment {
 
     /// Declara uma variavel e retorna seu endereço
     fn declare_var(&mut self, var: Variable) {
-        if self.variables.len() > 0 {
-            for v in &self.variables {
+        if self.last_sectenv().vars.len() > 0 {
+            for v in &self.last_sectenv().vars {
                 if v.id == var.id {
-                    error::abort(&format!("Variavel \"{}\" já declarada", var.id));
+                    abort!("Variavel \"{}\" já declarada", var.id)
                 }
             }
         }
-        self.variables.push(var);
+        self.last_sectenv().vars.push(var);
     }
 
-    /// Remove a declração de variaveis quando se encerra a execução de uma seção
-    fn undeclare_vars(&mut self, declared: usize) {
-        if self.variables.len() >= declared {
-            for _ in 0..declared {
-                // Joga fora a ultima variavel alocada
-                self.variables.pop();
+    /// Declara um novo global
+    fn declare_global(&mut self, glb: parser::Global) {
+        if self.glbs.len() > 0 {
+            for v in &self.glbs {
+                if v.identifier == glb.identifier {
+                    abort!("Global \"{}\" já declarado!", glb.identifier)
+                }
             }
         }
+        self.glbs.push(glb);
     }
 
     /// Interpreta uma unidade sem executá-la
     pub fn interpret(&mut self, file: parser::Unit) {
-        for const_var in file.consts {
-            let var = Variable::from(const_var.identifier,
-                                     value::parse_expr(&const_var.value, self),
-                                     true);
-            self.declare_var(var);
+        for global in file.globals {
+            self.declare_global(global);
         }
         for sect in file.sects {
             self.sections.push(sect);
         }
+        for cmd in file.glb_cmds {
+            self.glb_cmds.push(cmd);
+        }
     }
 
     /// Pega uma variavel do ambiente
-    pub fn get_var(&self, name: &str) -> Option<Variable> {
-        if self.variables.len() <= 0 {
-            None
-        } else {
-            let mut ret: Option<Variable> = None;
-            for var in &self.variables {
-                if var.id == name {
-                    ret = Some(var.clone());
+    pub fn get_var(&self, name: &str) -> value::Value {
+        // self.sectenvs é garantido a ter ao menos um elemento
+        let mut ret = value::Value::Number(0.0);
+        let mut found = false;
+        for var in &self.sectenvs[self.sectenvs.len() - 1].vars {
+            if var.id == name {
+                ret = var.value.clone();
+                found = true;
+                break;
+            }
+        }
+        if !found {
+            // Se não encontrado, tente procurar nos globais
+            for glb in &self.glbs {
+                if glb.identifier == name {
+                    ret = value::parse_expr(&glb.value, self);
+                    found = true;
                     break;
                 }
             }
-            ret
+            if !found {
+                // Ainda assim não achou
+                abort!("Variável ou global não encontrado(a)!: \"{}\"", name);
+            }
         }
+        ret
     }
 
     /// Modifica o valor de uma variavel
     pub fn mod_var(&mut self, var: &str, newval: value::Value) {
-        if self.variables.len() < 1 {
-            error::abort("Nenhuma variavel declarada!");
-        }
+        // Essa função deve procurar na pilha de variaveis da seção e nos globais do programa
         let (mut index, mut found) = (0, false);
         loop {
-            if index >= self.variables.len() {
+            if index >= self.last_sectenv().vars.len() {
                 break;
             }
-            let ref mut v = self.variables[index];
+            let ref mut v = self.last_sectenv().vars[index];
             if v.id == var {
-                v.value = newval;
+                v.value = newval.clone();
                 found = true;
                 break;
             }
             index += 1;
         }
         if !found {
-            error::abort(&format!("Variavel não encontrada: \"{}\"", var));
+            if self.glbs.len() > 0 {
+                // Não encontrado, procure nos globais
+                let mut index = 0;
+                loop {
+                    if index >= self.glbs.len() {
+                        break;
+                    }
+                    let ref mut g = self.glbs[index];
+                    if g.identifier == var {
+                        if !g.is_const {
+                            g.value = newval.as_str();
+                            found = true;
+                            break;
+                        } else {
+                            abort!("Tentativa de alterar o valor de global constante!")
+                        }
+                    }
+                    index += 1;
+                }
+                if !found {
+                    abort!("Variavel ou global não encontrado(a): \"{}\"", var)
+                }
+            } else {
+                abort!("Variavel ou global não encontrado(a): \"{}\"", var)
+            }
         }
     }
 
@@ -233,15 +281,14 @@ impl Environment {
     }
 
     /// Declara uma variavel com o valor padrão
-    fn command_decl(&mut self, name: String, declared_vars: &mut u32) {
-        let var = Variable::from(name, value::Value::Number(0.0), false);
+    fn command_decl(&mut self, name: String) {
+        let var = Variable::from(name, value::Value::Number(0.0));
         self.declare_var(var);
-        *declared_vars += 1;
     }
 
     /// Declara uma variavel com um valor padrão
     fn command_declwv(&mut self, name: String, val: value::Value) {
-        let var = Variable::from(name, val, false);
+        let var = Variable::from(name, val);
         self.declare_var(var);
     }
 
@@ -334,7 +381,7 @@ impl Environment {
         let mut res = String::from("\"");
         res.push_str(&input);
         res.push('\"');
-        self.mod_var(&var, value::Value::Str(res));
+        self.mod_var(&var, value::Value::Str(Box::new(res)));
     }
 
     /// Input upper
@@ -343,11 +390,11 @@ impl Environment {
         let mut res = String::from("\"");
         res.push_str(&input);
         res.push('\"');
-        self.mod_var(&var, value::Value::Str(res));
+        self.mod_var(&var, value::Value::Str(Box::new(res)));
     }
 
     /// Executa um comando
-    fn execute_command(&mut self, cmd: parser::Command, declared_vars: &mut u32) {
+    fn execute_command(&mut self, cmd: parser::Command) {
         use parser::Command;
         match cmd {
             Command::Move(trg, val) => {
@@ -355,7 +402,7 @@ impl Environment {
                 self.command_move(trg, val);
             }
             Command::Clear(trg) => self.command_clear(trg),
-            Command::Decl(trg) => self.command_decl(trg, declared_vars),
+            Command::Decl(trg) => self.command_decl(trg),
             Command::DeclWV(trg, val) => {
                 let val = value::parse_expr(&val, self);
                 self.command_declwv(trg, val);
@@ -402,14 +449,19 @@ impl Environment {
             }
         }
         if !found {
-            error::abort(&format!("Seção não encontrada: \"{}\".", sect_name));
+            abort!("Seção não encontrada: \"{}\".", sect_name)
         } else {
-            // Numero de variaveis declaradas
-            let mut declared = 0u32;
+            // Cria um novo ambiente pra nova seção no fim da pilha
+            self.sectenvs.push(SectionEnvironment::new());
+            // Cria a variavel que guarda o nome da seção
+            self.last_sectenv()
+                .vars
+                .push(Variable::from(String::from("JAULA"),
+                                     value::Value::Str(Box::new(String::from(sect_name)))));
             for cmd in section.lines {
-                self.execute_command(cmd, &mut declared);
+                self.execute_command(cmd);
             }
-            self.undeclare_vars(declared as usize);
+            self.sectenvs.pop(); // Joga fora a ultima seção
         }
     }
 
@@ -427,20 +479,51 @@ impl Environment {
             Ok(usr) => usr,
             Err(_) => var_names[0].to_string(), // CUMPADE
         };
-        let var_values = vec![value::Value::Str(var_cumpade.to_uppercase()),
+        let var_values = vec![value::Value::Str(Box::new(var_cumpade.to_uppercase())),
                               value::Value::Number(1.0),
-                              value::Value::Str(String::from("BAMBAM"))];
+                              value::Value::Str(Box::new(String::from("BAMBAM")))];
         for i in 0..var_names.len() {
             let (name, val) = (var_names[i], var_values[i].clone());
-            let var = Variable::from(name.to_string(), val, true);
-            self.declare_var(var);
+            let glb = parser::Global {
+                identifier: String::from(name),
+                value: val.as_str(),
+                is_const: true,
+            };
+            self.declare_global(glb);
+        }
+    }
+
+    /// Verifica se nos arquivos interpretados há menção do main
+    fn has_main(&self, main_sect: &str) -> bool {
+        if self.sections.len() < 1 {
+            false
+        } else {
+            let mut res = false;
+            for sect in &self.sections {
+                if sect.name == main_sect {
+                    res = true;
+                    break;
+                }
+            }
+            res
         }
     }
 
     /// Executa a seção padrão
     pub fn start_program(&mut self) {
         self.init_variables();
-        let entry = self.entry.clone();
-        self.execute_section(&entry);
+        // Executa os comandos globais
+        if self.glb_cmds.len() > 0 {
+            for i in 0..self.glb_cmds.len() {
+                let cmd = self.glb_cmds[i].clone();
+                self.execute_command(cmd);
+            }
+        }
+        // Verifica se existe a função principal
+        let has_main = self.has_main(&self.entry);
+        if has_main {
+            let entryp = self.entry.clone();
+            self.execute_section(&entryp);
+        }
     }
 }
