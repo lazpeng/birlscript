@@ -7,4 +7,5 @@ description = "Interpretador da linguagem BIRLSCRIPT"
 repository = "https://github.com/lazpeng/birl"
 
 [dependencies]
-meval = "*"
+meval = "0.0.6"
+ansi_term = "0.9"

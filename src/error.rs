@@ -1,13 +1,33 @@
-//! Modulo responsável pelos erros em BIRL
+//! Modulo responsável por reportar os erros
+#![macro_use]
 
-/// Da uma mensagem de erro e aborta
-pub fn abort(error: &str) {
-    use std::process;
-    println!("Erro: {}", error);
-    process::exit(-1);
+extern crate ansi_term;
+
+#[macro_export]
+macro_rules! abort {
+    ($($tt:tt)*) => {{
+        use std::process::*;
+// No windows, a crate ansi_term não faz output colorido, então só printa a mensagem comum
+        if cfg!(windows) {
+            print!("Erro: ");
+        } else {
+            use ansi_term::*;
+            print!("{}", Colour::Red.paint("Erro: "));
+        }
+        println!($($tt)*);
+        exit(-1);
+    }}
 }
 
-/// Da uma mensagem de aviso
-pub fn warn(warning: &str) {
-    println!("Aviso: {}", warning);
+#[macro_export]
+macro_rules! warn {
+    ($($tt:tt)*) => {{
+        if cfg!(windows) {
+            print!("Erro: ");
+        } else {
+            use ansi_term::*;
+            print!("{}", Colour::Yellow.paint("Aviso: "));
+        }
+        println!($($tt)*);
+    }}
 }
