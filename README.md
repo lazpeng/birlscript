@@ -13,7 +13,7 @@ Use o interpretador com a flag *-a* ou *--ajuda-o-maluco-ta-doente* para ver uma
 de opções que podem ser passadas. Use *-e* ou *--ele-que-a-gente-quer* junto com o nome
 de um comando para ver mais sobre ele, ou *-t* ou *--tudo-cumpade* para uma lista de comandos.
 
-## Versão 1.0.0
+## Versão 1.1.3
 
 ## Builds:
 * Windows (64-bits): Disponível
@@ -80,25 +80,27 @@ SAINDO DA JAULA
 
 ## Fatorial
 ```python
-JAULA PRINT
-  CE QUER VER ISSO: RESULTADO # Printa o resultado
-  BIRL # Sai
- SAINDO DA JAULA
+# TRAPEZIO DESCENDENTE: tipo para NUMERO
+# FIBRA: tipo para texto/string
 
- JAULA FATORIAL
-  E ELE QUE A GENTE QUER: NUMERO, 1 # Compara NUMERO com 1
-  MENOR OU E MEMO: PRINT # Caso de igual, printe e saia
-  BORA: NUMERO, NUMERO - 1 # Diminui o valor de 1
-  BORA: RESULTADO, RESULTADO * NUMERO # Multiplica RESULTADO por NUMERO
-  E HORA DO: FATORIAL # Chama FATORIAL de novo
- SAINDO DA JAULA
+JAULA PRINTA (VALOR : TRAPEZIO DESCENDENTE)
+    CE QUER VER ISSO: VALOR
+    BIRL
+SAINDO DA JAULA
 
- JAULA SHOW
-  VEM, CUMPADE: NUMERO, 3 # Declara NUMERO com valor 3
-  CE QUER VER ISSO: "Calculando o fatorial de ", NUMERO
-  VEM, CUMPADE: RESULTADO, NUMERO # Da o valor de NUMERO para RESULTADO
-  E HORA DO: FATORIAL # Chama fatorial
- SAINDO DA JAULA
+JAULA FATORIAL (NUMERO: TRAPEZIO DESCENDENTE, ATUAL : TRAPEZIO DESCENDENTE)
+    E ELE QUE A GENTE QUER: NUMERO, 1
+    MENOR OU E MEMO: PRINTA(ATUAL)
+    BORA: NUMERO, NUMERO - 1
+    BORA: ATUAL, ATUAL * NUMERO
+    E HORA DO: FATORIAL(NUMERO, ATUAL)
+SAINDO DA JAULA
+
+JAULA SHOW
+    VEM, CUMPADE: NUMERO, 4
+    CE QUER VER: "FATORIAL DE ", NUMERO, " É: "
+    E HORA DO: FATORIAL(NUMERO, NUMERO)
+SAINDO DA JAULA
 ```
 
 ## Não quero falar com bandeirantes!
