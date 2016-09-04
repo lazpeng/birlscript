@@ -167,7 +167,17 @@ fn check_n_params(command: CommandType, num_params: usize) {
         CommandType::CmpLessEq => (1, kw::KW_CMP_LESSEQ),
         CommandType::CmpMore => (1, kw::KW_CMP_MORE),
         CommandType::CmpMoreEq => (1, kw::KW_CMP_MOREEQ),
-        CommandType::Jump => (1, kw::KW_JUMP),
+        CommandType::Jump => {
+            // Jump requer uma gambiarra
+            // Seções podem ter mais de um argumento, assim possuindo virgulas
+            // Quebraria o sistema de separar os argumentos, então usa joint pra juntar os argumentos num só
+            // Aqui faça que nem PRINT, se n for > 1, retorna n
+            if num_params < 1 {
+                (1, kw::KW_JUMP)
+            } else {
+                (num_params, kw::KW_JUMP)
+            }
+        }
         CommandType::DeclWV => (2, kw::KW_DECLWV),
         CommandType::Decl => (1, kw::KW_DECL),
         CommandType::Clear => (1, kw::KW_CLEAR),
@@ -182,7 +192,7 @@ fn check_n_params(command: CommandType, num_params: usize) {
             if num_params < 1 {
                 (1, kw::KW_PRINT)
             } else {
-                (num_params, kw::KW_PRINTLN)
+                (num_params, kw::KW_PRINT)
             }
         }
         CommandType::Quit => (0, kw::KW_QUIT),
@@ -197,6 +207,7 @@ fn check_n_params(command: CommandType, num_params: usize) {
     }
 }
 
+/// Divide os argumentos de um comando
 fn split_arguments(args: String) -> Vec<String> {
     if args == "" {
         vec![]
@@ -248,6 +259,7 @@ fn split_arguments(args: String) -> Vec<String> {
     }
 }
 
+/// Divide um comando em nome e argumentos
 fn split_command(cmd: String) -> Vec<String> {
     let mut has_args = true; // Se o comando possui argumentos
     let index = match cmd.find(':') {
@@ -260,6 +272,29 @@ fn split_command(cmd: String) -> Vec<String> {
     let cmd_name = &cmd[..index];
     let cmd_args: &str = if has_args { &cmd[index + 1..] } else { "" };
     vec![cmd_name.to_string(), cmd_args.to_string()]
+}
+
+/// Junta os argumentos de um comando em uma string separada por virgulas
+fn joint(args: Vec<String>) -> String {
+    if args.len() == 0 {
+        String::new()
+    } else {
+        let mut fin = String::new();
+        let mut index = 0;
+        loop {
+            if index >= args.len() {
+                break;
+            }
+            if index != 0 {
+                fin.push(',');
+                fin.push_str(&args[index]);
+            } else {
+                fin.push_str(&args[index]);
+            }
+            index += 1;
+        }
+        fin
+    }
 }
 
 /// Faz parsing de um comando
@@ -304,8 +339,9 @@ fn parse_cmd(cmd: &str) -> Command {
             Command::DeclWV(name, val)
         }
         kw::KW_JUMP => {
+            // Jump requere uma gambiarra: As funções podem ter argumentos (',') adicionais, então use joint pra juntar os argumentos em 1 e retorne
             check_n_params(CommandType::Jump, arguments.len());
-            Command::Jump(arguments[0].clone())
+            Command::Jump(joint(arguments))
         }
         kw::KW_CMP => {
             check_n_params(CommandType::Cmp, arguments.len());
@@ -428,7 +464,10 @@ pub fn parse(file: &str) -> Unit {
             // Comando de uma palavra só, separa por :
             words = line.split(':').collect::<Vec<&str>>();
             if words.len() < 2 {
-                abort!("Comando/palavra-chave não compreendido(a): {}", line);
+                // Hardcode: Verifica se o comando atual é BIRL, o unico comando sem argumentos
+                if words[0] != kw::KW_QUIT {
+                    abort!("Comando/palavra-chave não compreendido(a): {}", line);
+                }
             }
         }
         // Verifica a primeira palavra da linha
@@ -469,6 +508,8 @@ pub struct Section {
     pub name: String,
     /// Conjunto de linhas/comandos para execução
     pub lines: Vec<Command>,
+    /// Conjunto de parametros a serem passados para a seção ser executada
+    pub param_list: Vec<ExpectedParameter>,
 }
 
 impl Section {
@@ -476,6 +517,59 @@ impl Section {
         Section {
             name: String::new(),
             lines: vec![],
+            param_list: vec![],
+        }
+    }
+}
+use value;
+
+#[derive(Clone)]
+pub struct ExpectedParameter {
+    /// Identificador do parametro
+    pub id: String,
+    /// Tipo que o parametro espera
+    pub tp: value::ValueType,
+}
+
+/// Faz parsing de um parametro
+fn parse_parameter(param: &str) -> ExpectedParameter {
+    let div_token = match param.find(':') {
+        Some(pos) => pos,
+        None => abort!("Parametro deve ter tipo declarado depois do nome, separado por um ':'"),
+    };
+    let param_id = &param[..div_token];
+    let param_tp = match value::ValueType::try_parse(&param[div_token + 1..]) {
+        Some(tp) => tp,
+        None => abort!("Tipo inválido para parâmetro: {}", &param[div_token +1..]),
+    };
+    ExpectedParameter {id: param_id.trim().to_string(), tp: param_tp}
+}
+
+/// Faz parsing da lista de argumentos que uma seção recebe
+fn parse_section_parameters(decl_line: &str) -> Vec<ExpectedParameter> {
+    let decl_line = decl_line.trim();
+    if !decl_line.contains('(') {
+        vec![] // Nenhum argumento, retorna um array vazio
+    } else {
+        // Formato da declaração de uma seção com parametros:
+        // JAULA seção (PARAMETRO1:TIPO, ...)
+        let start_par = decl_line.find('(').unwrap(); // Ja verifiquei a existencia de um parentese
+        if start_par >= decl_line.len() {
+            abort!("Parametros declarados de forma incorreta. Parêntese em aberto");
+        }
+        let fin_par = decl_line.find(')').expect("Parêntese de fechamento não encontrado na declaração dos parametros da seção");
+        if fin_par <= start_par + 1 {
+            abort!("Erro na sintaxe! Parêntese de fechamento veio antes ou imediatamente depois do de abertura");
+        }
+        let parameters = decl_line[start_par + 1..fin_par].trim();
+        if parameters == "" {
+            vec![] // Retorna um array vazio, são só os parenteses nessa seção
+        } else {
+            if parameters.contains(',') {
+                parameters.split(',').map(|param| parse_parameter(param.trim())).collect()
+            } else {
+                vec![parse_parameter(parameters)]
+            }
         }
     }
 }
@@ -493,9 +587,19 @@ fn parse_section(lines: Vec<String>) -> Section {
         if !lines[0].contains(' ') {
             abort!("Erro na declaração da seção! Falta nome depois da palavra chave")
         }
+        let params = parse_section_parameters(&lines[0]);
+        let first_space = lines[0].find(' ').unwrap(); // Primeira ocorrencia de espaco
+        let name = if lines[0].contains('(') {
+            // Se a declaração possui parametros, separa o nome dos parametros
+            let starting_par = lines[0].find('(').unwrap();
+            lines[0][first_space+1..starting_par].trim().to_string()
+        } else {
+            lines[0][first_space+1..].trim().to_string()
+        };
         let mut sect = Section {
-            name: String::from(lines[0].split(' ').collect::<Vec<&str>>()[1].trim()),
+            name: name,
             lines: vec![],
+            param_list: params,
         };
         if lines.len() > 2 {
             // O -1 é pra não contar com a ultima linha, o SAINDO DA JAULA
@@ -505,7 +609,7 @@ fn parse_section(lines: Vec<String>) -> Section {
                 }
                 // Se a linha não tem nada de util até um comentario, pula ela
                 if line.chars().collect::<Vec<char>>()[0] == '#' ||
-                   line.chars().collect::<Vec<char>>()[0] == ';' {
+                    line.chars().collect::<Vec<char>>()[0] == ';' {
                     continue;
                 }
                 sect.lines.push(parse_cmd(&line));
