@@ -21,6 +21,7 @@ fn print_help() {
     println!("\t-t ou --tudo-cumpade                   : Imprime todos os comandos disponíveis");
     println!("\t-j ou --jaula [nome]                   : Diz ao interpretador pra usar outro \
               ponto de partida. Padrão: SHOW");
+    println!("\t-s ou --saindo-da-jaula                : Abre uma seção do console após a interpretação dos arquivos.");
 }
 
 /// Versão numérica
@@ -47,6 +48,8 @@ enum Param {
     InputFile(String),
     /// Mostra todos os comandos disponiveis
     ShowCmds,
+    /// Pede a execução do console
+    StartConsole,
 }
 
 /// Faz parsing dos comandos passados e retorna uma lista deles
@@ -99,6 +102,7 @@ fn get_params() -> Vec<Param> {
                     };
                     ret.push(Param::CustomInit(section));
                 }
+                "-s" | "--saindo-da-jaula" => ret.push(Param::StartConsole),
                 _ => ret.push(Param::InputFile(p)),
             }
         }
@@ -156,7 +160,8 @@ fn main() {
     let params = get_params();
     let mut files: Vec<String> = vec![];
     let mut env_default_sect = String::from(interpreter::BIRL_MAIN);
-    let mut printed_something = false; // Se algo foi printado. Para que não jogue o erro quando pedir help, comandos ou version
+    let (mut printed_something, mut should_start_console) = (false, false); // Se algo foi printado. Para que não jogue o erro quando pedir help, comandos ou version
+    // E se o console deve ser iniciado
     for p in params {
         match p {
             Param::PrintVersion => {
@@ -175,20 +180,34 @@ fn main() {
             Param::InputFile(file) => files.push(file),
             Param::ShowCmds => {
                 printed_something = true;
-                show_cmds()
+                show_cmds();
             }
+            Param::StartConsole => should_start_console = true,
         }
     }
     let mut environment = interpreter::Environment::new(env_default_sect);
-    if files.len() > 0 {
+    let num_files = files.len();
+    if num_files == 0 {
+        should_start_console = true; // Se nenhum arquivo foi passado, deve iniciar o console interativo
+    }
+    if num_files > 0 {
         for file in files {
             environment.interpret(parser::parse(&file))
         }
-        // Executa a jaula principal
-        environment.start_program();
-    } else {
-        if !printed_something {
-            abort!("Nenhum arquivo passado para a execução")
+    }
+    if should_start_console {
+        // TODO: Implementar console
+        // console::start(); // Inicia o console
+        // FIXME: Remova tudo abaixo depois de implementar o console (nesse if)
+        if num_files == 0 {
+            if !printed_something {
+                abort!("Nenhum arquivo passado pra execução (console ainda não funcional)");
+            }
+        } else {
+            warn!("Console ainda não funcional");
         }
+    } else {
+        // Caso passaram arquivos E não foi pedido o console,
+        environment.start_program(); // Inicia o programa normalmente
     }
 }
