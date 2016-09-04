@@ -39,6 +39,14 @@ impl Value {
         };
         String::from(fmted)
     }
+
+    /// Retorna o tipo do valor
+    pub fn value_type(&self) -> ValueType {
+        match *self {
+            Value::Number(_) => ValueType::Number,
+            Value::Str(_) => ValueType::Str,
+        }
+    }
 }
 
 use interpreter::Environment;
@@ -102,11 +110,64 @@ fn expand_syms(expr: &mut String, env: &Environment) {
     }
 }
 
+#[derive(Clone)]
 /// Tipo do valor a ser interpretado
-enum ValueType {
+pub enum ValueType {
     Number,
     Str,
 }
+
+impl ValueType {
+    /// Tenta identificar um ValueType apartir de uma string
+    pub fn try_parse(expr: &str) -> Option<ValueType> {
+        match expr.trim() {
+            VALUETYPE_STR => Some(ValueType::Str),
+            VALUETYPE_NUM => Some(ValueType::Number),
+            _ => None,
+        }
+    }
+
+    /// Retorna os tipos dos valores passados
+    pub fn types_of(values: &Vec<Value>) -> Vec<ValueType> {
+        values.into_iter().map(|v| v.value_type()).collect()
+    }
+
+    /// Verifica se dois tipos são iguais
+    pub fn equals(&self, other: ValueType) -> bool {
+        //FIXME: A função abaixo foi muito mal escrita e será (ou não) consertada no futuro
+        let (mut self_is_num, mut other_is_num) = (false, false);
+        if let ValueType::Number = *self {
+            self_is_num = true;
+        }
+        if let ValueType::Number = other {
+            other_is_num = true;
+        }
+        self_is_num == other_is_num
+    }
+}
+
+
+/// Expande uma serie de simbolos passados como argumento
+pub fn expand_sym_list(slist: &str, env: &mut Environment) -> Vec<Value> {
+    let start_par = slist.find('(').unwrap(); // Existencia do parentese verificada no interpreter
+    let end_par = match slist.find(')') {
+        Some(pos) => pos,
+        None => abort!("Lista de argumentos de chamada não possui parentese de fechamento. \"{}\"", slist),
+    };
+    let sym_list = &slist[start_par+1..end_par];
+    let sym_list = if sym_list.contains(',') {
+        // Se houver uma virgula, há mais de um simbolo envolvido
+        sym_list.split(',').map(|sym| parse_expr(sym, env)).collect()
+    } else {
+        vec![parse_expr(sym_list, env)]
+    };
+    sym_list
+}
+
+/// Nome que identifica o tipo Str
+pub const VALUETYPE_STR: &'static str = "FIBRA";
+/// Nome que identifica o tipo Number
+pub const VALUETYPE_NUM: &'static str = "TRAPEZIO DESCENDENTE";
 
 /// Descobre o tipo de uma expressão
 fn expr_type(expr: &str) -> ValueType {
@@ -185,7 +246,7 @@ fn parse_str_tokenize(expr: &str) -> Vec<String> {
                 tokens[index].push(c);
             }
             '0'...'9' if !in_str && !in_char => {
-                abort!("Números não devem ser usados em operações com strings ou caracteres")
+                abort!("Números não devem ser usados em operações com strings ou caracteres. expr: {}", expr)
             }
             _ if !in_str => {} // Pula outros caracteres se de fora de uma string
             _ => tokens[index].push(c),
