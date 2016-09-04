@@ -3,6 +3,7 @@
 
 extern crate ansi_term;
 
+/// Aborta com uma mensagem de erro
 #[macro_export]
 macro_rules! abort {
     ($($tt:tt)*) => {{
@@ -19,6 +20,7 @@ macro_rules! abort {
     }}
 }
 
+/// Emite um aviso a respeito de um problema, mas continua a execução do programa
 #[macro_export]
 macro_rules! warn {
     ($($tt:tt)*) => {{

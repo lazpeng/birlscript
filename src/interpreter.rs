@@ -134,6 +134,27 @@ pub struct Environment {
     last_cmp: Comparision,
 }
 
+/// Verifica se os tipos dos parametros passados e dos parametros declarados coincidem
+fn received_params_match(expected: &Vec<parser::ExpectedParameter>, received: &Vec<value::ValueType>) -> bool {
+    if expected.len() != received.len() {
+        abort!("Numero incorreto de parametros passados!")
+    } else {
+        let mut res = true;
+        let mut index = 0;
+        loop {
+            if index >= expected.len() {
+                break;
+            }
+            if !expected[index].tp.equals(received[index].clone()) {
+                res = false;
+                break;
+            }
+            index += 1;
+        }
+        res
+    }
+}
+
 impl Environment {
     /// Retorna o ultimo sectenv
     fn last_sectenv<'a>(&'a mut self) -> &'a mut SectionEnvironment {
@@ -294,7 +315,19 @@ impl Environment {
 
     /// Passa a execução para outra seção
     fn command_jump(&mut self, section: String) {
-        self.execute_section(&section);
+        let args = if section.contains('(') {
+            // Expande os simbolos para uma lista de argumentos
+            value::expand_sym_list(&section, self)
+        } else {
+            vec![]
+        };
+        let section = if section.contains('(') {
+            let fpar = section.find('(').unwrap();
+            section[..fpar].trim().to_string()
+        } else {
+            section
+        };
+        self.execute_section(&section, args);
     }
 
     /// Compara dois valores
@@ -305,50 +338,50 @@ impl Environment {
     /// Executa uma seção caso comparação de equals
     fn command_cmp_eq(&mut self, sect: String) {
         if let Comparision::Equals = self.last_cmp {
-            self.execute_section(&sect);
+            self.command_jump(sect);
         }
     }
 
     /// Executa uma seção caso comparação dê not equals
     fn command_cmp_neq(&mut self, sect: String) {
         if let Comparision::More = self.last_cmp {
-            self.execute_section(&sect);
+            self.command_jump(sect);
         } else if let Comparision::None = self.last_cmp {
-            self.execute_section(&sect);
+            self.command_jump(sect);
         } else if let Comparision::Less = self.last_cmp {
-            self.execute_section(&sect);
+            self.command_jump(sect);
         }
     }
 
     /// Menos/Menor
     fn command_cmp_less(&mut self, sect: String) {
         if let Comparision::Less = self.last_cmp {
-            self.execute_section(&sect);
+            self.command_jump(sect);
         }
     }
 
     /// Menos/Menor ou igual
     fn command_cmp_lesseq(&mut self, sect: String) {
         if let Comparision::Less = self.last_cmp {
-            self.execute_section(&sect);
+            self.command_jump(sect);
         } else if let Comparision::Equals = self.last_cmp {
-            self.execute_section(&sect);
+            self.command_jump(sect);
         }
     }
 
     /// Maior
     fn command_cmp_more(&mut self, sect: String) {
         if let Comparision::More = self.last_cmp {
-            self.execute_section(&sect);
+            self.command_jump(sect);
         }
     }
 
     /// Maior ou igual
     fn command_cmp_moreeq(&mut self, sect: String) {
         if let Comparision::More = self.last_cmp {
-            self.execute_section(&sect);
+            self.command_jump(sect);
         } else if let Comparision::Equals = self.last_cmp {
-            self.execute_section(&sect);
+            self.command_jump(sect);
         }
     }
 
@@ -438,12 +471,14 @@ impl Environment {
     }
 
     /// Executa uma seção, se preciso, recursivamente
-    fn execute_section(&mut self, sect_name: &str) {
+    fn execute_section(&mut self, sect_name: &str, arguments: Vec<value::Value>) {
         let mut section = parser::Section::new();
+        let mut expected_args: Vec<parser::ExpectedParameter> = vec![];
         let mut found = false;
         for sect in &self.sections {
             if sect.name == sect_name {
                 section = sect.clone();
+                expected_args = sect.param_list.clone();
                 found = true;
                 break;
             }
@@ -451,6 +486,10 @@ impl Environment {
         if !found {
             abort!("Seção não encontrada: \"{}\".", sect_name)
         } else {
+            let recv_args = value::ValueType::types_of(&arguments);
+            if !received_params_match(&expected_args, &recv_args) {
+                abort!("Tipos de parametros passados para \"{}\" não coincidem com da declaração", sect_name);
+            }
             // Cria um novo ambiente pra nova seção no fim da pilha
             self.sectenvs.push(SectionEnvironment::new());
             // Cria a variavel que guarda o nome da seção
@@ -458,6 +497,11 @@ impl Environment {
                 .vars
                 .push(Variable::from(String::from("JAULA"),
                                      value::Value::Str(Box::new(String::from(sect_name)))));
+            // Empurra os argumentos recebidos pra pilha de variaveis
+            for i in 0..arguments.len() {
+                let var = Variable::from(expected_args[i].id.clone(), arguments[i].clone());
+                self.last_sectenv().vars.push(var);
+            }
             for cmd in section.lines {
                 self.execute_command(cmd);
             }
@@ -523,7 +567,7 @@ impl Environment {
         let has_main = self.has_main(&self.entry);
         if has_main {
             let entryp = self.entry.clone();
-            self.execute_section(&entryp);
+            self.execute_section(&entryp, vec![]);
         }
     }
 }
