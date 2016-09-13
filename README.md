@@ -13,18 +13,20 @@ Use o interpretador com a flag *-a* ou *--ajuda-o-maluco-ta-doente* para ver uma
 de opções que podem ser passadas. Use *-e* ou *--ele-que-a-gente-quer* junto com o nome
 de um comando para ver mais sobre ele, ou *-t* ou *--tudo-cumpade* para uma lista de comandos.
 
-## Versão 1.1.3
+## Versão 1.1.4
 
 ## Builds:
 * Windows (64-bits): Disponível
-* Windows (32-bits): Em breve
+* Windows (32-bits): Disponível
 * Linux   (64-bits): Disponível
 * Linux   (32-bits): Em breve
-* OS X    (64-bits): Não disponível
-* OS X    (32-bits): Não disponível
+* OS X    (64-bits): Não disponível[²]
+* OS X    (32-bits): Não disponível[²]
+
+[²] - Não tenho um Mac pra compilar o programa pra tal, então não tenho como fornecer os binários. Se alguém tiver e quiser compilar eu posso fornecer instruções.
 
 *Copyleft(ɔ) 2016 Rafael R Nakano. Nenhum direito reservado.*
-*Contato: lazpeng@gmail.com*
+*Contato: mseqs@bsd.com.br*
 
 ## Sobre
 BIRLSCRIPT (ou BIRLASM) é uma espécie de dialeto assembly[¹] com algumas pequenas (ou grandes)
@@ -53,29 +55,54 @@ JAULA SHOW
 SAINDO DA JAULA
 ```
 
+## Variáveis padrão
+```python
+# Existem varias variaveis que são inicializadas por padrão, que são, por sua vez, constantes.
+# Elas são:
+CE QUER VER ISSO: CUMPADE # Contem seu nome de usuario
+CE QUER VER ISSO: UM # Teste, contem o valor 1
+CE QUER VER ISSO: BODYBUILDER # Outra constante, contem o valor BAMBAM
+
+JAULA SHOW() # Parenteses opcionais se nao houver parametros, tanto na declaração quanto na chamada
+    CE QUER VER ISSO: JAULA # Contem o nome da JAULA atual, no caso, printa SHOW
+SAINDO DA JAULA
+```
+
 ## Hello world, cumpade!
 ```python
-JAULA SHOW
-  CE QUER VER ISSO: "BORA, " + CUMPADE + "!" # Printa "Bora, " mais seu username
-SAINDO DA JAULA
+# A JAULA SHOW é opcional, codigos podem ser executados fora de uma JAULA
+# porem uma jaula (no caso, a show) permite que se faça uso de recursão, o que não é disponivel em comandos globais
+CE QUER VER ISSO: "BORA, " + CUMPADE + " !" # O operador + em strings só pode ser usado com outra string
 ```
 
 ## Seções e condicionais
 ```python
-JAULA OUTRO
+JAULA OUTRO # Declaração da JAULA outro
   CE QUER VER ISSO: "estou em outra"
-SAINDO DA JAULA
+SAINDO DA JAULA # Fim da declaração de OUTRO
 
-JAULA DIFERENTE
+JAULA DIFERENTE() # No caso de nao possuir parametros, o uso de parenteses é opcional, tanto na declaração quanto de chamada
   CE QUER VER ISSO: "deu diferente"
 SAINDO DA JAULA
 
 JAULA SHOW
-  E HORA DO: OUTRO # Passa a execução pra OUTRO
+  E HORA DO: OUTRO() # Passa a execução pra OUTRO
   VEM, CUMPADE: MUTANTE, "FIBRA"
   E ELE QUE A GENTE QUER: MUTANTE, "AGUA COM MUSCULO" # Compara MUTANTE com "AGUA COM MUSCULO"
   NUM E ELE: DIFERENTE # Caso seja diferente, execute DIFERENTE
 SAINDO DA JAULA
+```
+
+## Globais
+```python
+IBIRAPUERA: GLOBAL_VARIAVEL: "PRIMEIRO VALOR" # Globais declarados com IBIRAPUERA podem ter seu valor alterado
+SAI DE CASA: GLOBAL_CONSTANTE: "UNICO VALOR" # Globais declarados com SAI DE CASA não podem ter seu valor alterado
+
+CE QUER VER ISSO: GLOBAL_VARIAVEL # Printa PRIMEIRO VALOR
+BORA: GLOBAL_VARIAVEL, "SEGUNDO VALOR" # Altera o valor da global
+CE QUER VER ISSO: GLOBAL_VARIAVEL # Printa SEGUNDO VALOR
+CE QUER VER ISSO: GLOBAL_CONSTANTE # Printa UNICO VALOR
+#BORA: GLOBAL_CONSTANTE, "ERRO" # Descomente essa linha e verá o erro na execução
 ```
 
 ## Fatorial
@@ -109,7 +136,7 @@ JAULA BANDEIRANTES
     CE QUER VER ISSO: "NÃO QUERO FALAR COM BANDEIRANTES"
 SAINDO DA JAULA
 
-JAULA OUTRO
+JAULA OUTRA (EMISSORA : FIBRA)
     CE QUER VER ISSO: "COM " + EMISSORA + " EU FALO"
 SAINDO DA JAULA
 
@@ -117,7 +144,7 @@ JAULA SHOW
     VEM: EMISSORA # Cria variavel EMISSORA
     BORA, CUMPADE!!!: EMISSORA # Guarda valor da entrada em EMISSORA com letras maiusculas
     E ELE QUE A GENTE QUER: EMISSORA, "BANDEIRANTES" # Compara com bandeirantes
-    E ELE MEMO: BANDEIRANTES # Caso seja igual, execute bandeirantes
-    NUM E ELE: OUTRO # Diferente, execute outro
+    E ELE MEMO: BANDEIRANTES() # Caso seja igual, execute bandeirantes
+    NUM E ELE: OUTRA(EMISSORA) # Diferente, execute outro
 SAINDO DA JAULA
 ```
