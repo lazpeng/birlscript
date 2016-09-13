@@ -134,7 +134,7 @@ impl ValueType {
 
     /// Verifica se dois tipos são iguais
     pub fn equals(&self, other: ValueType) -> bool {
-        //FIXME: A função abaixo foi muito mal escrita e será (ou não) consertada no futuro
+        // FIXME: A função abaixo foi muito mal escrita e será (ou não) consertada no futuro
         let (mut self_is_num, mut other_is_num) = (false, false);
         if let ValueType::Number = *self {
             self_is_num = true;
@@ -152,14 +152,23 @@ pub fn expand_sym_list(slist: &str, env: &mut Environment) -> Vec<Value> {
     let start_par = slist.find('(').unwrap(); // Existencia do parentese verificada no interpreter
     let end_par = match slist.find(')') {
         Some(pos) => pos,
-        None => abort!("Lista de argumentos de chamada não possui parentese de fechamento. \"{}\"", slist),
+        None => {
+            abort!("Lista de argumentos de chamada não possui parentese de fechamento. \"{}\"",
+                   slist)
+        }
     };
-    let sym_list = &slist[start_par+1..end_par];
+    let sym_list = &slist[start_par + 1..end_par];
     let sym_list = if sym_list.contains(',') {
         // Se houver uma virgula, há mais de um simbolo envolvido
         sym_list.split(',').map(|sym| parse_expr(sym, env)).collect()
     } else {
-        vec![parse_expr(sym_list, env)]
+        if sym_list.trim() == "" {
+            // Parametros existem, porem nao ha nada entre eles
+            vec![]
+        } else {
+            // Existe um argumento entre os parenteses
+            vec![parse_expr(sym_list, env)]
+        }
     };
     sym_list
 }
@@ -194,8 +203,9 @@ fn parse_num(expr: &str) -> Value {
     if expr.contains('\"') || expr.contains('\'') {
         abort!("Uma expressão com números não deve conter strings ou caracteres")
     }
-    let res: arch::MaxNum = meval::eval_str(expr).unwrap();
-    Value::Number(res)
+    // eval_str retorna um f64, logo uma conversão é necessaria quando estiver em plataformas de 32 bits
+    let res = meval::eval_str(expr).unwrap();
+    Value::Number(res as arch::MaxNum)
 }
 
 /// Separa uma expressão de Strings em varios tokens
@@ -246,7 +256,9 @@ fn parse_str_tokenize(expr: &str) -> Vec<String> {
                 tokens[index].push(c);
             }
             '0'...'9' if !in_str && !in_char => {
-                abort!("Números não devem ser usados em operações com strings ou caracteres. expr: {}", expr)
+                abort!("Números não devem ser usados em operações com strings ou caracteres. \
+                        expr: {}",
+                       expr)
             }
             _ if !in_str => {} // Pula outros caracteres se de fora de uma string
             _ => tokens[index].push(c),

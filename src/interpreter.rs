@@ -3,6 +3,7 @@
 use parser;
 use value;
 
+/// Nome da JAULA padrão
 pub const BIRL_MAIN: &'static str = "SHOW";
 
 /// Variavel que tem um nome e um valor
@@ -135,9 +136,16 @@ pub struct Environment {
 }
 
 /// Verifica se os tipos dos parametros passados e dos parametros declarados coincidem
-fn received_params_match(expected: &Vec<parser::ExpectedParameter>, received: &Vec<value::ValueType>) -> bool {
+fn received_params_match(sect_name: &str,
+                         expected: &Vec<parser::ExpectedParameter>,
+                         received: &Vec<value::ValueType>)
+                         -> bool {
     if expected.len() != received.len() {
-        abort!("Numero incorreto de parametros passados!")
+        abort!("Numero incorreto de parametros passados! \"{}\" espera {} parâmetros, porém {} \
+                foram passados.",
+               sect_name,
+               expected.len(),
+               received.len())
     } else {
         let mut res = true;
         let mut index = 0;
@@ -411,19 +419,13 @@ impl Environment {
     /// Input
     fn command_input(&mut self, var: String) {
         let input = get_input();
-        let mut res = String::from("\"");
-        res.push_str(&input);
-        res.push('\"');
-        self.mod_var(&var, value::Value::Str(Box::new(res)));
+        self.mod_var(&var, value::Value::Str(Box::new(input)));
     }
 
     /// Input upper
     fn command_input_upper(&mut self, var: String) {
         let input = get_input().to_uppercase();
-        let mut res = String::from("\"");
-        res.push_str(&input);
-        res.push('\"');
-        self.mod_var(&var, value::Value::Str(Box::new(res)));
+        self.mod_var(&var, value::Value::Str(Box::new(input)));
     }
 
     /// Executa um comando
@@ -487,8 +489,12 @@ impl Environment {
             abort!("Seção não encontrada: \"{}\".", sect_name)
         } else {
             let recv_args = value::ValueType::types_of(&arguments);
-            if !received_params_match(&expected_args, &recv_args) {
-                abort!("Tipos de parametros passados para \"{}\" não coincidem com da declaração", sect_name);
+            // A função em si já joga o erro caso o numero de parametros nao coincida
+            if !received_params_match(&sect_name, &expected_args, &recv_args) {
+                // Caso o tipo dos parametros passados seja diferente, de o erro dizendo tal
+                abort!("Tipos dos parametros passados para \"{}\" não coincidem com os tipos \
+                        declarados.",
+                       sect_name)
             }
             // Cria um novo ambiente pra nova seção no fim da pilha
             self.sectenvs.push(SectionEnvironment::new());

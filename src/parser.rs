@@ -89,8 +89,6 @@ pub enum Command {
     InputUpper(String),
 }
 
-// Por algum motivo, o compilador acusa Quit como dead_code :/
-#[allow(dead_code)]
 /// Facil representação dos comandos sem os argumentos
 pub enum CommandType {
     Move,
@@ -167,22 +165,12 @@ fn check_n_params(command: CommandType, num_params: usize) {
         CommandType::CmpLessEq => (1, kw::KW_CMP_LESSEQ),
         CommandType::CmpMore => (1, kw::KW_CMP_MORE),
         CommandType::CmpMoreEq => (1, kw::KW_CMP_MOREEQ),
-        CommandType::Jump => {
-            // Jump requer uma gambiarra
-            // Seções podem ter mais de um argumento, assim possuindo virgulas
-            // Quebraria o sistema de separar os argumentos, então usa joint pra juntar os argumentos num só
-            // Aqui faça que nem PRINT, se n for > 1, retorna n
-            if num_params < 1 {
-                (1, kw::KW_JUMP)
-            } else {
-                (num_params, kw::KW_JUMP)
-            }
-        }
+        CommandType::Jump => (1, kw::KW_JUMP),
         CommandType::DeclWV => (2, kw::KW_DECLWV),
         CommandType::Decl => (1, kw::KW_DECL),
         CommandType::Clear => (1, kw::KW_CLEAR),
         CommandType::Move => (2, kw::KW_MOVE),
-        // No caso do print e println, eles aceitam mais de um argumento, então faça uma checagem adicional
+        // print e println aceitam mais de um argumento, então faça uma checagem adicional
         CommandType::Println => {
             // No caso do println, ele pode ser usado sem um argumento, assim printando apenas uma nova linha
             (num_params, kw::KW_PRINTLN)
@@ -213,7 +201,9 @@ fn split_arguments(args: String) -> Vec<String> {
         vec![]
     } else {
         let mut result: Vec<String> = vec![];
-        let (mut in_str, mut in_char, mut last_escape) = (false, false, false);
+        let (mut in_str, mut in_char, mut last_escape, mut in_sym, mut in_par) =
+            (false, false, false, false, false);
+        let mut num_op_par = 0; // Numero de parenteses abertos
         let mut last_arg = String::new();
         for c in args.chars() {
             match c {
@@ -244,11 +234,36 @@ fn split_arguments(args: String) -> Vec<String> {
                         last_escape = true;
                     }
                 }
-                ',' if !in_str && !in_char => {
+                'a'...'z' | 'A'...'Z' | '_' if !in_str && !in_char => {
+                    in_sym = true;
+                    last_arg.push(c);
+                }
+                '(' if in_sym => {
+                    // Parenteses
+                    num_op_par += 1; // Abriu um parentese
+                    in_par = true;
+                    last_arg.push(c);
+                }
+                ')' if in_par => {
+                    if num_op_par <= 0 {
+                        abort!("Parentese de fechamento sem nenhum abrindo!")
+                    }
+                    num_op_par -= 1;
+                    if num_op_par <= 0 {
+                        in_par = false;
+                    }
+                    last_arg.push(c);
+                }
+                ',' | ' ' if in_sym && !in_par => {
+                    in_sym = false;
                     result.push(last_arg.clone());
                     last_arg.clear();
                 }
-                ' ' if !in_str && !in_char => {}
+                ',' if !in_str && !in_char && !in_sym && !in_par => {
+                    result.push(last_arg.clone());
+                    last_arg.clear();
+                }
+                ' ' if !in_str && !in_char && !in_sym => {}
                 _ => last_arg.push(c),
             }
         }
@@ -270,31 +285,12 @@ fn split_command(cmd: String) -> Vec<String> {
         }
     };
     let cmd_name = &cmd[..index];
-    let cmd_args: &str = if has_args { &cmd[index + 1..] } else { "" };
-    vec![cmd_name.to_string(), cmd_args.to_string()]
-}
-
-/// Junta os argumentos de um comando em uma string separada por virgulas
-fn joint(args: Vec<String>) -> String {
-    if args.len() == 0 {
-        String::new()
+    let cmd_args: &str = if has_args {
+        &cmd[index + 1..]
     } else {
-        let mut fin = String::new();
-        let mut index = 0;
-        loop {
-            if index >= args.len() {
-                break;
-            }
-            if index != 0 {
-                fin.push(',');
-                fin.push_str(&args[index]);
-            } else {
-                fin.push_str(&args[index]);
-            }
-            index += 1;
-        }
-        fin
-    }
+        ""
+    };
+    vec![cmd_name.to_string(), cmd_args.to_string()]
 }
 
 /// Faz parsing de um comando
@@ -341,7 +337,7 @@ fn parse_cmd(cmd: &str) -> Command {
         kw::KW_JUMP => {
             // Jump requere uma gambiarra: As funções podem ter argumentos (',') adicionais, então use joint pra juntar os argumentos em 1 e retorne
             check_n_params(CommandType::Jump, arguments.len());
-            Command::Jump(joint(arguments))
+            Command::Jump(arguments[0].clone())
         }
         kw::KW_CMP => {
             check_n_params(CommandType::Cmp, arguments.len());
@@ -350,35 +346,35 @@ fn parse_cmd(cmd: &str) -> Command {
         }
         kw::KW_CMP_EQ => {
             check_n_params(CommandType::CmpEq, arguments.len());
-            Command::CmpEq(arguments[0].to_string())
+            Command::CmpEq(arguments[0].clone())
         }
         kw::KW_CMP_NEQ => {
             check_n_params(CommandType::CmpNEq, arguments.len());
-            Command::CmpNEq(arguments[0].to_string())
+            Command::CmpNEq(arguments[0].clone())
         }
         kw::KW_CMP_LESS => {
             check_n_params(CommandType::CmpLess, arguments.len());
-            Command::CmpLess(arguments[0].to_string())
+            Command::CmpLess(arguments[0].clone())
         }
         kw::KW_CMP_LESSEQ => {
             check_n_params(CommandType::CmpLessEq, arguments.len());
-            Command::CmpLessEq(arguments[0].to_string())
+            Command::CmpLessEq(arguments[0].clone())
         }
         kw::KW_CMP_MORE => {
             check_n_params(CommandType::CmpMore, arguments.len());
-            Command::CmpMore(arguments[0].to_string())
+            Command::CmpMore(arguments[0].clone())
         }
         kw::KW_CMP_MOREEQ => {
             check_n_params(CommandType::CmpMoreEq, arguments.len());
-            Command::CmpMoreEq(arguments[0].to_string())
+            Command::CmpMoreEq(arguments[0].clone())
         }
         kw::KW_PRINTLN => {
             check_n_params(CommandType::Println, arguments.len());
-            Command::Println(arguments.iter().map(|arg| arg.to_string()).collect::<Vec<String>>())
+            Command::Println(arguments.iter().map(|arg| arg.clone()).collect::<Vec<String>>())
         }
         kw::KW_PRINT => {
             check_n_params(CommandType::Print, arguments.len());
-            Command::Print(arguments.iter().map(|arg| arg.to_string()).collect::<Vec<String>>())
+            Command::Print(arguments.iter().map(|arg| arg.clone()).collect::<Vec<String>>())
         }
         kw::KW_QUIT => {
             check_n_params(CommandType::Quit, arguments.len());
@@ -386,11 +382,11 @@ fn parse_cmd(cmd: &str) -> Command {
         }
         kw::KW_INPUT => {
             check_n_params(CommandType::Input, arguments.len());
-            Command::Input(arguments[0].to_string())
+            Command::Input(arguments[0].clone())
         }
         kw::KW_INPUT_UP => {
             check_n_params(CommandType::InputUpper, arguments.len());
-            Command::InputUpper(arguments[0].to_string())
+            Command::InputUpper(arguments[0].clone())
         }
         _ => abort!("Comando \"{}\" não existe.", cmd_type),
     };
@@ -405,6 +401,38 @@ pub struct Unit {
     pub globals: Vec<Global>,
     /// Conjunto de comandos fora de funções para serem executadas no inicio do programa
     pub glb_cmds: Vec<Command>,
+}
+
+/// Representa diferentes tipos de informação que uma linha carrega e o que representa
+enum LineType {
+    /// No caso de representar um comando
+    Command,
+    /// No caso de representar uma declaração de seção
+    SectStart,
+    /// No caso de representar o fim de uma seção
+    SectEnd,
+    /// Na declaração de um global
+    GlobalDecl,
+}
+
+fn parse_line_type(line: &str) -> LineType {
+    // line já foi usada trim()
+    // testa se está finalizando uma seção
+    if line == kw::KW_SECTEND {
+        LineType::SectEnd
+    } else {
+        let mut ret = LineType::Command;
+        // Se for a declaração de uma seção
+        if line.split(' ').collect::<Vec<&str>>()[0] == kw::KW_SECTION {
+            ret = LineType::SectStart;
+        }
+        // Testa se é a declaração de um global
+        let fword = line.split(':').collect::<Vec<&str>>()[0];
+        if fword == kw::KW_GLOBAL || fword == kw::KW_VAR_GLOBAL {
+            ret = LineType::GlobalDecl;
+        }
+        ret
+    }
 }
 
 /// Realiza a interpretação de um arquivo e retorna sua unidade compilada
@@ -454,33 +482,26 @@ pub fn parse(file: &str) -> Unit {
                     break;
                 }
             }
-            tmp
+            tmp.trim().to_string()
         } else {
-            line
+            line.trim().to_string()
         };
-        // Divide a string em palavras separadas por um espaço
-        let mut words = line.split(' ').collect::<Vec<&str>>();
-        if words.len() < 2 {
-            // Comando de uma palavra só, separa por :
-            words = line.split(':').collect::<Vec<&str>>();
-            if words.len() < 2 {
-                // Hardcode: Verifica se o comando atual é BIRL, o unico comando sem argumentos
-                if words[0] != kw::KW_QUIT {
-                    abort!("Comando/palavra-chave não compreendido(a): {}", line);
-                }
-            }
+        if line == "" {
+            // Depois de tirar os comentarios, a linha ficou vazia
+            continue;
         }
         // Verifica a primeira palavra da linha
-        match words[0] {
-            // Se for declaração de um global constante, empurra o global pra unit
-            "SAI" |
-            kw::KW_VAR_GLOBAL if !parsing_section => final_unit.globals.push(parse_global(&line)),
+        match parse_line_type(&line) {
+            // Se for declaração de um global, empurra o global pra unit
+            LineType::GlobalDecl if !parsing_section => {
+                final_unit.globals.push(parse_global(&line))
+            }
             // Se for declaração de uma seção, começa o parsing da seção
-            kw::KW_SECTION if !parsing_section => {
+            LineType::SectStart if !parsing_section => {
                 cur_section.push(line.clone());
                 parsing_section = true;
             }
-            "SAINDO" if parsing_section => {
+            LineType::SectEnd if parsing_section => {
                 cur_section.push(line.clone());
                 if line == kw::KW_SECTEND {
                     // Encerra seção
@@ -490,12 +511,18 @@ pub fn parse(file: &str) -> Unit {
                 }
             }
             // Quando estiver dentro de uma seção, empurre o comando pra seção
-            _ if parsing_section => {
+            LineType::Command if parsing_section => {
                 // Mude os acentos para que aceite comandos com acento
                 cur_section.push(change_accents(&line));
             }
             // Se não for nenhuma (os comandos só são interpretados dentro da seção)
-            _ => final_unit.glb_cmds.push(parse_cmd(&change_accents(&line))),
+            LineType::Command => final_unit.glb_cmds.push(parse_cmd(&change_accents(&line))),
+            _ => {
+                // Quando não for nenhuma das acima
+                // FIXME: Adicionar uma mensagem de erro mais clara
+                abort!("Erro de sintaxe! Linha atual não reconhecida no contexto: {}",
+                       line)
+            }
         }
     }
     final_unit
@@ -540,9 +567,15 @@ fn parse_parameter(param: &str) -> ExpectedParameter {
     let param_id = &param[..div_token];
     let param_tp = match value::ValueType::try_parse(&param[div_token + 1..]) {
         Some(tp) => tp,
-        None => abort!("Tipo inválido para parâmetro: {}", &param[div_token +1..]),
+        None => {
+            abort!("Tipo inválido para parâmetro: {}",
+                   &param[div_token + 1..])
+        }
     };
-    ExpectedParameter {id: param_id.trim().to_string(), tp: param_tp}
+    ExpectedParameter {
+        id: param_id.trim().to_string(),
+        tp: param_tp,
+    }
 }
 
 /// Faz parsing da lista de argumentos que uma seção recebe
@@ -558,8 +591,8 @@ fn parse_section_parameters(decl_line: &str) -> Vec<ExpectedParameter> {
             abort!("Parametros declarados de forma incorreta. Parêntese em aberto");
         }
         let fin_par = decl_line.find(')').expect("Parêntese de fechamento não encontrado na declaração dos parametros da seção");
-        if fin_par <= start_par + 1 {
-            abort!("Erro na sintaxe! Parêntese de fechamento veio antes ou imediatamente depois do de abertura");
+        if fin_par < start_par {
+            abort!("Erro na sintaxe! Parêntese de fechamento veio antes do de abertura");
         }
         let parameters = decl_line[start_par + 1..fin_par].trim();
         if parameters == "" {
@@ -592,9 +625,9 @@ fn parse_section(lines: Vec<String>) -> Section {
         let name = if lines[0].contains('(') {
             // Se a declaração possui parametros, separa o nome dos parametros
             let starting_par = lines[0].find('(').unwrap();
-            lines[0][first_space+1..starting_par].trim().to_string()
+            lines[0][first_space + 1..starting_par].trim().to_string()
         } else {
-            lines[0][first_space+1..].trim().to_string()
+            lines[0][first_space + 1..].trim().to_string()
         };
         let mut sect = Section {
             name: name,
@@ -609,7 +642,7 @@ fn parse_section(lines: Vec<String>) -> Section {
                 }
                 // Se a linha não tem nada de util até um comentario, pula ela
                 if line.chars().collect::<Vec<char>>()[0] == '#' ||
-                    line.chars().collect::<Vec<char>>()[0] == ';' {
+                   line.chars().collect::<Vec<char>>()[0] == ';' {
                     continue;
                 }
                 sect.lines.push(parse_cmd(&line));
