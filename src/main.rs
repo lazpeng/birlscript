@@ -21,17 +21,18 @@ fn print_help() {
     println!("\t-t ou --tudo-cumpade                   : Imprime todos os comandos disponíveis");
     println!("\t-j ou --jaula [nome]                   : Diz ao interpretador pra usar outro \
               ponto de partida. Padrão: SHOW");
-    println!("\t-s ou --saindo-da-jaula                : Abre uma seção do console após a interpretação dos arquivos.");
+    println!("\t-s ou --saindo-da-jaula                : Abre uma seção do console após a \
+              interpretação dos arquivos.");
 }
 
 /// Versão numérica
-pub static BIRLSCRIPT_VERSION: &'static str = "1.0.0";
+pub static BIRLSCRIPT_VERSION: &'static str = "1.1.4";
 
 /// Imprime a mensagem de versão
 fn print_version() {
-    println!("Versão dessa porra, cumpade:");
+    println!("Versão descendente:");
     println!("Interpretador BIRLSCRIPT v{}", BIRLSCRIPT_VERSION);
-    println!("Copyleft(ɔ) 2016 Rafael R Nakano - Nenhum direito reservado");
+    println!("Copyleft(ɔ) 2016 Rafael R Nakano <mseqs@bsd.com.br> - Nenhum direito reservado");
 }
 
 /// Coleção de parametros passados ao interpretador
@@ -102,7 +103,8 @@ fn get_params() -> Vec<Param> {
                     };
                     ret.push(Param::CustomInit(section));
                 }
-                "-s" | "--saindo-da-jaula" => ret.push(Param::StartConsole),
+                "-s" |
+                "--saindo-da-jaula" => ret.push(Param::StartConsole),
                 _ => ret.push(Param::InputFile(p)),
             }
         }
