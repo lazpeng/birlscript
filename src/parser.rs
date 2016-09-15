@@ -254,7 +254,7 @@ fn split_arguments(args: String) -> Vec<String> {
                     }
                     last_arg.push(c);
                 }
-                ',' | ' ' if in_sym && !in_par => {
+                ',' if in_sym && !in_par => {
                     in_sym = false;
                     result.push(last_arg.clone());
                     last_arg.clear();
