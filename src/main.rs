@@ -4,8 +4,6 @@ mod commands;
 mod interpreter;
 mod value;
 
-extern crate ansi_term;
-
 /// Imprime mensagem de ajuda
 fn print_help() {
     println!("Ta querendo ajuda, cumpade?");
