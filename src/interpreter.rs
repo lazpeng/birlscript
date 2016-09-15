@@ -125,7 +125,7 @@ pub struct Environment {
     sectenvs: Vec<SectionEnvironment>,
     /// Coleção de seções para serem executadas
     sections: Vec<parser::Section>,
-    /// Comandos globais a serem executados
+    /// Comandos globais.birl a serem executados
     glb_cmds: Vec<parser::Command>,
     /// Globais
     glbs: Vec<parser::Global>,
@@ -236,7 +236,7 @@ impl Environment {
             }
         }
         if !found {
-            // Se não encontrado, tente procurar nos globais
+            // Se não encontrado, tente procurar nos globais.birl
             for glb in &self.glbs {
                 if glb.identifier == name {
                     ret = value::parse_expr(&glb.value, self);
@@ -254,7 +254,7 @@ impl Environment {
 
     /// Modifica o valor de uma variavel
     pub fn mod_var(&mut self, var: &str, newval: value::Value) {
-        // Essa função deve procurar na pilha de variaveis da seção e nos globais do programa
+        // Essa função deve procurar na pilha de variaveis da seção e nos globais.birl do programa
         let (mut index, mut found) = (0, false);
         loop {
             if index >= self.last_sectenv().vars.len() {
@@ -270,7 +270,7 @@ impl Environment {
         }
         if !found {
             if self.glbs.len() > 0 {
-                // Não encontrado, procure nos globais
+                // Não encontrado, procure nos globais.birl
                 let mut index = 0;
                 loop {
                     if index >= self.glbs.len() {
@@ -562,7 +562,7 @@ impl Environment {
     /// Executa a seção padrão
     pub fn start_program(&mut self) {
         self.init_variables();
-        // Executa os comandos globais
+        // Executa os comandos globais.birl
         if self.glb_cmds.len() > 0 {
             for i in 0..self.glb_cmds.len() {
                 let cmd = self.glb_cmds[i].clone();
