@@ -1,0 +1,8 @@
+IBIRAPUERA: GLOBAL_VARIAVEL: "PRIMEIRO VALOR" # Globais declarados com IBIRAPUERA podem ter seu valor alterado
+SAI DE CASA: GLOBAL_CONSTANTE: "UNICO VALOR" # Globais declarados com SAI DE CASA não podem ter seu valor alterado
+
+CE QUER VER ISSO: GLOBAL_VARIAVEL # Printa PRIMEIRO VALOR
+BORA: GLOBAL_VARIAVEL, "SEGUNDO VALOR" # Altera o valor da global
+CE QUER VER ISSO: GLOBAL_VARIAVEL # Printa SEGUNDO VALOR
+CE QUER VER ISSO: GLOBAL_CONSTANTE # Printa UNICO VALOR
+#BORA: GLOBAL_CONSTANTE, "ERRO" # Descomente essa linha e verá o erro na execução

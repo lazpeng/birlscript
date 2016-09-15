@@ -1,0 +1,9 @@
+# Existem varias variaveis que são inicializadas por padrão, que são, por sua vez, constantes.
+# Elas são:
+CE QUER VER ISSO: CUMPADE # Contem seu nome de usuario
+CE QUER VER ISSO: UM # Teste, contem o valor 1
+CE QUER VER ISSO: BODYBUILDER # Outra constante, contem o valor BAMBAM
+
+JAULA SHOW() # Parenteses opcionais se nao houver parametros, tanto na declaração quanto na chamada
+    CE QUER VER ISSO: JAULA # Contem o nome da JAULA atual, no caso, printa SHOW
+SAINDO DA JAULA
