@@ -23,10 +23,11 @@ fn print_help() {
               ponto de partida. Padrão: SHOW");
     println!("\t-s ou --saindo-da-jaula                : Abre uma seção do console após a \
               interpretação dos arquivos.");
+    println!("\t-o ou --oloco-bixo                     : (DEBUG) Testa cada um dos exemplos pra ter certeza que tá tudo funfando.");
 }
 
 /// Versão numérica
-pub static BIRLSCRIPT_VERSION: &'static str = "1.1.4";
+pub static BIRLSCRIPT_VERSION: &'static str = "1.1.5";
 
 /// Imprime a mensagem de versão
 fn print_version() {
@@ -51,6 +52,8 @@ enum Param {
     ShowCmds,
     /// Pede a execução do console
     StartConsole,
+    /// Testa todos os exemplos disponiveis
+    Test,
 }
 
 /// Faz parsing dos comandos passados e retorna uma lista deles
@@ -105,6 +108,8 @@ fn get_params() -> Vec<Param> {
                 }
                 "-s" |
                 "--saindo-da-jaula" => ret.push(Param::StartConsole),
+                "-o" |
+                "--oloco-bixo" => ret.push(Param::Test),
                 _ => ret.push(Param::InputFile(p)),
             }
         }
@@ -129,6 +134,25 @@ fn command_help(command: &str) {
         _ => String::from("Comando não encontrado"),
     };
     println!("{}", doc);
+}
+
+/// Testa todos os exemplos
+fn command_test() {
+    use std::fs;
+    let files = match fs::read_dir("testes") {
+        Ok(x) => x,
+        Err(e) => abort!("Erro ao abrir pasta com testes. \"{}\"", e),
+    };
+    let mut count = 0;
+    for file in files.into_iter() {
+        let mut env = interpreter::Environment::new(String::from("SHOW"));
+        let test = file.unwrap();
+        println!("\tTeste: \"{}\".", test.path().to_str().unwrap());
+        env.interpret(parser::parse(test.path().to_str().unwrap()));
+        env.start_program(); // Inicia o programa de teste
+        count += 1;
+    }
+    println!("Sucesso! Passados {} testes.", count);
 }
 
 /// Imprime na tela todos os comandos disponíveis
@@ -185,6 +209,10 @@ fn main() {
                 show_cmds();
             }
             Param::StartConsole => should_start_console = true,
+            Param::Test => {
+                printed_something = true; // Pra não printar mensagem de erro
+                command_test();
+            },
         }
     }
     let mut environment = interpreter::Environment::new(env_default_sect);

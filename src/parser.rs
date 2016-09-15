@@ -3,9 +3,9 @@
 /// Representa as keywords da linguagem
 pub mod kw {
     // Definições
-    /// Usada para declaração de globais constantes
+    /// Usada para declaração de globais.birl constantes
     pub const KW_GLOBAL: &'static str = "SAI DE CASA";
-    /// Usada pra declaração de globais variáveis
+    /// Usada pra declaração de globais.birl variáveis
     pub const KW_VAR_GLOBAL: &'static str = "IBIRAPUERA";
     /// Usada para definição de seções
     pub const KW_SECTION: &'static str = "JAULA";
@@ -397,7 +397,7 @@ fn parse_cmd(cmd: &str) -> Command {
 pub struct Unit {
     /// Conjunto de seções para execução
     pub sects: Vec<Section>,
-    /// Conjunto de globais, constantes ou variaveis
+    /// Conjunto de globais.birl, constantes ou variaveis
     pub globals: Vec<Global>,
     /// Conjunto de comandos fora de funções para serem executadas no inicio do programa
     pub glb_cmds: Vec<Command>,
