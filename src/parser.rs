@@ -9,14 +9,19 @@ pub mod kw {
     pub const KW_VAR_GLOBAL: &'static str = "IBIRAPUERA";
     /// Usada para definição de seções
     pub const KW_SECTION: &'static str = "JAULA";
+    /// Usado pra definir seções parciais
+    pub const KW_PART_SECTION: &'static str = "JAULINHA";
     /// Usada para finalizar a definição de seções
     pub const KW_SECTEND: &'static str = "SAINDO DA JAULA";
+
+    /// Nome da variavel usada pra guardar o valor de retorno
+    pub const KW_RETVAL_VAR: &'static str = "TREZE";
 
     // Comandos
     /// Copia o valor de uma variavel a outra
     pub const KW_MOVE: &'static str = "BORA";
     /// Limpa o valor de uma variavel
-    pub const KW_CLEAR: &'static str = "NUM VAI DA NAO";
+    pub const KW_CLEAR: &'static str = "SAI";
     /// Declara uma variável
     pub const KW_DECL: &'static str = "VEM";
     /// Declara uma variável com um valor
@@ -42,12 +47,16 @@ pub mod kw {
     /// Printa
     pub const KW_PRINT: &'static str = "CE QUER VER";
     /// Sai do programa
-    pub const KW_QUIT: &'static str = "BIRL";
+    pub const KW_QUIT: &'static str = "NUM VAI DA NAO";
+    /// Retorna da função atual
+    pub const KW_RET: &'static str = "BIRL";
     /// Pega uma string da entrada padrão
     pub const KW_INPUT: &'static str = "BORA, CUMPADE";
     /// Pega uma string da entrada padrão com letras maiusculas
     pub const KW_INPUT_UP: &'static str = "BORA, CUMPADE!!!";
 }
+
+use value;
 
 #[derive(Clone)]
 /// Representa um comando, que é executado dentro do contexto atual
@@ -82,7 +91,10 @@ pub enum Command {
     /// Printa uma série de valores
     Print(Vec<String>),
     /// Sai do programa
-    Quit,
+    Quit(String),
+    /// Retorna da seção atual
+    Return(Option<String>),
+    // Valor, que pode existir ou não
     /// Le a entrada padrão pra uma variavel
     Input(String),
     /// Le a entrada padrão e retorna um uppercase
@@ -106,15 +118,17 @@ pub enum CommandType {
     Println,
     Print,
     Quit,
+    Return,
     Input,
     InputUpper,
 }
 
 /// Procura pelo caractere c em src e retorna quantas vezes ele foi encontrado
-fn n_of_char(c: char, src: &str) -> i32 {
+fn num_args(src: &str) -> i32 {
     if src.len() <= 0 {
         0
     } else {
+        let c = ',';
         let mut num = 0i32;
         let mut last_char = ' ';
         let mut is_string = false;
@@ -183,7 +197,22 @@ fn check_n_params(command: CommandType, num_params: usize) {
                 (num_params, kw::KW_PRINT)
             }
         }
-        CommandType::Quit => (0, kw::KW_QUIT),
+        CommandType::Quit => {
+            // Quit pode tomar um valor de retorno como valor de saida, mas é opcional
+            if num_params == 1 {
+                (1, kw::KW_QUIT)
+            } else {
+                (0, kw::KW_QUIT)
+            }
+        }
+        CommandType::Return => {
+            // Se for passado o retorno, retorne ele. Se não, deixe inalterado
+            if num_params == 1 {
+                (1, kw::KW_RET)
+            } else {
+                (0, kw::KW_RET)
+            }
+        }
         CommandType::Input => (1, kw::KW_INPUT),
         CommandType::InputUpper => (1, kw::KW_INPUT_UP),
     };
@@ -202,7 +231,7 @@ fn split_arguments(args: String) -> Vec<String> {
     } else {
         let mut result: Vec<String> = vec![];
         let (mut in_str, mut in_char, mut last_escape, mut in_sym, mut in_par) =
-            (false, false, false, false, false);
+        (false, false, false, false, false);
         let mut num_op_par = 0; // Numero de parenteses abertos
         let mut last_arg = String::new();
         for c in args.chars() {
@@ -303,7 +332,7 @@ fn parse_cmd(cmd: &str) -> Command {
     let mut arguments: Vec<String> = Vec::new();
     // Tipo/nome do comando
     let cmd_type = if cmd_parts.len() > 1 {
-        if n_of_char(',', cmd_parts[1]) == 0 {
+        if num_args(cmd_parts[1]) == 0 {
             if cmd_parts[1].trim() != "" {
                 // Um argumento
                 arguments.push(cmd_parts[1].trim().to_string());
@@ -378,7 +407,23 @@ fn parse_cmd(cmd: &str) -> Command {
         }
         kw::KW_QUIT => {
             check_n_params(CommandType::Quit, arguments.len());
-            Command::Quit
+            let exitcode = if arguments.len() == 1 {
+                // Se for 1 argumento, retorne o valor, se não, deixe inalterado
+                arguments[0].clone()
+            } else {
+                String::from("0")
+            };
+            Command::Quit(exitcode)
+        }
+        kw::KW_RET => {
+            check_n_params(CommandType::Return, arguments.len());
+            let val = if arguments.len() == 1 {
+                // Se for 1 argumento, retorne o valor, se não, deixe inalterado
+                Some(arguments[0].clone())
+            } else {
+                None
+            };
+            Command::Return(val)
         }
         kw::KW_INPUT => {
             check_n_params(CommandType::Input, arguments.len());
@@ -423,7 +468,8 @@ fn parse_line_type(line: &str) -> LineType {
     } else {
         let mut ret = LineType::Command;
         // Se for a declaração de uma seção
-        if line.split(' ').collect::<Vec<&str>>()[0] == kw::KW_SECTION {
+        let fword = line.split(' ').collect::<Vec<&str>>()[0];
+        if fword == kw::KW_SECTION || fword == kw::KW_PART_SECTION {
             ret = LineType::SectStart;
         }
         // Testa se é a declaração de um global
@@ -519,7 +565,6 @@ pub fn parse(file: &str) -> Unit {
             LineType::Command => final_unit.glb_cmds.push(parse_cmd(&change_accents(&line))),
             _ => {
                 // Quando não for nenhuma das acima
-                // FIXME: Adicionar uma mensagem de erro mais clara
                 abort!("Erro de sintaxe! Linha atual não reconhecida no contexto: {}",
                        line)
             }
@@ -537,6 +582,8 @@ pub struct Section {
     pub lines: Vec<Command>,
     /// Conjunto de parametros a serem passados para a seção ser executada
     pub param_list: Vec<ExpectedParameter>,
+    /// Se a seção é apenas parcial
+    pub partial: bool,
 }
 
 impl Section {
@@ -545,10 +592,10 @@ impl Section {
             name: String::new(),
             lines: vec![],
             param_list: vec![],
+            partial: false,
         }
     }
 }
-use value;
 
 #[derive(Clone)]
 pub struct ExpectedParameter {
@@ -629,10 +676,13 @@ fn parse_section(lines: Vec<String>) -> Section {
         } else {
             lines[0][first_space + 1..].trim().to_string()
         };
+        let sect_type = lines[0].split(' ').collect::<Vec<&str>>()[0];
+        let is_part = sect_type == kw::KW_PART_SECTION;
         let mut sect = Section {
             name: name,
             lines: vec![],
             param_list: params,
+            partial: is_part,
         };
         if lines.len() > 2 {
             // O -1 é pra não contar com a ultima linha, o SAINDO DA JAULA
@@ -642,7 +692,7 @@ fn parse_section(lines: Vec<String>) -> Section {
                 }
                 // Se a linha não tem nada de util até um comentario, pula ela
                 if line.chars().collect::<Vec<char>>()[0] == '#' ||
-                   line.chars().collect::<Vec<char>>()[0] == ';' {
+                    line.chars().collect::<Vec<char>>()[0] == ';' {
                     continue;
                 }
                 sect.lines.push(parse_cmd(&line));
