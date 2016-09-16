@@ -3,18 +3,10 @@
 /// Biblioteca do parser de expressões
 extern crate meval;
 
-mod arch {
-    #[cfg(target_pointer_width = "32")]
-    pub type MaxNum = f32;
-
-    #[cfg(target_pointer_width = "64")]
-    pub type MaxNum = f64;
-}
-
 /// Resultado de uma expressão
 #[derive(Clone)]
 pub enum Value {
-    Number(arch::MaxNum),
+    Number(f64),
     Str(Box<String>),
 }
 
@@ -203,9 +195,11 @@ fn parse_num(expr: &str) -> Value {
     if expr.contains('\"') || expr.contains('\'') {
         abort!("Uma expressão com números não deve conter strings ou caracteres")
     }
-    // eval_str retorna um f64, logo uma conversão é necessaria quando estiver em plataformas de 32 bits
-    let res = meval::eval_str(expr).unwrap();
-    Value::Number(res as arch::MaxNum)
+    let res = match meval::eval_str(expr) {
+        Ok(x) => x,
+        Err(_) => 0.0,
+    };
+    Value::Number(res)
 }
 
 /// Separa uma expressão de Strings em varios tokens

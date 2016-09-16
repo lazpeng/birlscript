@@ -142,11 +142,19 @@ fn command_test() {
         Err(e) => abort!("Erro ao abrir pasta com testes. \"{}\"", e),
     };
     let mut count = 0;
-    for file in files.into_iter() {
+    for file in files {
         let mut env = interpreter::Environment::new(String::from("SHOW"));
-        let test = file.unwrap();
-        println!("\tTeste: \"{}\".", test.path().to_str().unwrap());
-        env.interpret(parser::parse(test.path().to_str().unwrap()));
+        let test = match file {
+            Ok(x) => x,
+            Err(e) => abort!("Erro abrindo arquivos de exemplo. \"{}\"", e),
+        };
+        let test = test.path();
+        let filename = match test.to_str() {
+            Some(x) => x,
+            None => abort!("Erro recebendo path do arquivo atual"),
+        };
+        println!("\tTeste: \"{}\".", filename);
+        env.interpret(parser::parse(filename));
         env.start_program(); // Inicia o programa de teste
         count += 1;
     }

@@ -41,52 +41,44 @@ pub enum Comparision {
 }
 
 /// Compara duas strings
-fn compare_str(str1: value::Value, str2: value::Value) -> Comparision {
-    if let value::Value::Str(value1) = str1 {
-        if let value::Value::Str(value2) = str2 {
-            let ret: Comparision = if value1 == value2 {
-                Comparision::Equals
-            } else if value1.len() < value2.len() {
-                Comparision::Less
-            } else if value1 != value2 {
-                Comparision::None
-            } else {
-                Comparision::More
-            };
-            ret
+fn compare_str(val: String, str2: value::Value) -> Comparision {
+    if let value::Value::Str(value2) = str2 {
+        let ret: Comparision = if val == *value2 {
+            Comparision::Equals
+        } else if val != *value2 {
+            Comparision::None
+        } else if val.len() < value2.len() {
+            Comparision::Less
         } else {
-            abort!("Comparação de string com outro tipo")
-        }
+            Comparision::More
+        };
+        ret
     } else {
-        unreachable!()
+        abort!("Comparação de string com outro tipo")
     }
 }
 
 /// Compara dois numeros
-fn compare_num(num1: value::Value, num2: value::Value) -> Comparision {
-    if let value::Value::Number(value1) = num1 {
-        if let value::Value::Number(value2) = num2 {
-            let ret: Comparision = if value1 == value2 {
-                Comparision::Equals
-            } else if value1 < value2 {
-                Comparision::Less
-            } else {
-                Comparision::More
-            };
-            ret
+fn compare_num(value: f64, num2: value::Value) -> Comparision {
+    if let value::Value::Number(value2) = num2 {
+        let ret: Comparision = if value == value2 {
+            Comparision::Equals
+        } else if value < value2 {
+            Comparision::Less
         } else {
-            abort!("Comparação de caractere com outro tipo")
-        }
+            Comparision::More
+        };
+        ret
     } else {
-        unreachable!()
+        abort!("Comparação de caractere com outro tipo")
     }
 }
 
 /// Compara dois valores e retorna um resultado
 fn compare(val1: value::Value, val2: value::Value) -> Comparision {
     match val1 {
-        value::Value::Str(_) => compare_str(val1, val2),
-        value::Value::Number(_) => compare_num(val1, val2),
+        value::Value::Str(val) => compare_str(*val, val2),
+        value::Value::Number(val) => compare_num(val, val2),
     }
 }
 
@@ -101,21 +93,31 @@ fn get_input() -> String {
     buffer.trim().to_string()
 }
 
+fn get_num_input() -> f64 {
+    let inp = get_input();
+    match inp.parse() {
+        Ok(x) => x,
+        Err(_) => 0.0,
+    }
+}
+
 /// Ambiente em que são executados os comandos
 pub struct SectionEnvironment {
     /// Variaveis alocadas nessa seção
     vars: Vec<Variable>,
+    /// Ultimo sinal recebido
+    last_sig: Option<CommandSignal>,
 }
 
 impl SectionEnvironment {
     /// Retorna o contexto primario de seção, a seção global
     pub fn root() -> SectionEnvironment {
-        SectionEnvironment { vars: vec![] }
+        SectionEnvironment::new()
     }
 
     /// Retorna um contexto com um nome especifico
     pub fn new() -> SectionEnvironment {
-        SectionEnvironment { vars: vec![] }
+        SectionEnvironment { vars: vec![], last_sig: None }
     }
 }
 
@@ -163,6 +165,17 @@ fn received_params_match(sect_name: &str,
     }
 }
 
+#[derive(Clone)]
+/// O tipo de sinal retornado apos a execução de um valor, como de finalizar uma seção ou esperar alguns segundos
+enum CommandSignal {
+    /// Quita do programa com um codigo de erro
+    Quit(i32),
+    /// Retorna da seção atual
+    Return, // Return não possui valor pois é responsabilidade da seção colocar o valor de retorno na penultima sectenv
+    /// Espera por x segundos a thread atual
+    Wait(u64),
+}
+
 impl Environment {
     /// Retorna o ultimo sectenv
     fn last_sectenv<'a>(&'a mut self) -> &'a mut SectionEnvironment {
@@ -188,14 +201,20 @@ impl Environment {
 
     /// Declara uma variavel e retorna seu endereço
     fn declare_var(&mut self, var: Variable) {
-        if self.last_sectenv().vars.len() > 0 {
-            for v in &self.last_sectenv().vars {
+        let last_sectenv = self.sectenvs.len() - 1;
+        self.declare_var_in(last_sectenv, var);
+    }
+
+    /// Declara uma variavel na seção passada. O numero deve ser o index da seção nos sectenvs
+    fn declare_var_in(&mut self, sect_num: usize, var: Variable) {
+        if self.sectenvs[sect_num].vars.len() >= sect_num - 1 {
+            for v in &self.sectenvs[sect_num].vars {
                 if v.id == var.id {
                     abort!("Variavel \"{}\" já declarada", var.id)
                 }
             }
         }
-        self.last_sectenv().vars.push(var);
+        self.sectenvs[sect_num].vars.push(var);
     }
 
     /// Declara um novo global
@@ -300,29 +319,33 @@ impl Environment {
     // Inicio da implementação dos comandos
 
     /// Seta o valor de uma variável
-    fn command_move(&mut self, target: String, val: value::Value) {
+    fn command_move(&mut self, target: String, val: value::Value) -> Option<CommandSignal> {
         self.mod_var(&target, val);
+        None
     }
 
     /// Limpa o valor de uma variavel
-    fn command_clear(&mut self, target: String) {
+    fn command_clear(&mut self, target: String) -> Option<CommandSignal> {
         self.mod_var(&target, value::Value::Number(0.0));
+        None
     }
 
     /// Declara uma variavel com o valor padrão
-    fn command_decl(&mut self, name: String) {
+    fn command_decl(&mut self, name: String) -> Option<CommandSignal> {
         let var = Variable::from(name, value::Value::Number(0.0));
         self.declare_var(var);
+        None
     }
 
     /// Declara uma variavel com um valor padrão
-    fn command_declwv(&mut self, name: String, val: value::Value) {
+    fn command_declwv(&mut self, name: String, val: value::Value) -> Option<CommandSignal> {
         let var = Variable::from(name, val);
         self.declare_var(var);
+        None
     }
 
     /// Passa a execução para outra seção
-    fn command_jump(&mut self, section: String) {
+    fn command_jump(&mut self, section: String) -> Option<CommandSignal> {
         let args = if section.contains('(') {
             // Expande os simbolos para uma lista de argumentos
             value::expand_sym_list(&section, self)
@@ -336,22 +359,25 @@ impl Environment {
             section
         };
         self.execute_section(&section, args);
+        Some(CommandSignal::Return) // FIXME: Atualmente, jump retorna como return, mas podera ser mudado
     }
 
     /// Compara dois valores
-    fn command_cmp(&mut self, val1: value::Value, val2: value::Value) {
+    fn command_cmp(&mut self, val1: value::Value, val2: value::Value) -> Option<CommandSignal> {
         self.last_cmp = compare(val1, val2);
+        None
     }
 
     /// Executa uma seção caso comparação de equals
-    fn command_cmp_eq(&mut self, sect: String) {
+    fn command_cmp_eq(&mut self, sect: String) -> Option<CommandSignal> {
         if let Comparision::Equals = self.last_cmp {
             self.command_jump(sect);
         }
+        None
     }
 
     /// Executa uma seção caso comparação dê not equals
-    fn command_cmp_neq(&mut self, sect: String) {
+    fn command_cmp_neq(&mut self, sect: String) -> Option<CommandSignal> {
         if let Comparision::More = self.last_cmp {
             self.command_jump(sect);
         } else if let Comparision::None = self.last_cmp {
@@ -359,94 +385,125 @@ impl Environment {
         } else if let Comparision::Less = self.last_cmp {
             self.command_jump(sect);
         }
+        None
     }
 
     /// Menos/Menor
-    fn command_cmp_less(&mut self, sect: String) {
+    fn command_cmp_less(&mut self, sect: String) -> Option<CommandSignal> {
         if let Comparision::Less = self.last_cmp {
             self.command_jump(sect);
         }
+        None
     }
 
     /// Menos/Menor ou igual
-    fn command_cmp_lesseq(&mut self, sect: String) {
+    fn command_cmp_lesseq(&mut self, sect: String) -> Option<CommandSignal> {
         if let Comparision::Less = self.last_cmp {
             self.command_jump(sect);
         } else if let Comparision::Equals = self.last_cmp {
             self.command_jump(sect);
         }
+        None
     }
 
     /// Maior
-    fn command_cmp_more(&mut self, sect: String) {
+    fn command_cmp_more(&mut self, sect: String) -> Option<CommandSignal> {
         if let Comparision::More = self.last_cmp {
             self.command_jump(sect);
         }
+        None
     }
 
     /// Maior ou igual
-    fn command_cmp_moreeq(&mut self, sect: String) {
+    fn command_cmp_moreeq(&mut self, sect: String) -> Option<CommandSignal> {
         if let Comparision::More = self.last_cmp {
             self.command_jump(sect);
         } else if let Comparision::Equals = self.last_cmp {
             self.command_jump(sect);
         }
+        None
     }
 
     /// Implementação do Print
-    fn command_print(&mut self, messages: Vec<String>) {
+    fn command_print(&mut self, messages: Vec<String>) -> Option<CommandSignal> {
         for message in messages {
             print!("{}", value::parse_expr(&message, self));
         }
+        None
     }
 
     /// Implementação do Println
-    fn command_println(&mut self, messages: Vec<String>) {
+    fn command_println(&mut self, messages: Vec<String>) -> Option<CommandSignal> {
         if messages.len() > 0 {
             for msg in messages {
                 print!("{}", value::parse_expr(&msg, self));
             }
         }
         println!("");
+        None
     }
 
     /// Quit
-    fn command_quit(&mut self) {
-        use std::process;
-        process::exit(0);
+    fn command_quit(&mut self, exit_code: String) -> Option<CommandSignal> {
+        let exit_code = value::parse_expr(&exit_code, self);
+        let exit_code = if let value::Value::Number(n) = exit_code {
+            n as i32
+        } else {
+            0
+        };
+        Some(CommandSignal::Quit(exit_code))
+    }
+
+    fn command_return(&mut self, value: Option<String>) -> Option<CommandSignal> {
+        // Coloca o valor de retorno na ultima seção, se for Some
+        match value {
+            Some(v) => {
+                let num_sectenvs = self.sectenvs.len();
+                if num_sectenvs < 2 {
+                    abort!("Uso do return em ambiente global (proibido)")
+                }
+                let mut retvalue = Variable::from(String::from(parser::kw::KW_RETVAL_VAR), value::parse_expr(&v, self));
+                retvalue.is_const = true; // O valor de retorno nao pode ser modificado
+                self.declare_var_in(num_sectenvs - 2, retvalue);
+            }
+            None => {} // Nao modifica o valor de retorno se nenhum valor foi retornado
+        }
+        Some(CommandSignal::Return)
     }
 
     /// Input
-    fn command_input(&mut self, var: String) {
+    fn command_input(&mut self, var: String) -> Option<CommandSignal> {
         let input = get_input();
         self.mod_var(&var, value::Value::Str(Box::new(input)));
+        None
     }
 
     /// Input upper
-    fn command_input_upper(&mut self, var: String) {
+    fn command_input_upper(&mut self, var: String) -> Option<CommandSignal> {
         let input = get_input().to_uppercase();
         self.mod_var(&var, value::Value::Str(Box::new(input)));
+        None
     }
 
     /// Executa um comando
-    fn execute_command(&mut self, cmd: parser::Command) {
+    fn execute_command(&mut self, cmd: parser::Command) -> Option<CommandSignal> {
         use parser::Command;
         match cmd {
             Command::Move(trg, val) => {
                 let val = value::parse_expr(&val, self);
-                self.command_move(trg, val);
+                self.command_move(trg, val)
             }
             Command::Clear(trg) => self.command_clear(trg),
             Command::Decl(trg) => self.command_decl(trg),
             Command::DeclWV(trg, val) => {
                 let val = value::parse_expr(&val, self);
-                self.command_declwv(trg, val);
+                self.command_declwv(trg, val)
             }
             Command::Jump(sect) => self.command_jump(sect),
             Command::Cmp(val1, val2) => {
                 let val1 = value::parse_expr(&val1, self);
                 let val2 = value::parse_expr(&val2, self);
-                self.command_cmp(val1, val2);
+                self.command_cmp(val1, val2)
             }
             Command::CmpEq(sect) => self.command_cmp_eq(sect),
             Command::CmpNEq(sect) => self.command_cmp_neq(sect),
@@ -454,26 +511,18 @@ impl Environment {
             Command::CmpLessEq(s) => self.command_cmp_lesseq(s),
             Command::CmpMore(s) => self.command_cmp_more(s),
             Command::CmpMoreEq(s) => self.command_cmp_moreeq(s),
-            Command::Print(msg) => {
-                self.command_print(msg);
-            }
-            Command::Println(msg) => {
-                self.command_println(msg);
-            }
-            Command::Quit => {
-                self.command_quit();
-            }
-            Command::Input(var) => {
-                self.command_input(var);
-            }
-            Command::InputUpper(var) => {
-                self.command_input_upper(var);
-            }
+            Command::Print(msg) => self.command_print(msg),
+            Command::Println(msg) => self.command_println(msg),
+            Command::Quit(exit_code) => self.command_quit(exit_code),
+            Command::Return(val) => self.command_return(val),
+            Command::Input(var) => self.command_input(var),
+            Command::InputUpper(var) => self.command_input_upper(var),
         }
     }
 
     /// Executa uma seção, se preciso, recursivamente
     fn execute_section(&mut self, sect_name: &str, arguments: Vec<value::Value>) {
+        use std::{process, thread, time};
         let mut section = parser::Section::new();
         let mut expected_args: Vec<parser::ExpectedParameter> = vec![];
         let mut found = false;
@@ -488,6 +537,7 @@ impl Environment {
         if !found {
             abort!("Seção não encontrada: \"{}\".", sect_name)
         } else {
+            let partial = section.partial;
             let recv_args = value::ValueType::types_of(&arguments);
             // A função em si já joga o erro caso o numero de parametros nao coincida
             if !received_params_match(&sect_name, &expected_args, &recv_args) {
@@ -496,22 +546,54 @@ impl Environment {
                         declarados.",
                        sect_name)
             }
-            // Cria um novo ambiente pra nova seção no fim da pilha
-            self.sectenvs.push(SectionEnvironment::new());
-            // Cria a variavel que guarda o nome da seção
-            self.last_sectenv()
-                .vars
-                .push(Variable::from(String::from("JAULA"),
-                                     value::Value::Str(Box::new(String::from(sect_name)))));
-            // Empurra os argumentos recebidos pra pilha de variaveis
-            for i in 0..arguments.len() {
-                let var = Variable::from(expected_args[i].id.clone(), arguments[i].clone());
-                self.last_sectenv().vars.push(var);
+            // A criação de um novo ambiente só deve ser feita caso a seção não seja parcial
+            if !partial {
+                // Cria um novo ambiente pra nova seção no fim da pilha
+                self.sectenvs.push(SectionEnvironment::new());
+                // Cria a variavel que guarda o nome da seção
+                self.last_sectenv()
+                    .vars
+                    .push(Variable::from(String::from("JAULA"),
+                                         value::Value::Str(Box::new(String::from(sect_name)))));
+                // Empurra os argumentos recebidos pra pilha de variaveis
+                for i in 0..arguments.len() {
+                    let var = Variable::from(expected_args[i].id.clone(), arguments[i].clone());
+                    self.last_sectenv().vars.push(var);
+                }
             }
             for cmd in section.lines {
-                self.execute_command(cmd);
+                if !section.partial {
+                    match self.last_sectenv().last_sig {
+                        Some(ref s) => {
+                            match s {
+                                &CommandSignal::Return => {
+                                    // Se essa seção não é parcial e o ultimo sinal foi pra retornar, retorne dessa também, além da parcial
+                                    break;
+                                }
+                                _ => {} // Nada a fazer
+                            }
+                        }
+                        _ => {} // Nada a fazer
+                    }
+                }
+                let sig = self.execute_command(cmd); // Pega o sinal retornado pelo comando
+                match sig {
+                    Some(s) => {
+                        self.last_sectenv().last_sig = Some(s.clone());
+                        match s {
+                            CommandSignal::Return => break, // Encerra a execução da seção atual
+                            CommandSignal::Quit(code) => process::exit(code),
+                            CommandSignal::Wait(secs) => thread::sleep(time::Duration::from_secs(secs)),
+                        }
+                    }
+                    None => {
+                        self.last_sectenv().last_sig = None; // Só altera na seção
+                    }
+                }
             }
-            self.sectenvs.pop(); // Joga fora a ultima seção
+            if !partial {
+                self.sectenvs.pop(); // Joga fora a ultima seção, que é a atual
+            }
         }
     }
 
@@ -559,8 +641,8 @@ impl Environment {
         }
     }
 
-    /// Executa a seção padrão
-    pub fn start_program(&mut self) {
+    /// Executa a seção padrão e retorna o codigo de saida
+    pub fn start_program(&mut self)  {
         self.init_variables();
         // Executa os comandos globais.birl
         if self.glb_cmds.len() > 0 {
