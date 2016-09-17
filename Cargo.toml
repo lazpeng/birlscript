@@ -1,10 +1,10 @@
 [package]
 name = "birlscript"
-version = "1.1.3"
+version = "1.1.5"
 authors = ["Rafael <lazpeng@gmail.com>"]
 
 description = "Interpretador da linguagem BIRLSCRIPT"
-repository = "https://github.com/lazpeng/birl"
+repository = "https://github.com/birl-language/birl"
 
 [dependencies]
 meval = "0.0.6"
