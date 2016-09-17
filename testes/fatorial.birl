@@ -2,7 +2,7 @@
 # FIBRA: tipo para texto/string
 
 JAULINHA PRINTA
-    BIRL: ATUAL # Retorna o valor pro main
+    BIRL: 24 # Retorna o valor pro main
 SAINDO DA JAULA
 
 JAULA FATORIAL (NUMERO: TRAPEZIO DESCENDENTE, ATUAL : TRAPEZIO DESCENDENTE)
