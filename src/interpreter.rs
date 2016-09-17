@@ -359,7 +359,7 @@ impl Environment {
             section
         };
         self.execute_section(&section, args);
-        Some(CommandSignal::Return) // FIXME: Atualmente, jump retorna como return, mas podera ser mudado
+        None
     }
 
     /// Compara dois valores
@@ -464,7 +464,7 @@ impl Environment {
                 }
                 let mut retvalue = Variable::from(String::from(parser::kw::KW_RETVAL_VAR), value::parse_expr(&v, self));
                 retvalue.is_const = true; // O valor de retorno nao pode ser modificado
-                self.declare_var_in(num_sectenvs - 2, retvalue);
+                self.declare_var_in(num_sectenvs - 2, retvalue); // num_sectenvs - 1 é a seção atual
             }
             None => {} // Nao modifica o valor de retorno se nenhum valor foi retornado
         }
@@ -514,7 +514,9 @@ impl Environment {
             Command::Print(msg) => self.command_print(msg),
             Command::Println(msg) => self.command_println(msg),
             Command::Quit(exit_code) => self.command_quit(exit_code),
-            Command::Return(val) => self.command_return(val),
+            Command::Return(val) => {
+                self.command_return(val)
+            }
             Command::Input(var) => self.command_input(var),
             Command::InputUpper(var) => self.command_input_upper(var),
         }
@@ -562,24 +564,19 @@ impl Environment {
                 }
             }
             for cmd in section.lines {
-                if !section.partial {
-                    match self.last_sectenv().last_sig {
-                        Some(ref s) => {
-                            match s {
-                                &CommandSignal::Return => {
-                                    // Se essa seção não é parcial e o ultimo sinal foi pra retornar, retorne dessa também, além da parcial
-                                    break;
-                                }
-                                _ => {} // Nada a fazer
-                            }
+                // Verifica se, caso essa seção não seja parcial, se a antiga seção deixou um sinal de return
+                match self.last_sectenv().last_sig {
+                    Some(ref s) => {
+                        if let &CommandSignal::Return = s {
+                            break; // Quebra o loop
                         }
-                        _ => {} // Nada a fazer
                     }
+                    None => {}
                 }
                 let sig = self.execute_command(cmd); // Pega o sinal retornado pelo comando
                 match sig {
                     Some(s) => {
-                        self.last_sectenv().last_sig = Some(s.clone());
+                        //self.last_sectenv().last_sig = Some(s.clone());
                         match s {
                             CommandSignal::Return => break, // Encerra a execução da seção atual
                             CommandSignal::Quit(code) => process::exit(code),
@@ -587,12 +584,12 @@ impl Environment {
                         }
                     }
                     None => {
-                        self.last_sectenv().last_sig = None; // Só altera na seção
+                        self.last_sectenv().last_sig = None; // Simplesmente altera na seção
                     }
                 }
             }
             if !partial {
-                self.sectenvs.pop(); // Joga fora a ultima seção, que é a atual
+                self.sectenvs.pop(); // Joga fora a ultima seção, que é a atual, caso não seja parcial
             }
         }
     }

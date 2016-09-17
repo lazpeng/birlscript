@@ -210,9 +210,17 @@ fn parse_str_tokenize(expr: &str) -> Vec<String> {
     let mut in_char = false;
     for c in expr.chars() {
         match c {
+            '\\' if in_str => {
+                if last_escape {
+                    tokens[index].push_str("\\");
+                    last_escape = false;
+                } else {
+                    last_escape = true;
+                }
+            }
             '\"' if in_str => {
                 if last_escape {
-                    tokens[index].push_str("\\\"");
+                    tokens[index].push_str("\"");
                     last_escape = false;
                 } else {
                     in_str = false;
