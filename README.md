@@ -13,7 +13,7 @@ Use o interpretador com a flag *-a* ou *--ajuda-o-maluco-ta-doente* para ver uma
 de opções que podem ser passadas. Use *-e* ou *--ele-que-a-gente-quer* junto com o nome
 de um comando para ver mais sobre ele, ou *-t* ou *--tudo-cumpade* para uma lista de comandos.
 
-## Versão 1.1.4
+## Versão 1.1.5
 
 ## Builds:
 * Windows (64-bits): Disponível
@@ -26,10 +26,10 @@ de um comando para ver mais sobre ele, ou *-t* ou *--tudo-cumpade* para uma list
 [²] - Não tenho um Mac pra compilar o programa pra tal, então não tenho como fornecer os binários. Se alguém tiver e quiser compilar eu posso fornecer instruções.
 
 *Copyleft(ɔ) 2016 Rafael R Nakano. Nenhum direito reservado.*
-*Contato: mseqs@bsd.com.br*
+*Contato: lazpeng@gmail.com*
 
 ## Sobre
-BIRLSCRIPT (ou BIRLASM) é uma espécie de dialeto assembly[¹] com algumas pequenas (ou grandes)
+BIRLSCRIPT é uma espécie de dialeto [BASIC](https://pt.wikipedia.org/wiki/BASIC) com algumas pequenas (ou grandes)
 modificações pra fazer a vida de quem tá programando ou de quem tá escrevendo o parser
 (eu mereço) mais fácil. Há algumas limitações claras e 95% delas serão sanadas no futuro,
 com exceção de algumas que *não fazem sentido*, *dariam muito trabalho pra implementar* ou
@@ -37,10 +37,8 @@ com exceção de algumas que *não fazem sentido*, *dariam muito trabalho pra im
 
 Você tem acesso a globais (variáveis constantes diponíveis pra todo o programa), seções
 (que são como funções, porém muito mais primitivas e limitadas) e os comandos, que funcionam
-de forma similar que em assembly[¹], só que com frases e dizeres do mestre bodybuilder (alguns sim,
+de forma similar que em BASIC, só que com frases e dizeres do mestre bodybuilder (alguns sim,
 outros não. Optei por deixar o que fizesse ao menos o mínimo de sentido).
-
-[¹] - *Assembly aqui se diz respeito à linguagem assembly para a arquitetura x86, dialeto NASM*
 
 # Exemplos
 
@@ -110,14 +108,13 @@ CE QUER VER ISSO: GLOBAL_CONSTANTE # Printa UNICO VALOR
 # TRAPEZIO DESCENDENTE: tipo para NUMERO
 # FIBRA: tipo para texto/string
 
-JAULA PRINTA (VALOR : TRAPEZIO DESCENDENTE)
-    CE QUER VER ISSO: VALOR
-    BIRL
+JAULINHA PRINTA
+    BIRL: ATUAL # Retorna o valor pro main
 SAINDO DA JAULA
 
 JAULA FATORIAL (NUMERO: TRAPEZIO DESCENDENTE, ATUAL : TRAPEZIO DESCENDENTE)
     E ELE QUE A GENTE QUER: NUMERO, 1
-    MENOR OU E MEMO: PRINTA(ATUAL)
+    MENOR OU E MEMO: PRINTA
     BORA: NUMERO, NUMERO - 1
     BORA: ATUAL, ATUAL * NUMERO
     E HORA DO: FATORIAL(NUMERO, ATUAL)
@@ -127,6 +124,7 @@ JAULA SHOW
     VEM, CUMPADE: NUMERO, 4
     CE QUER VER: "FATORIAL DE ", NUMERO, " É: "
     E HORA DO: FATORIAL(NUMERO, NUMERO)
+    CE QUER VER ISSO: TREZE # Nome do valor de retorno padrão
 SAINDO DA JAULA
 ```
 
