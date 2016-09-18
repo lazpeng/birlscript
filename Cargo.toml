@@ -4,7 +4,7 @@ version = "1.1.5"
 authors = ["Rafael <lazpeng@gmail.com>"]
 
 description = "Interpretador da linguagem BIRLSCRIPT"
-repository = "https://github.com/birl-language/birl"
+repository = "https://github.com/birlscript/birl"
 
 [dependencies]
 meval = "0.0.6"
