@@ -13,6 +13,8 @@ Use o interpretador com a flag *-a* ou *--ajuda-o-maluco-ta-doente* para ver uma
 de opções que podem ser passadas. Use *-e* ou *--ele-que-a-gente-quer* junto com o nome
 de um comando para ver mais sobre ele, ou *-t* ou *--tudo-cumpade* para uma lista de comandos.
 
+[Editor Online](https://birlscript.github.io/), teste agora mesmo!
+
 ## Versão 1.1.5
 
 ## Builds:
@@ -25,7 +27,7 @@ de um comando para ver mais sobre ele, ou *-t* ou *--tudo-cumpade* para uma list
 
 [²] - Não tenho um Mac pra compilar o programa pra tal, então não tenho como fornecer os binários. Se alguém tiver e quiser compilar eu posso fornecer instruções.
 
-*Copyleft(ɔ) 2016 Rafael R Nakano. Nenhum direito reservado.*
+*Copyright© 2016 Rafael Rodrigues Nakano. *
 *Contato: lazpeng@gmail.com*
 
 ## Sobre
