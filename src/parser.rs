@@ -17,6 +17,9 @@ pub mod kw {
     /// Nome da variavel usada pra guardar o valor de retorno
     pub const KW_RETVAL_VAR: &'static str = "TREZE";
 
+    pub const KW_SECT_GLOBAL: &'static str = "GLOBAL";
+    pub const KW_SECT_DEFAULT: &'static str = "SHOW";
+
     // Comandos
     /// Copia o valor de uma variavel a outra
     pub const KW_MOVE: &'static str = "BORA";
@@ -75,17 +78,17 @@ pub enum Command {
     /// Compara os valores de a e b, usado em condicionais
     Cmp(String, String),
     /// Executa seção a caso ultima comparação seja igual
-    CmpEq(String),
+    CmpEq(Box<Command>),
     /// Executa seção caso a ultima comparação seja diferente
-    CmpNEq(String),
+    CmpNEq(Box<Command>),
     /// Executa a seção caso a ultima comparação seja menor
-    CmpLess(String),
+    CmpLess(Box<Command>),
     /// Executa a seção caso a ultima comparação seja menor ou igual
-    CmpLessEq(String),
+    CmpLessEq(Box<Command>),
     /// Executa a seção caso a ultima comparação seja maior
-    CmpMore(String),
+    CmpMore(Box<Command>),
     /// Executa a seção caso a ultima comparação seja maior ou igual
-    CmpMoreEq(String),
+    CmpMoreEq(Box<Command>),
     /// Printa uma série de valores com uma nova linha em seguida
     Println(Vec<String>),
     /// Printa uma série de valores
@@ -231,7 +234,7 @@ fn split_arguments(args: String) -> Vec<String> {
     } else {
         let mut result: Vec<String> = vec![];
         let (mut in_str, mut in_char, mut last_escape, mut in_sym, mut in_par) =
-        (false, false, false, false, false);
+            (false, false, false, false, false);
         let mut num_op_par = 0; // Numero de parenteses abertos
         let mut last_arg = String::new();
         for c in args.chars() {
@@ -314,11 +317,7 @@ fn split_command(cmd: String) -> Vec<String> {
         }
     };
     let cmd_name = &cmd[..index];
-    let cmd_args: &str = if has_args {
-        &cmd[index + 1..]
-    } else {
-        ""
-    };
+    let cmd_args: &str = if has_args { &cmd[index + 1..] } else { "" };
     vec![cmd_name.to_string(), cmd_args.to_string()]
 }
 
@@ -375,27 +374,33 @@ fn parse_cmd(cmd: &str) -> Command {
         }
         kw::KW_CMP_EQ => {
             check_n_params(CommandType::CmpEq, arguments.len());
-            Command::CmpEq(arguments[0].clone())
+            let cmd = parse_cmd(&arguments[0]);
+            Command::CmpEq(Box::new(cmd))
         }
         kw::KW_CMP_NEQ => {
             check_n_params(CommandType::CmpNEq, arguments.len());
-            Command::CmpNEq(arguments[0].clone())
+            let cmd = parse_cmd(&arguments[0]);
+            Command::CmpEq(Box::new(cmd))
         }
         kw::KW_CMP_LESS => {
             check_n_params(CommandType::CmpLess, arguments.len());
-            Command::CmpLess(arguments[0].clone())
+            let cmd = parse_cmd(&arguments[0]);
+            Command::CmpEq(Box::new(cmd))
         }
         kw::KW_CMP_LESSEQ => {
             check_n_params(CommandType::CmpLessEq, arguments.len());
-            Command::CmpLessEq(arguments[0].clone())
+            let cmd = parse_cmd(&arguments[0]);
+            Command::CmpEq(Box::new(cmd))
         }
         kw::KW_CMP_MORE => {
             check_n_params(CommandType::CmpMore, arguments.len());
-            Command::CmpMore(arguments[0].clone())
+            let cmd = parse_cmd(&arguments[0]);
+            Command::CmpEq(Box::new(cmd))
         }
         kw::KW_CMP_MOREEQ => {
             check_n_params(CommandType::CmpMoreEq, arguments.len());
-            Command::CmpMoreEq(arguments[0].clone())
+            let cmd = parse_cmd(&arguments[0]);
+            Command::CmpEq(Box::new(cmd))
         }
         kw::KW_PRINTLN => {
             check_n_params(CommandType::Println, arguments.len());
@@ -444,8 +449,6 @@ pub struct Unit {
     pub sects: Vec<Section>,
     /// Conjunto de globais.birl, constantes ou variaveis
     pub globals: Vec<Global>,
-    /// Conjunto de comandos fora de funções para serem executadas no inicio do programa
-    pub glb_cmds: Vec<Command>,
 }
 
 /// Representa diferentes tipos de informação que uma linha carrega e o que representa
@@ -495,10 +498,10 @@ pub fn parse(file: &str) -> Unit {
     };
     // Valor de retorno
     let mut final_unit = Unit {
-        sects: vec![],
+        sects: vec![Section::new()],
         globals: vec![],
-        glb_cmds: vec![],
     };
+    final_unit.sects[0].name = String::from(kw::KW_SECT_GLOBAL);
     let reader = BufReader::new(f);
     let mut lines = reader.lines();
     // Se está fazendo parsing de uma seção e o conteudo atual da seção
@@ -562,7 +565,8 @@ pub fn parse(file: &str) -> Unit {
                 cur_section.push(change_accents(&line));
             }
             // Se não for nenhuma (os comandos só são interpretados dentro da seção)
-            LineType::Command => final_unit.glb_cmds.push(parse_cmd(&change_accents(&line))),
+            // A primeira seção sempre é a global, por isso puxe pra primeira seção
+            LineType::Command => final_unit.sects[0].lines.push(parse_cmd(&change_accents(&line))),
             _ => {
                 // Quando não for nenhuma das acima
                 abort!("Erro de sintaxe! Linha atual não reconhecida no contexto: {}",
@@ -692,7 +696,7 @@ fn parse_section(lines: Vec<String>) -> Section {
                 }
                 // Se a linha não tem nada de util até um comentario, pula ela
                 if line.chars().collect::<Vec<char>>()[0] == '#' ||
-                    line.chars().collect::<Vec<char>>()[0] == ';' {
+                   line.chars().collect::<Vec<char>>()[0] == ';' {
                     continue;
                 }
                 sect.lines.push(parse_cmd(&line));

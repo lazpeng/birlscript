@@ -41,10 +41,10 @@ impl Value {
     }
 }
 
-use interpreter::Environment;
+use vm;
 
 /// Expande os simbolos do ambiente atual para seus valores
-fn expand_syms(expr: &mut String, env: &Environment) {
+fn expand_syms(expr: &mut String, env: &vm::VM) {
     if expr != "" {
         // Se esta no meio de uma string
         let mut is_str = false;
@@ -59,7 +59,7 @@ fn expand_syms(expr: &mut String, env: &Environment) {
                 match c {
                     ' ' | '+' | '-' | '/' | '*' | '&' | '|' | '%' => {
                         is_sym = false;
-                        let var_val = env.get_var(&sym);
+                        let var_val = env.retrieve_variable(&sym, env.current_section());
                         newexpr.push_str(&var_val.as_str());
                         newexpr.push(c);
                         sym.clear();
@@ -91,7 +91,7 @@ fn expand_syms(expr: &mut String, env: &Environment) {
         }
         // Verifica se um simbolo ficou para traz
         if is_sym && sym != "" {
-            let var = env.get_var(&sym);
+            let var = env.retrieve_variable(&sym, env.current_section());
             newexpr.push_str(&var.as_str());
             sym.clear();
         }
@@ -126,7 +126,6 @@ impl ValueType {
 
     /// Verifica se dois tipos são iguais
     pub fn equals(&self, other: ValueType) -> bool {
-        // FIXME: A função abaixo foi muito mal escrita e será (ou não) consertada no futuro
         let (mut self_is_num, mut other_is_num) = (false, false);
         if let ValueType::Number = *self {
             self_is_num = true;
@@ -140,7 +139,7 @@ impl ValueType {
 
 
 /// Expande uma serie de simbolos passados como argumento
-pub fn expand_sym_list(slist: &str, env: &mut Environment) -> Vec<Value> {
+pub fn expand_sym_list(slist: &str, env: &vm::VM) -> Vec<Value> {
     let start_par = slist.find('(').unwrap(); // Existencia do parentese verificada no interpreter
     let end_par = match slist.find(')') {
         Some(pos) => pos,
@@ -287,7 +286,7 @@ fn parse_str(expr: &str) -> Value {
 }
 
 /// Faz o parsing de uma expressão
-pub fn parse_expr(expr: &str, env: &Environment) -> Value {
+pub fn parse_expr(expr: &str, env: &vm::VM) -> Value {
     let mut nexp = expr.trim().to_string();
     expand_syms(&mut nexp, env);
     match expr_type(&nexp) {

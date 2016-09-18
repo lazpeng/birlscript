@@ -1,8 +1,8 @@
 mod error;
 mod parser;
 mod commands;
-mod interpreter;
 mod value;
+mod vm;
 
 /// Imprime mensagem de ajuda
 fn print_help() {
@@ -17,11 +17,8 @@ fn print_help() {
     println!("\t-e ou --ele-que-a-gente-quer [comando] : Imprime uma mensagem de ajuda para o \
               comando");
     println!("\t-t ou --tudo-cumpade                   : Imprime todos os comandos disponíveis");
-    println!("\t-j ou --jaula [nome]                   : Diz ao interpretador pra usar outro \
-              ponto de partida. Padrão: SHOW");
-    println!("\t-s ou --saindo-da-jaula                : Abre uma seção do console após a \
-              interpretação dos arquivos.");
-    println!("\t-o ou --oloco-bixo                     : (DEBUG) Testa cada um dos exemplos pra ter certeza que tá tudo funfando.");
+    println!("\t-o ou --oloco-bixo                     : (DEBUG) Testa cada um dos exemplos pra \
+              ter certeza que tá tudo funfando.");
 }
 
 /// Versão numérica
@@ -42,14 +39,10 @@ enum Param {
     PrintHelp,
     /// Pedido para printar ajuda com um comando
     CommandHelp(String),
-    /// Pedido para modificar o ponto de partida
-    CustomInit(String),
     /// Arquivo passado para interpretação
     InputFile(String),
     /// Mostra todos os comandos disponiveis
     ShowCmds,
-    /// Pede a execução do console
-    StartConsole,
     /// Testa todos os exemplos disponiveis
     Test,
 }
@@ -93,21 +86,7 @@ fn get_params() -> Vec<Param> {
                     ret.push(Param::CommandHelp(cmd));
                 }
                 "-t" | "--tudo-cumpade" => ret.push(Param::ShowCmds),
-                "-j" | "--jaula" => {
-                    next_is_val = true;
-                    let section = match params.next() {
-                        Some(sect) => sect,
-                        None => {
-                            warn!("A flag \"-j ou --jaula\" espera um valor.");
-                            break;
-                        }
-                    };
-                    ret.push(Param::CustomInit(section));
-                }
-                "-s" |
-                "--saindo-da-jaula" => ret.push(Param::StartConsole),
-                "-o" |
-                "--oloco-bixo" => ret.push(Param::Test),
+                "-o" | "--oloco-bixo" => ret.push(Param::Test),
                 _ => ret.push(Param::InputFile(p)),
             }
         }
@@ -132,33 +111,6 @@ fn command_help(command: &str) {
         _ => String::from("Comando não encontrado"),
     };
     println!("{}", doc);
-}
-
-/// Testa todos os exemplos
-fn command_test() {
-    use std::fs;
-    let files = match fs::read_dir("testes") {
-        Ok(x) => x,
-        Err(e) => abort!("Erro ao abrir pasta com testes. \"{}\"", e),
-    };
-    let mut count = 0;
-    for file in files {
-        let mut env = interpreter::Environment::new(String::from("SHOW"));
-        let test = match file {
-            Ok(x) => x,
-            Err(e) => abort!("Erro abrindo arquivos de exemplo. \"{}\"", e),
-        };
-        let test = test.path();
-        let filename = match test.to_str() {
-            Some(x) => x,
-            None => abort!("Erro recebendo path do arquivo atual"),
-        };
-        println!("\tTeste: \"{}\".", filename);
-        env.interpret(parser::parse(filename));
-        env.start_program(); // Inicia o programa de teste
-        count += 1;
-    }
-    println!("Sucesso! Passados {} testes.", count);
 }
 
 /// Imprime na tela todos os comandos disponíveis
@@ -189,61 +141,39 @@ fn show_cmds() {
 }
 
 fn main() {
-    let params = get_params();
+    let args = get_params();
+    let mut printed_something = false;
     let mut files: Vec<String> = vec![];
-    let mut env_default_sect = String::from(interpreter::BIRL_MAIN);
-    let (mut printed_something, mut should_start_console) = (false, false); // Se algo foi printado. Para que não jogue o erro quando pedir help, comandos ou version
-    // E se o console deve ser iniciado
-    for p in params {
-        match p {
-            Param::PrintVersion => {
-                printed_something = true;
-                print_version()
+    if args.len() > 0 {
+        for arg in args {
+            match arg {
+                Param::PrintHelp => {
+                    printed_something = true;
+                    print_help()
+                }
+                Param::PrintVersion => {
+                    printed_something = true;
+                    print_version()
+                }
+                Param::CommandHelp(cmd) => {
+                    printed_something = true;
+                    command_help(&cmd)
+                }
+                Param::InputFile(file) => files.push(file),
+                Param::ShowCmds => {
+                    printed_something = true;
+                    show_cmds()
+                }
+                Param::Test => {} // FIXME: Adicionar testes
             }
-            Param::PrintHelp => {
-                printed_something = true;
-                print_help()
-            }
-            Param::CommandHelp(cmd) => {
-                printed_something = true;
-                command_help(&cmd)
-            }
-            Param::CustomInit(init) => env_default_sect = init,
-            Param::InputFile(file) => files.push(file),
-            Param::ShowCmds => {
-                printed_something = true;
-                show_cmds();
-            }
-            Param::StartConsole => should_start_console = true,
-            Param::Test => {
-                printed_something = true; // Pra não printar mensagem de erro
-                command_test();
-            },
         }
     }
-    let mut environment = interpreter::Environment::new(env_default_sect);
-    let num_files = files.len();
-    if num_files == 0 {
-        should_start_console = true; // Se nenhum arquivo foi passado, deve iniciar o console interativo
+    if files.len() == 0 && !printed_something {
+        abort!("Nenhum arquivo passado pra execução. Use -a ou --ajuda-o-maluco-ta-doente pra uma \
+                lista de comandos pro interpretador.")
     }
-    if num_files > 0 {
-        for file in files {
-            environment.interpret(parser::parse(&file))
-        }
-    }
-    if should_start_console {
-        // TODO: Implementar console
-        // console::start(); // Inicia o console
-        // FIXME: Remova tudo abaixo depois de implementar o console (nesse if)
-        if num_files == 0 {
-            if !printed_something {
-                abort!("Nenhum arquivo passado pra execução (console ainda não funcional)");
-            }
-        } else {
-            warn!("Console ainda não funcional");
-        }
-    } else {
-        // Caso passaram arquivos E não foi pedido o console,
-        environment.start_program(); // Inicia o programa normalmente
-    }
+    let units: Vec<parser::Unit> = files.into_iter().map(|f| parser::parse(&f)).collect();
+    let mut vm = vm::VM::new(); // Cria a maquina virtual pra executar os comandos
+    vm.load(units); // Carrega as unidades pra execução
+    vm.start(); // Inicia a execução do programa
 }
