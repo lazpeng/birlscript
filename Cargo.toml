@@ -1,6 +1,6 @@
 [package]
 name = "birlscript"
-version = "0.1.0"
-authors = ["Matheus Borella (DarkRyu550) <dark.ryu.550@gmail.com>"]
+version = "2.0.0-alpha"
+authors = ["Matheus Borella (DarkRyu550) <dark.ryu.550@gmail.com>", "Rafael R Nakano <lazpeng@gmail.com>"]
 
 [dependencies]
