@@ -13,4 +13,4 @@ version = "0.12.0"
 version = "0.12.0"
 
 [dependencies]
-meval = "0.6.0"
+meval = "0.0.6"
