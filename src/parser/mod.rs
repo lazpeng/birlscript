@@ -1,10 +1,27 @@
 #![allow(dead_code)]
 
-pub mod kw;
+mod global;
+mod birlscript;
 
 /// Abstract Syntax Tree, result of the parsing operation on a specific file
 pub struct AST {
+    globals: Vec<global::Global>,
+}
 
+impl AST {
+    /// Return the number of globals declared
+    pub fn num_globals(&self) -> usize {
+        self.globals.len()
+    }
+
+    pub fn from(globals: Vec<global::Global>) -> AST {
+        AST { globals: globals }
+    }
+
+    /// Return a empty instance of an AST
+    pub fn new() -> AST {
+        AST { globals: vec![] }
+    }
 }
 
 use std::rc::Rc;
@@ -12,7 +29,7 @@ use std::rc::Rc;
 /// Parsed Executable Unit. A collection of ASTs which can be directly executed by the vm
 pub struct PEU {
     /// Collection of ASTs to be executed
-    asts: Vec<AST>,
+    pub asts: Vec<AST>,
     /// A reference to the Unit which contains the main method to be executed
     main_unit: Option<Rc<AST>>,
 }
@@ -33,26 +50,33 @@ impl PEU {
         use std::io::BufRead;
         let handle = match fs::File::open(file) {
             Ok(h) => h,
-            Err(err) => unimplemented!(), // FIXME: Erro
+            Err(err) => panic!("Erro abrindo arquivo \"{}\": {}", file, err), // FIXME: Erro
         };
-        let mut buffer: Vec<String> = vec![]; // Where the lines are stored
+        let mut buffer = String::new(); // The sum of all lines
         let reader = io::BufReader::new(handle); // Open a reader on the file
         for line in reader.lines() {
             let l = match line {
                 Ok(ll) => ll,
-                Err(err) => unimplemented!(), //FIXME: Erro
+                Err(err) => panic!("Erro lendo do arquivo \"{}\": {}", file, err), //FIXME: Erro
             };
-            buffer.push(l);
+            buffer.push_str(&l);
         }
-        self.parse_lines(buffer)
+        self.parse(&buffer)
     }
 
     /// Parse a new AST from a string and place it in asts
-    pub fn parse_str(&mut self, src: &str) {
-        let buffer = src.split('\n').map(|line| String::from(line)).collect();
-        self.parse_lines(buffer)
+    pub fn parse(&mut self, src: &str) {
+        // Parses the file, which returns an AST as result
+        let result = match birlscript::parse_file(src) {
+            Ok(res) => res,
+            Err(e) => panic!("Erro no parsing do arquivo \"{}\": {:?}", src, e),
+        };
+        // Push the AST to the asts vector
+        self.asts.push(result);
+        match self.main_unit {
+            None => {}  // No main unit set
+            // TODO: Add code to detect if main unit is defined
+            Some(_) => {}
+        }
     }
-
-    /// Parse a collection of lines
-    fn parse_lines(&mut self, src: Vec<String>) {}
 }

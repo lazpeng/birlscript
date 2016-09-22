@@ -1,0 +1,30 @@
+grammar;
+
+use parser::AST;
+use parser::global::Global;
+
+pub file: AST = {
+  program_start <list:global_list> => AST {globals:list}
+};
+
+program_start: () = {
+  "HORA DO SHOW",
+  "HORA DO SHOW, PORRA",
+};
+
+global_list: Vec<Global> = {
+  <list:global_list> <glb:global> ";" => { let mut cpy = list.clone(); cpy.push(glb); cpy },
+  <glb:global> ";" => vec![glb]
+};
+
+global: Global = {
+  "GLOBAL" <id:identifier> <val:value> => Global::from(id, val)
+};
+
+identifier: String = {
+  <identifier:r"[A-z]+"> => String::from(identifier)
+};
+
+value: String = {
+  <value:"valor"> => String::from(value)
+};
