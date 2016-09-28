@@ -2,9 +2,12 @@ grammar;
 
 use parser::AST;
 use parser::global::Global;
+use parser::function::Function;
+use parser::function::Parameter;
+use parser::command::Command;
 
 pub file: AST = {
-  program_start <list:global_list> => AST {globals:list}
+  program_start <list:global_list> <functions:function_list> => AST {globals:list, functions:functions}
 };
 
 program_start: () = {
@@ -22,9 +25,29 @@ global: Global = {
 };
 
 identifier: String = {
-  <identifier:r"[A-z]+"> => String::from(identifier)
+  <identifier:r"[_]?[A-z]+[0-9]?"> => String::from(identifier)
 };
 
 value: String = {
-  <value:"valor"> => String::from(value)
+  <value:identifier> => String::from(value) //FIXME
+};
+
+function_list: Vec<Function> = {
+  <list:function_list> <func:function_decl> => { let mut cpy = list.clone(); cpy.push(func); cpy},
+  <func:function_decl> => vec![func]
+};
+
+function_decl: Function = {
+  "JAULA" <fn_name:identifier> ":" <commands:command_list> "SAINDO DA JAULA" => Function::from(fn_name, vec![], vec![]),
+  "JAULA" <fn_name:identifier> "DE" <fn_type:identifier> ":" <commands:command_list> "SAINDO DA JAULA" => Function::from(fn_name, vec![], vec![]),
+
+  "JAULA" <fn_name:identifier> "(" <param_list:parameter_list> ")" ":" <commands:command_list> "SAINDO DA JAULA" => Function::from(fn_name, vec![], vec![]),
+  "JAULA" <fn_name:identifier> "DE" <ret_type:identifier> "(" <param_list:parameter_list> ")" ":" <commands:command_list> "SAINDO DA JAULA" => Function::from(fn_name, vec![], vec![])
+};
+
+command_list: () = {
+};
+
+parameter_list: () = {
+
 };

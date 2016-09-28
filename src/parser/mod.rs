@@ -1,11 +1,14 @@
 #![allow(dead_code)]
 
 mod global;
+mod command;
+mod function;
 mod birlscript;
 
 /// Abstract Syntax Tree, result of the parsing operation on a specific file
 pub struct AST {
     globals: Vec<global::Global>,
+    functions: Vec<function::Function>,
 }
 
 impl AST {
@@ -14,13 +17,19 @@ impl AST {
         self.globals.len()
     }
 
-    pub fn from(globals: Vec<global::Global>) -> AST {
-        AST { globals: globals }
+    pub fn from(globals: Vec<global::Global>, functions: Vec<function::Function>) -> AST {
+        AST {
+            globals: globals,
+            functions: functions,
+        }
     }
 
     /// Return a empty instance of an AST
     pub fn new() -> AST {
-        AST { globals: vec![] }
+        AST {
+            globals: vec![],
+            functions: vec![],
+        }
     }
 }
 
