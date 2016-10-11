@@ -1,5 +1,6 @@
-mod birl;
-mod parser;
+extern crate parser;
+extern crate vm;
+extern crate compiler;
 
 extern crate getopts;
 

@@ -3,15 +3,5 @@ name = "birlscript"
 version = "2.0.0-alpha"
 authors = ["Matheus Borella (DarkRyu550) <dark.ryu.550@gmail.com>", "Rafael R Nakano <lazpeng@gmail.com>"]
 
-build = "build.rs"
-
-# Add a dependency on the LALRPOP runtime library:
-[dependencies.lalrpop-util]
-version = "0.12.0"
-
-[build-dependencies.lalrpop]
-version = "0.12.0"
-
 [dependencies]
-meval = "0.0.6"
 getopts = "0.2.4"
