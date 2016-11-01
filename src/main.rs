@@ -1,6 +1,8 @@
 mod error;
+mod nparser;
 mod parser;
 mod commands;
+mod eval;
 mod value;
 mod vm;
 
@@ -22,13 +24,12 @@ fn print_help() {
 }
 
 /// Versão numérica
-pub static BIRLSCRIPT_VERSION: &'static str = "1.1.5";
+pub static BIRLSCRIPT_VERSION: &'static str = "1.1.6";
 
 /// Imprime a mensagem de versão
 fn print_version() {
     println!("Versão descendente:");
-    println!("Interpretador BIRLSCRIPT 1.x v{}-legacy",
-             BIRLSCRIPT_VERSION);
+    println!("Interpretador BIRLSCRIPT v{}", BIRLSCRIPT_VERSION);
     println!("Copyright(r) 2016 Rafael R Nakano <lazpeng@gmail.com> - Licença: MIT");
 }
 
