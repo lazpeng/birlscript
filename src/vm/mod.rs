@@ -9,7 +9,7 @@ mod command;
 mod comparision;
 
 use parser;
-use value;
+use eval::{ValueQuery, Value, ValueType, evaluate};
 
 /// Tipo de identificador usado na VM
 pub type VMID = u16;
@@ -29,6 +29,16 @@ pub struct VM {
     last_cmp: comparision::Comparision,
 }
 
+impl ValueQuery for VM {
+    fn query(&self, id: &str) -> Option<Value> {
+        self.retrieve_variable(id)
+    }
+
+    fn query_raw(&self, _id: &str) -> Option<String> {
+        unimplemented!()
+    }
+}
+
 impl VM {
     /// Procura na pilha se seções e retorna uma referência para a seção
     pub fn get_section<'a>(&'a mut self, name: &str) -> &'a mut section::Section {
@@ -43,13 +53,13 @@ impl VM {
 
     /// Declara a variavel na stack da VM
     pub fn declare_variable(&mut self, var: variable::Variable) {
-        self.current_section().decl_var(var);
+        self.current_section_mut().decl_var(var);
     }
 
     /// Tenta modificar a variavel com o nome passado.
-    pub fn modify_variable(&mut self, name: &str, value: value::Value) {
-        if !self.current_section().mod_var(name, value.clone()) {
-            if !self.global_section().mod_var(name, value.clone()) {
+    pub fn modify_variable(&mut self, name: &str, value: Value) {
+        if !self.current_section_mut().mod_var(name, value.clone()) {
+            if !self.global_section_mut().mod_var(name, value.clone()) {
                 panic!("Erro: Variável \"{}\" não pode ser modificada. Não encontrada.",
                        name);
             }
@@ -57,18 +67,28 @@ impl VM {
     }
 
     /// Retorna o nome da seção atual que está sendo executada
-    pub fn current_section<'a>(&'a mut self) -> &'a mut section::Section {
+    pub fn current_section_mut<'a>(&'a mut self) -> &'a mut section::Section {
         // É garantido ter ao menos uma seção (global)
         let index = self.stack.len() - 1;
         &mut self.stack[index]
     }
 
-    pub fn global_section<'a>(&'a mut self) -> &'a mut section::Section {
+    pub fn global_section_mut<'a>(&'a mut self) -> &'a mut section::Section {
         &mut self.stack[0]
     }
 
+    pub fn global_section<'a>(&'a self) -> &'a section::Section {
+        &self.stack[0]
+    }
+
+    pub fn current_section<'a>(&'a self) -> &'a section::Section {
+        // É garantido ter ao menos uma seção (global)
+        let index = self.stack.len() - 1;
+        &self.stack[index]
+    }
+
     /// Pega o valor de uma variavel
-    pub fn retrieve_variable(&mut self, name: &str) -> value::Value {
+    fn retrieve_variable(&self, name: &str) -> Option<Value> {
         // Tenta pegar a ultima seção (atual) depois da ultima
         let backtrace = self.current_section().stack.clone();
         let cursect = self.current_section().name.clone();
@@ -77,22 +97,17 @@ impl VM {
             None => None,
         };
         if let Some(x) = val {
-            x
+            Some(x)
         } else {
             match self.global_section().get_var(name) {
-                Some(var) => var.get_val().clone(),
-                None => {
-                    panic!("Variavel não encontrada: {}. sect: {}, bkc: {:?}",
-                           name,
-                           cursect,
-                           backtrace)
-                }
+                Some(var) => Some(var.get_val().clone()),
+                None => None,
             }
         }
     }
 
     /// Compara e coloca a comparação na VM
-    pub fn compare(&mut self, left: value::Value, right: value::Value) {
+    pub fn compare(&mut self, left: Value, right: Value) {
         let result = comparision::compare(left, right);
         self.last_cmp = result;
     }
@@ -116,7 +131,7 @@ impl VM {
         for unit in &units {
             // Declara os globais da unidade
             for global in &unit.globals {
-                let global_val = value::parse_expr(&global.value, self);
+                let global_val = evaluate(&global.value, self);
                 let global_var = variable::Variable::from(&global.identifier, global_val);
                 self.declare_variable(global_var); // Empurra o global pra stack
             }
@@ -161,17 +176,17 @@ impl VM {
     }
 
     /// faz o retorno de uma seção, colocando o valor de retorno na stack anterior
-    pub fn section_return(&mut self, ret_val: Option<value::Value>) {
+    pub fn section_return(&mut self, ret_val: Option<Value>) {
         if let Some(val) = ret_val {
             if self.stack.len() == 1 {
                 // Nenhuma seção a não ser a global
-                self.global_section().decl_or_mod(parser::kw::KW_RETVAL_VAR, val);
+                self.global_section_mut().decl_or_mod(parser::kw::KW_RETVAL_VAR, val);
             } else {
                 let cur_sect_name = self.current_section().name.clone();
                 // Procura a primeira seção em que o nome seja diferente
                 loop {
                     if self.current_section().name != cur_sect_name {
-                        self.current_section().decl_or_mod(parser::kw::KW_RETVAL_VAR, val);
+                        self.current_section_mut().decl_or_mod(parser::kw::KW_RETVAL_VAR, val);
                         break;
                     }
                     self.stack.pop();
@@ -184,16 +199,13 @@ impl VM {
     pub fn decl_initial_variables(&mut self) {
         use std::env;
         let names = vec!["CUMPADE", "UM", "BODYBUILDER"];
-        let values = vec![value::Value::Str(Box::new(match env::var(if cfg!(windows) {
-                              "USERNAME"
-                          } else {
-                              "USER"
-                          }) {
-                              Ok(v) => v.to_uppercase(),
-                              Err(_) => String::from("\"CUMPADE\""),
-                          })),
-                          value::Value::Number(1.0),
-                          value::Value::Str(Box::new(String::from("CUMPADE")))];
+        let values =
+            vec![Value::Str(match env::var(if cfg!(windows) { "USERNAME" } else { "USER" }) {
+                     Ok(v) => v.to_uppercase(),
+                     Err(_) => String::from("\"CUMPADE\""),
+                 }),
+                 Value::Num(1.0),
+                 Value::Str(String::from("CUMPADE"))];
         for i in 0..names.len() {
             let var = variable::Variable::from(names[i], values[i].clone());
             self.declare_variable(var);

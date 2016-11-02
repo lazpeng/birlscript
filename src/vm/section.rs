@@ -3,7 +3,7 @@ use vm::parameter;
 use vm::command;
 use vm::signal;
 use vm::variable::Variable;
-use value::Value;
+use eval::Value;
 
 use super::*;
 
@@ -59,7 +59,19 @@ impl Section {
     }
 
     /// Retrieves a variable from the section's stack
-    pub fn get_var<'a>(&'a mut self, name: &str) -> Option<&'a mut Variable> {
+    pub fn get_var<'a>(&'a self, name: &str) -> Option<&'a Variable> {
+        if self.stack.is_empty() {
+            panic!("Stack vazia");
+        }
+        for v in &self.stack {
+            if v.get_id() == name {
+                return Some(v);
+            }
+        }
+        return None;
+    }
+
+    pub fn get_var_mut<'a>(&'a mut self, name: &str) -> Option<&'a mut Variable> {
         if self.stack.is_empty() {
             panic!("Stack vazia");
         }
@@ -81,7 +93,7 @@ impl Section {
     }
 
     pub fn mod_var(&mut self, name: &str, value: Value) -> bool {
-        match self.get_var(name) {
+        match self.get_var_mut(name) {
             Some(x) => {
                 x.modify(value);
                 true
@@ -107,13 +119,13 @@ impl Section {
         }
         use std::process;
         use vm::variable::Variable;
-        use value::Value;
+        use eval::Value;
         if !parameter::Parameter::matches(args.clone(), self.args.clone()) {
             panic!("Os argumentos para \"{}\" tem tipos diferentes ou uma quantidade diferente do \
                     esperado foi passado.",
                    self.name)
         }
-        let jaula = Variable::from("JAULA", Value::Str(Box::new(self.name.clone())));
+        let jaula = Variable::from("JAULA", Value::Str(self.name.clone()));
         vm.declare_variable(jaula); // Declara JAULA na seção atual
         for arg in args {
             vm.declare_variable(arg.var); // Declara os argumentos passados

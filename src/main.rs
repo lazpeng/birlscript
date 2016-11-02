@@ -3,8 +3,9 @@ mod nparser;
 mod parser;
 mod commands;
 mod eval;
-mod value;
 mod vm;
+
+extern crate meval;
 
 /// Imprime mensagem de ajuda
 fn print_help() {

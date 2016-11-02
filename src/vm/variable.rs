@@ -1,6 +1,6 @@
 //! Modulo que representa as variaveis
 
-use value::{Value, ValueType};
+use eval::{Value, ValueType};
 
 #[derive(Debug, Clone)]
 /// Estrutura que representa uma variavel
@@ -18,8 +18,8 @@ impl Variable {
     pub fn new() -> Variable {
         Variable {
             id: String::new(),
-            value: Value::Number(0.0),
-            value_type: ValueType::Number,
+            value: Value::NullOrEmpty,
+            value_type: ValueType::NullOrEmpty,
         }
     }
 

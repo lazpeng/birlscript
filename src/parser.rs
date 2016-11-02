@@ -59,7 +59,7 @@ pub mod kw {
     pub const KW_INPUT_UP: &'static str = "BORA, CUMPADE!!!";
 }
 
-use value;
+use eval;
 
 #[derive(Clone)]
 #[allow(dead_code)]
@@ -608,7 +608,7 @@ pub struct ExpectedParameter {
     /// Identificador do parametro
     pub id: String,
     /// Tipo que o parametro espera
-    pub tp: value::ValueType,
+    pub tp: eval::ValueType,
 }
 
 /// Faz parsing de um parametro
@@ -618,7 +618,7 @@ fn parse_parameter(param: &str) -> ExpectedParameter {
         None => panic!("Parametro deve ter tipo declarado depois do nome, separado por um ':'"),
     };
     let param_id = &param[..div_token];
-    let param_tp = match value::ValueType::try_parse(&param[div_token + 1..]) {
+    let param_tp = match eval::ValueType::try_parse(&param[div_token + 1..]) {
         Some(tp) => tp,
         None => {
             panic!("Tipo inválido para parâmetro: {}",

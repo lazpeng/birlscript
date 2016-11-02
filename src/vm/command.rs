@@ -5,7 +5,7 @@ use parser;
 /// Implementação dos comandos
 mod cmd {
     use vm::signal::Signal;
-    use value::{self, Value};
+    use eval::{self, Value};
     use vm::variable::Variable;
     use vm::VM;
     use parser::{self, Command};
@@ -13,25 +13,25 @@ mod cmd {
     use vm::parameter::Parameter;
 
     pub fn cmd_move(name: String, value: String, vm: &mut VM) -> Option<Signal> {
-        let value = value::parse_expr(&value, vm);
+        let value = eval::evaluate(&value, vm);
         vm.modify_variable(&name, value);
         None
     }
 
     pub fn clear(var: String, vm: &mut VM) -> Option<Signal> {
-        let val = Value::Number(0.0);
+        let val = Value::NullOrEmpty;
         vm.modify_variable(&var, val);
         None
     }
 
     pub fn decl(var: String, vm: &mut VM) -> Option<Signal> {
-        let result = Variable::from(&var, Value::Number(0.0));
+        let result = Variable::from(&var, Value::NullOrEmpty);
         vm.declare_variable(result);
         None
     }
 
     pub fn declwv(var: String, val: String, vm: &mut VM) -> Option<Signal> {
-        let val = value::parse_expr(&val, vm);
+        let val = eval::evaluate(&val, vm);
         let result = Variable::from(&var, val);
         vm.declare_variable(result);
         None
@@ -44,7 +44,7 @@ mod cmd {
         let mut index = 0;
         let mut param_list: Vec<Parameter> = vec![];
         for arg in &arg_list {
-            let val = value::parse_expr(arg, vm);
+            let val = eval::evaluate(arg, vm);
             let v = Variable::from(&expected[index].id, val);
             let param = Parameter { var: v };
             param_list.push(param);
@@ -55,7 +55,7 @@ mod cmd {
     }
 
     pub fn cmp(left: String, right: String, vm: &mut VM) -> Option<Signal> {
-        let (left, right) = (value::parse_expr(&left, vm), value::parse_expr(&right, vm));
+        let (left, right) = (eval::evaluate(&left, vm), eval::evaluate(&right, vm));
         vm.compare(left, right);
         None
     }
@@ -110,14 +110,14 @@ mod cmd {
 
     pub fn print(args: Vec<String>, vm: &mut VM) -> Option<Signal> {
         for arg in &args {
-            print!("{}", value::parse_expr(arg, vm));
+            print!("{}", eval::evaluate(arg, vm));
         }
         None
     }
 
     pub fn println(args: Vec<String>, vm: &mut VM) -> Option<Signal> {
         for arg in &args {
-            print!("{}", value::parse_expr(arg, vm));
+            print!("{}", eval::evaluate(arg, vm));
         }
         println!("");
         None
@@ -125,11 +125,11 @@ mod cmd {
 
     pub fn quit(code: String, vm: &mut VM) -> Option<Signal> {
         let result = if code != "" {
-            value::parse_expr(&code, vm)
+            eval::evaluate(&code, vm)
         } else {
-            Value::Number(0.0)
+            Value::Num(0.0)
         };
-        if let Value::Number(c) = result {
+        if let Value::Num(c) = result {
             Some(Signal::Quit(c as i32))
         } else {
             panic!("Erro ao tentar quitar com código invalido (não-número)")
@@ -138,7 +138,7 @@ mod cmd {
 
     pub fn cmd_return(val: Option<String>, vm: &mut VM) -> Option<Signal> {
         let val = match val {
-            Some(a) => Some(value::parse_expr(&a, vm)),
+            Some(a) => Some(eval::evaluate(&a, vm)),
             None => None,
         };
         vm.section_return(val);
@@ -147,13 +147,13 @@ mod cmd {
 
     pub fn input(var: String, vm: &mut VM) -> Option<Signal> {
         let inp = get_input();
-        vm.modify_variable(&var, Value::Str(Box::new(inp.to_string())));
+        vm.modify_variable(&var, Value::Str(inp.to_string()));
         None
     }
 
     pub fn input_upper(var: String, vm: &mut VM) -> Option<Signal> {
         let inp = get_input().to_uppercase();
-        vm.modify_variable(&var, Value::Str(Box::new(inp.to_string())));
+        vm.modify_variable(&var, Value::Str(inp.to_string()));
         None
     }
 
