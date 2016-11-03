@@ -4,15 +4,17 @@ pub const GLOBAL_CONST: &'static str = "SAI DE CASA";
 /// Usada pra declaração de globais.birl variáveis
 pub const GLOBAL_VAR: &'static str = "IBIRAPUERA";
 /// Usada para definição de seções
-pub const SECTION: &'static str = "JAULA";
+pub const FUNCTION_START: &'static str = "JAULA";
 /// Usada para finalizar a definição de seções
-pub const SECTION_END: &'static str = "SAINDO DA JAULA";
+pub const FUNCTION_END: &'static str = "SAINDO DA JAULA";
 
 /// Nome da variavel usada pra guardar o valor de retorno
 pub const RETVAL_VAR: &'static str = "TREZE";
 
 pub const SECT_GLOBAL: &'static str = "GLOBAL";
 pub const SECT_DEFAULT: &'static str = "SHOW";
+
+pub const COMMENT_CHAR: char = '#';
 
 // Comandos
 /// Copia o valor de uma variavel a outra

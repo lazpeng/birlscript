@@ -1,7 +1,5 @@
 mod error;
 mod nparser;
-mod parser;
-mod commands;
 mod eval;
 mod vm;
 
@@ -17,8 +15,6 @@ fn print_help() {
     println!("As opções são as seguintes:");
     println!("\t-a ou --ajuda-o-maluco-ta-doente       : Imprime essa mensagem de ajuda");
     println!("\t-v ou --vers[ã ou a]o-dessa-porra      : Imprime a versão do programa");
-    println!("\t-e ou --ele-que-a-gente-quer [comando] : Imprime uma mensagem de ajuda para o \
-              comando");
     println!("\t-t ou --tudo-cumpade                   : Imprime todos os comandos disponíveis");
     println!("\t-o ou --oloco-bixo                     : (DEBUG) Testa cada um dos exemplos pra \
               ter certeza que tá tudo funfando.");
@@ -40,8 +36,6 @@ enum Param {
     PrintVersion,
     /// Pedido para printar ajuda
     PrintHelp,
-    /// Pedido para printar ajuda com um comando
-    CommandHelp(String),
     /// Arquivo passado para interpretação
     InputFile(String),
     /// Mostra todos os comandos disponiveis
@@ -75,19 +69,6 @@ fn get_params() -> Vec<Param> {
                 "-v" |
                 "--versão-dessa-porra" |
                 "--versao-dessa-porra" => ret.push(Param::PrintVersion),
-                "-e" |
-                "--ele-que-a-gente-quer" => {
-                    next_is_val = true;
-                    let cmd = match params.next() {
-                        Some(name) => name,
-                        None => {
-                            warn!("A flag \"-e ou --ele-que-a-gente-quer\" espera um \
-                                      valor.");
-                            break;
-                        }
-                    };
-                    ret.push(Param::CommandHelp(cmd));
-                }
                 "-t" | "--tudo-cumpade" => ret.push(Param::ShowCmds),
                 "-o" | "--oloco-bixo" => ret.push(Param::Test),
                 _ => ret.push(Param::InputFile(p)),
@@ -97,47 +78,13 @@ fn get_params() -> Vec<Param> {
     ret
 }
 
-/// Printa ajuda para um comando
-fn command_help(command: &str) {
-    use parser::kw::*;
-    use commands::*;
-    let doc = match command {
-        KW_MOVE => doc_move(),
-        KW_CLEAR => doc_clear(),
-        KW_DECL => doc_decl(),
-        KW_DECLWV => doc_declwv(),
-        KW_JUMP => doc_jump(),
-        KW_CMP => doc_cmp(),
-        KW_PRINTLN => doc_println(),
-        KW_PRINT => doc_print(),
-        KW_QUIT => doc_quit(),
-        _ => String::from("Comando não encontrado"),
-    };
-    println!("{}", doc);
-}
-
 /// Imprime na tela todos os comandos disponíveis
 fn show_cmds() {
     println!("Todos os comandos BIRL!");
-    use parser::kw::*;
-    let commands = vec![KW_MOVE,
-                        KW_CLEAR,
-                        KW_CMP,
-                        KW_CMP_EQ,
-                        KW_CMP_NEQ,
-                        KW_CMP_LESS,
-                        KW_CMP_LESSEQ,
-                        KW_CMP_MORE,
-                        KW_CMP_MOREEQ,
-                        KW_DECL,
-                        KW_DECLWV,
-                        KW_JUMP,
-                        KW_PRINT,
-                        KW_PRINTLN,
-                        KW_QUIT,
-                        KW_INPUT,
-                        KW_INPUT,
-                        KW_INPUT_UP];
+    use nparser::kw::*;
+    let commands = vec![MOVE, CLEAR, CMP, CMP_EQ, CMP_NEQ, CMP_LESS, CMP_LESSEQ, CMP_MORE,
+                        CMP_MOREEQ, DECL, DECLWV, JUMP, PRINT, PRINTLN, QUIT, INPUT, INPUT,
+                        INPUT_UP];
     for cmd in &commands {
         println!("{}", cmd);
     }
@@ -163,9 +110,9 @@ fn test_programs() {
         let filename = file.clone(); // Usado pelo unsuc_files quando dá panic. Não deve gastar muita memoria
         println!("\n\tProcessando: \"{}\"", filename);
         let vm_load_n_run = move || {
-            let unit = parser::parse(&file.clone());
+            let ast = nparser::AST::load_file(&file);
             let mut vm = VM::new();
-            vm.load(vec![unit]);
+            vm.load(vec![ast]);
             vm.start();
         };
         let panicked = thread::spawn(vm_load_n_run).join().is_err();
@@ -201,10 +148,6 @@ fn main() {
                     did_something = true;
                     print_version()
                 }
-                Param::CommandHelp(cmd) => {
-                    did_something = true;
-                    command_help(&cmd)
-                }
                 Param::InputFile(file) => files.push(file),
                 Param::ShowCmds => {
                     did_something = true;
@@ -218,8 +161,8 @@ fn main() {
         panic!("Nenhum arquivo passado pra execução. Use -a ou --ajuda-o-maluco-ta-doente pra uma \
                 lista de comandos pro interpretador.")
     }
-    let units: Vec<parser::Unit> = files.into_iter().map(|f| parser::parse(&f)).collect();
-    let mut vm = vm::VM::new(); // Cria a maquina virtual pra executar os comandos
-    vm.load(units); // Carrega as unidades pra execução
+    let mut vm = vm::VM::new();
+    let asts: Vec<nparser::AST> = files.into_iter().map(|f| nparser::AST::load_file(&f)).collect();
+    vm.load(asts);
     vm.start(); // Inicia a execução do programa
 }

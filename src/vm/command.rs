@@ -1,6 +1,6 @@
 
 use vm;
-use parser;
+use nparser::command::Command;
 
 /// Implementação dos comandos
 mod cmd {
@@ -8,7 +8,9 @@ mod cmd {
     use eval::{self, Value};
     use vm::variable::Variable;
     use vm::VM;
-    use parser::{self, Command};
+    use nparser;
+    use nparser::command::Command;
+    use nparser::function::{ExpectedParameter, parse_function_call_params};
     use vm::comparision::Comparision;
     use vm::parameter::Parameter;
 
@@ -38,7 +40,7 @@ mod cmd {
     }
 
     pub fn jump(sect: String, vm: &mut VM) -> Option<Signal> {
-        let (arg_list, sect_name) = parser::parse_section_call_params(&sect);
+        let (arg_list, sect_name) = parse_function_call_params(&sect);
         let section = vm.get_section(&sect_name).clone();
         let expected = section.args;
         let mut index = 0;
@@ -166,8 +168,8 @@ mod cmd {
     }
 }
 
-pub fn run(cmd: parser::Command, vm: &mut vm::VM) -> Option<vm::signal::Signal> {
-    use parser::Command::*;
+pub fn run(cmd: Command, vm: &mut vm::VM) -> Option<vm::signal::Signal> {
+    use nparser::command::Command::*;
     match cmd {
         Move(a, b) => cmd::cmd_move(a, b, vm),
         Clear(a) => cmd::clear(a, vm),

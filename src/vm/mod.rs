@@ -8,8 +8,13 @@ mod signal;
 mod command;
 mod comparision;
 
-use parser;
+use nparser::{AST, kw};
+use nparser::command::Command;
+use nparser::function::Function;
 use eval::{ValueQuery, Value, ValueType, evaluate};
+use self::comparision::Comparision;
+use self::section::Section;
+use self::signal::Signal;
 
 /// Tipo de identificador usado na VM
 pub type VMID = u16;
@@ -20,13 +25,13 @@ pub const MAX_RECURSION: usize = 124;
 /// Onde são executados os comandos
 pub struct VM {
     /// Seções executaveis presentes na VM
-    sections: Vec<section::Section>,
+    sections: Vec<Section>,
     /// Stack de variaveis presente na seção
-    stack: Vec<section::Section>,
+    stack: Vec<Section>,
     /// Ultimo sinal jogado à VM
-    last_signal: Option<signal::Signal>,
+    last_signal: Option<Signal>,
     /// Ultima comparação
-    last_cmp: comparision::Comparision,
+    last_cmp: Comparision,
 }
 
 impl ValueQuery for VM {
@@ -123,20 +128,7 @@ impl VM {
         }
     }
 
-    /// Carrega os elementos do programa com o que foi feito parse
-    pub fn load(&mut self, units: Vec<parser::Unit>) {
-        let all_sects = section::Section::load_all(units.clone());
-        self.sections.extend_from_slice(&all_sects);
-        self.push_global_sect(); // Empurra seçõa global pra stack
-        for unit in &units {
-            // Declara os globais da unidade
-            for global in &unit.globals {
-                let global_val = evaluate(&global.value, self);
-                let global_var = variable::Variable::from(&global.identifier, global_val);
-                self.declare_variable(global_var); // Empurra o global pra stack
-            }
-        }
-    }
+    pub fn load(&mut self, asts: Vec<AST>) {}
 
     /// Retorna uma nova instancia de uma VM
     pub fn new() -> VM {
@@ -152,7 +144,7 @@ impl VM {
     pub fn has_main(&self) -> bool {
         let mut res = false;
         for sect in &self.sections {
-            if sect.name == parser::kw::KW_SECT_DEFAULT {
+            if sect.name == kw::SECT_DEFAULT {
                 res = true;
                 break;
             }
@@ -180,13 +172,13 @@ impl VM {
         if let Some(val) = ret_val {
             if self.stack.len() == 1 {
                 // Nenhuma seção a não ser a global
-                self.global_section_mut().decl_or_mod(parser::kw::KW_RETVAL_VAR, val);
+                self.global_section_mut().decl_or_mod(kw::RETVAL_VAR, val);
             } else {
                 let cur_sect_name = self.current_section().name.clone();
                 // Procura a primeira seção em que o nome seja diferente
                 loop {
                     if self.current_section().name != cur_sect_name {
-                        self.current_section_mut().decl_or_mod(parser::kw::KW_RETVAL_VAR, val);
+                        self.current_section_mut().decl_or_mod(kw::RETVAL_VAR, val);
                         break;
                     }
                     self.stack.pop();
@@ -214,7 +206,7 @@ impl VM {
 
     fn push_global_sect(&mut self) {
         for sect in &self.sections {
-            if sect.name == parser::kw::KW_SECT_GLOBAL {
+            if sect.name == kw::SECT_GLOBAL {
                 self.stack.push(sect.clone());
             }
         }
@@ -224,10 +216,10 @@ impl VM {
     pub fn start(&mut self) {
         self.decl_initial_variables(); // Declara as variaveis globais padrões
         // Primeiro se inicia a seção global
-        self.start_section(parser::kw::KW_SECT_GLOBAL, vec![]);
+        self.start_section(kw::SECT_GLOBAL, vec![]);
         if self.has_main() {
             // Depois inicia a seção padrão, caso ela exista
-            self.start_section(parser::kw::KW_SECT_DEFAULT, vec![]);
+            self.start_section(kw::SECT_DEFAULT, vec![]);
         }
     }
 }

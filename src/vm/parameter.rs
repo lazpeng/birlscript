@@ -1,6 +1,6 @@
 
 use super::variable;
-use parser;
+use nparser::function::ExpectedParameter;
 
 #[derive(Debug, Clone)]
 /// Representa um parametro que pode ser passado como argumento para uma seção
@@ -10,7 +10,7 @@ pub struct Parameter {
 
 impl Parameter {
     /// Se todos os parametros coincidem em tipo e numero de argumentos
-    pub fn matches(params: Vec<Parameter>, expected: Vec<parser::ExpectedParameter>) -> bool {
+    pub fn matches(params: Vec<Parameter>, expected: Vec<ExpectedParameter>) -> bool {
         if params.len() == expected.len() {
             let mut res = true;
             for i in 0..params.len() {

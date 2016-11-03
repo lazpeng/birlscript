@@ -62,6 +62,10 @@ pub struct GlobalParser {
 }
 
 impl GlobalParser {
+    pub fn new() -> GlobalParser {
+        GlobalParser { value_stack: HashMap::new() }
+    }
+
     pub fn parse_globals(&mut self, lines: &Vec<Line>) -> Vec<Global> {
         // Faz o parsing de multiplos globals, sendo que um pode referenciar o outro e seus valores são computados em tempo de processamento
         let mut global_vec: Vec<Global> = vec![];

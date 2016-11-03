@@ -1,4 +1,6 @@
-use parser;
+use nparser::AST;
+use nparser::command::Command;
+use nparser::function::{ExpectedParameter, Function};
 use vm::parameter;
 use vm::command;
 use vm::signal;
@@ -11,9 +13,9 @@ use super::*;
 #[derive(Clone)]
 pub struct Section {
     /// Comandos a serem executados
-    pub commands: Vec<parser::Command>,
+    pub commands: Vec<Command>,
     /// Argumentos esperados para a seção
-    pub args: Vec<parser::ExpectedParameter>,
+    pub args: Vec<ExpectedParameter>,
     /// Nome identificador da seção
     pub name: String,
     /// Identificador da seção
@@ -26,11 +28,11 @@ pub struct Section {
 
 impl Section {
     /// Cria uma nova seção baseada na seção que foi feito parsing original
-    pub fn from_parser(section: parser::Section, id: VMID) -> Section {
+    pub fn from_parser(func: &Function, id: VMID) -> Section {
         Section {
-            commands: section.lines.clone(),
-            args: section.param_list.clone(),
-            name: section.name.clone(),
+            commands: func.get_commands().clone(),
+            args: func.get_parameters().clone(),
+            name: func.get_identifier().to_owned(),
             id: id,
             rec: 1,
             stack: vec![],
@@ -38,9 +40,9 @@ impl Section {
     }
 
     /// Faz conversão de várias seções de dentro de um Unit pra um vetor de Sections
-    pub fn from_unit(unit: parser::Unit, vmid: &mut VMID) -> Vec<Section> {
+    pub fn from_ast(ast: AST, vmid: &mut VMID) -> Vec<Section> {
         let mut res: Vec<Section> = vec![];
-        for parsed in unit.sects {
+        for ref parsed in ast.declared_functions() {
             res.push(Section::from_parser(parsed, *vmid));
             *vmid += 1;
         }
@@ -48,11 +50,11 @@ impl Section {
     }
 
     /// Faz conversão de todas as units para um só vetor de seções
-    pub fn load_all(units: Vec<parser::Unit>) -> Vec<Section> {
+    pub fn load_all(asts: Vec<AST>) -> Vec<Section> {
         let mut res: Vec<Section> = vec![];
         let mut vmid: VMID = 0;
-        for unit in units {
-            let tmp = Section::from_unit(unit, &mut vmid);
+        for ast in asts {
+            let tmp = Section::from_ast(ast, &mut vmid);
             res.extend_from_slice(&tmp);
         }
         res

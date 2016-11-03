@@ -8,8 +8,7 @@ Se você é um programador mutante e se sente apto pro desafio, vá em frente!
 Ajude no desenvolvimento do projeto com ideias, código e muita fibra!
 
 Use o interpretador com a flag *-a* ou *--ajuda-o-maluco-ta-doente* para ver uma lista
-de opções que podem ser passadas. Use *-e* ou *--ele-que-a-gente-quer* junto com o nome
-de um comando para ver mais sobre ele, ou *-t* ou *--tudo-cumpade* para uma lista de comandos.
+de opções que podem ser passadas. Use *-t* ou *--tudo-cumpade* para uma lista de comandos.
 
 [Editor Online](https://birlscript.github.io/), teste agora mesmo! (atualmente fora do ar)[¹]
 

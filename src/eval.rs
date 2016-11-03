@@ -257,8 +257,8 @@ fn parse_num(expr: &str) -> Value {
     if expr.contains('\"') || expr.contains('\'') {
         panic!("Uma expressão com números não deve conter strings ou caracteres")
     }
-    let res = match meval::eval_str(expr) {
-        Ok(x) => x,
+    let res: NumericType = match meval::eval_str(expr) {
+        Ok(x) => x as NumericType, // Se for f32, converte
         Err(_) => 0.0,
     };
     Value::Num(res)
