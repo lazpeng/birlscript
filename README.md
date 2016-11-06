@@ -89,8 +89,8 @@ SAINDO DA JAULA
 
 ## Globais
 ```python
-IBIRAPUERA: GLOBAL_VARIAVEL: "PRIMEIRO VALOR" # Globais com IBIRAPUERA podem ser alterados
-SAI DE CASA: GLOBAL_CONSTANTE: "UNICO VALOR" # Globais com SAI DE CASA não podem ter ser alterados
+IBIRAPUERA GLOBAL_VARIAVEL "PRIMEIRO VALOR" # Globais com IBIRAPUERA podem ser alterados
+SAI DE CASA GLOBAL_CONSTANTE "UNICO VALOR" # Globais com SAI DE CASA não podem ter ser alterados
 
 CE QUER VER ISSO: GLOBAL_VARIAVEL # Printa PRIMEIRO VALOR
 BORA: GLOBAL_VARIAVEL, "SEGUNDO VALOR" # Altera o valor da global
