@@ -1,4 +1,3 @@
-mod error;
 mod nparser;
 mod eval;
 mod vm;
@@ -63,7 +62,7 @@ fn get_params() -> Vec<Param> {
                 continue;
             }
             match p.as_str() {
-                "-" | "--" => warn!("Flag vazia passada."),
+                "-" | "--" => {}
                 "-a" |
                 "--ajuda-o-maluco-ta-doente" => ret.push(Param::PrintHelp),
                 "-v" |
