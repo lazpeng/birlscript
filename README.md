@@ -10,10 +10,7 @@ Ajude no desenvolvimento do projeto com ideias, código e muita fibra!
 Use o interpretador com a flag *-a* ou *--ajuda-o-maluco-ta-doente* para ver uma lista
 de opções que podem ser passadas. Use *-t* ou *--tudo-cumpade* para uma lista de comandos.
 
-[Editor Online](https://birlscript.github.io/), teste agora mesmo! (atualmente fora do ar)[¹]
-
-[¹] -> Por falta de servidor pra hostear o app em Node.js. Se souber como ajudar, seja com o servidor ou
-como fazer de outra forma, me contate, por favor!
+[Editor Online](https://birlscript.github.io/), teste agora mesmo!
 
 ## Versão 1.1.6
 
