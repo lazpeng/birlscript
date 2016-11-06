@@ -93,9 +93,9 @@ fn expand_symbols<'a, QObj>(expression: &mut String, query_obj: &'a QObj, use_ra
                         is_sym = false;
                         let var_val;
                         if use_raw {
-                            var_val = query_obj.query_raw(&sym).unwrap_or_else(|| panic!("Erro na expansão da expressão, simbolo não expandido."));
+                            var_val = query_obj.query_raw(&sym).unwrap_or_else(|| panic!("Erro na expansão da expressão, simbolo não expandido. expr: {}", expression));
                         } else {
-                            var_val = query_obj.query(&sym).unwrap_or_else(|| panic!("Erro na expansão da expressão, simbolo não expandido.")).as_string();
+                            var_val = query_obj.query(&sym).unwrap_or_else(|| panic!("Erro na expansão da expressão, simbolo não expandido. expr: {}", expression)).as_string();
                         }
                         newexpr.push_str(&var_val);
                         newexpr.push(c);
@@ -130,9 +130,9 @@ fn expand_symbols<'a, QObj>(expression: &mut String, query_obj: &'a QObj, use_ra
         if is_sym && sym != "" {
             let var_val;
             if use_raw {
-                var_val = query_obj.query_raw(&sym).unwrap_or_else(|| panic!("Erro na expansão da expressão, simbolo não expandido."));
+                var_val = query_obj.query_raw(&sym).unwrap_or_else(|| panic!("Erro na expansão da expressão, simbolo não expandido. expr: {}", expression));
             } else {
-                var_val = query_obj.query(&sym).unwrap_or_else(|| panic!("Erro na expansão da expressão, simbolo não expandido.")).as_string();
+                var_val = query_obj.query(&sym).unwrap_or_else(|| panic!("Erro na expansão da expressão, simbolo não expandido. expr: {}", expression)).as_string();
             }
             newexpr.push_str(&var_val);
             sym.clear();

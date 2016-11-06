@@ -102,13 +102,13 @@ impl AST {
             let mut functions: Vec<Vec<Line>> = vec![vec![build_line(global_function_identifier,
                                                                      0)]];
             let mut in_block = false; // Se o parser atualmente está em um bloco
-            for line in src {
+            for line in &src {
                 line_index += 1;
-                let usable = AST::remove_comments(line.trim());
-                if usable.is_empty() {
+                let line = AST::remove_comments(line.trim());
+                if line.is_empty() {
                     continue;
                 }
-                match AST::line_type(&usable) {
+                match AST::line_type(&line) {
                     LineType::FunctionDeclaration => {
                         if in_block {
                             panic!("Erro: Declaração de função dentro de outra função na linha {}",
@@ -120,8 +120,9 @@ impl AST {
                     LineType::FunctionEnd => {
                         if !in_block {
                             panic!("Erro no parsing, linha {}. Encerramento de função fora de \
-                                    uma função.",
-                                   line_index);
+                                    uma função. src: {:?}",
+                                   line_index,
+                                   src);
                         }
                         in_block = false;
                     }
@@ -138,8 +139,6 @@ impl AST {
                     }
                 }
             }
-            // Coloca um final na função global
-            functions[0].push(build_line(String::from(kw::FUNCTION_END), 0));
             // Cria duas threads pra parsearem os valores e retorna a AST
             let parsed_globals =
                 thread::spawn(move || {

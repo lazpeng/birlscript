@@ -9,9 +9,7 @@ mod command;
 mod comparision;
 
 use nparser::{AST, kw};
-use nparser::command::Command;
-use nparser::function::Function;
-use eval::{ValueQuery, Value, ValueType, evaluate};
+use eval::{ValueQuery, Value};
 use self::comparision::Comparision;
 use self::section::Section;
 use self::signal::Signal;
@@ -20,7 +18,7 @@ use self::signal::Signal;
 pub type VMID = u16;
 
 /// Máximo possivel que uma seção pode executar recursão em si mesma
-pub const MAX_RECURSION: usize = 124;
+pub const MAX_RECURSION: usize = 256;
 
 /// Onde são executados os comandos
 pub struct VM {
@@ -48,12 +46,13 @@ impl VM {
     /// Procura na pilha se seções e retorna uma referência para a seção
     pub fn get_section<'a>(&'a mut self, name: &str) -> &'a mut section::Section {
         // self.sections sempre tem ao menos um elemento, por isso a checagem não é necessaria
+        let mut ret: Option<&mut section::Section> = None;
         for sect in &mut self.sections {
             if sect.name == name {
-                return sect;
+                ret = Some(sect);
             }
         }
-        panic!("Seção \"{}\" não declarada.", name); // Se chegou até aqui, é porquê não foi encontrada
+        ret.unwrap_or_else(|| panic!("Seção \"{}\" não declarada.", name))
     }
 
     /// Declara a variavel na stack da VM
@@ -95,8 +94,6 @@ impl VM {
     /// Pega o valor de uma variavel
     fn retrieve_variable(&self, name: &str) -> Option<Value> {
         // Tenta pegar a ultima seção (atual) depois da ultima
-        let backtrace = self.current_section().stack.clone();
-        let cursect = self.current_section().name.clone();
         let val = match self.current_section().get_var(name) {
             Some(var) => Some(var.get_val().clone()),
             None => None,
@@ -128,7 +125,24 @@ impl VM {
         }
     }
 
-    pub fn load(&mut self, asts: Vec<AST>) {}
+    pub fn load(&mut self, asts: Vec<AST>) {
+        use vm::variable::Variable;
+        let mut current_vmid = 0;
+        if asts.len() > 0 {
+            for ast in asts {
+                let mut sections = Section::from_ast(&ast, &mut current_vmid);
+                self.sections.extend_from_slice(&sections);
+                // Empurra a primeira seção (global) pra stack pra ser executada
+                // assert!(sections[0].name, kw::SECT_GLOBAL); // Verifica se primeira seção é a global
+                self.stack.push(sections.remove(0));
+                for global in ast.declared_globals() {
+                    // A primeira seção definida é sempre a global, então empurre os globais pra primeira seção
+                    let var = Variable::from(global.identifier(), global.value().clone());
+                    self.stack[0].decl_var(var);
+                }
+            }
+        }
+    }
 
     /// Retorna uma nova instancia de uma VM
     pub fn new() -> VM {
@@ -154,14 +168,17 @@ impl VM {
 
     /// Inicia a execução de uma seção
     pub fn start_section(&mut self, name: &str, arguments: Vec<parameter::Parameter>) {
+        {
+            let ref mut sect = self.get_section(name);
+            if sect.name == name {
+                sect.rec += 1;
+            }
+            if !parameter::Parameter::matches(arguments.clone(), sect.args.clone()) {
+                panic!("Erro chamando \"{}\", argumentos passados incompatíveis com a declaração.",
+                       name);
+            }
+        }
         let mut sect = self.get_section(name).clone();
-        if sect.name == name {
-            sect.rec += 1;
-        }
-        if !parameter::Parameter::matches(arguments.clone(), sect.args.clone()) {
-            panic!("Erro chamando \"{}\", argumentos passados incompatíveis com a declaração.",
-                   name);
-        }
         // Empurra a seção pra stack
         self.stack.push(sect.clone());
         sect.run(self, arguments);
@@ -194,10 +211,10 @@ impl VM {
         let values =
             vec![Value::Str(match env::var(if cfg!(windows) { "USERNAME" } else { "USER" }) {
                      Ok(v) => v.to_uppercase(),
-                     Err(_) => String::from("\"CUMPADE\""),
+                     Err(_) => String::from("CUMPADE"),
                  }),
                  Value::Num(1.0),
-                 Value::Str(String::from("CUMPADE"))];
+                 Value::Str(String::from("BAMBAM"))];
         for i in 0..names.len() {
             let var = variable::Variable::from(names[i], values[i].clone());
             self.declare_variable(var);

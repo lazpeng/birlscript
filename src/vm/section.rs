@@ -10,7 +10,7 @@ use eval::Value;
 use super::*;
 
 /// Ambiente da seção
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Section {
     /// Comandos a serem executados
     pub commands: Vec<Command>,
@@ -40,13 +40,14 @@ impl Section {
     }
 
     /// Faz conversão de várias seções de dentro de um Unit pra um vetor de Sections
-    pub fn from_ast(ast: AST, vmid: &mut VMID) -> Vec<Section> {
-        let mut res: Vec<Section> = vec![];
-        for ref parsed in ast.declared_functions() {
-            res.push(Section::from_parser(parsed, *vmid));
-            *vmid += 1;
-        }
-        res
+    pub fn from_ast(ast: &AST, vmid: &mut VMID) -> Vec<Section> {
+        ast.declared_functions()
+            .into_iter()
+            .map(|elem| {
+                *vmid += 1;
+                Section::from_parser(elem, *vmid)
+            })
+            .collect::<Vec<Section>>()
     }
 
     /// Faz conversão de todas as units para um só vetor de seções
@@ -54,7 +55,7 @@ impl Section {
         let mut res: Vec<Section> = vec![];
         let mut vmid: VMID = 0;
         for ast in asts {
-            let tmp = Section::from_ast(ast, &mut vmid);
+            let tmp = Section::from_ast(&ast, &mut vmid);
             res.extend_from_slice(&tmp);
         }
         res

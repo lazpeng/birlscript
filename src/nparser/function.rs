@@ -3,7 +3,7 @@ use super::kw;
 use super::{Line, build_line};
 use super::command::Command;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct ExpectedParameter {
     /// Identificador do parametro
     pub id: String,
@@ -103,6 +103,7 @@ fn parse_function_parameters(decl_line: &str) -> Vec<ExpectedParameter> {
     }
 }
 
+#[derive(Debug)]
 pub struct Function {
     identifier: String,
     inner_commands: Vec<Command>,
@@ -110,14 +111,6 @@ pub struct Function {
 }
 
 impl Function {
-    fn new() -> Function {
-        Function {
-            identifier: String::new(),
-            inner_commands: vec![],
-            expected_parameters: vec![],
-        }
-    }
-
     fn parse_header(line: &str, line_number: usize) -> (String, Vec<ExpectedParameter>) {
         if line.len() < kw::FUNCTION_START.len() {
             panic!("Buffer recebido não possui tamanho suficiente pra ter a keyword de \
@@ -128,27 +121,32 @@ impl Function {
             panic!("Declaração de função na linha {} não possui um identificador.",
                    line_number);
         }
-        let expected: Vec<ExpectedParameter> = if line.contains('(') {
-            let ref buffer = line[kw::FUNCTION_START.len() + 1..];
-            let space: i64 = match buffer.find(' ') {
-                Some(s) => s as i64,
-                None => -1,
-            };
-            let ref params = &buffer[(space + 1) as usize..];
-            parse_function_parameters(params)
-        } else {
-            vec![]
-        };
-        let space = match line.find(' ') {
+        let first_space = match line.find(' ') {
             Some(s) => s,
             None => unreachable!(),
         };
-        let identifier = line[..space as usize].to_owned();
+        if line.len() < first_space {
+            panic!("Erro: Declaração da função não possui identificador");
+        }
+        let ref content = line[first_space + 1..];
+        let mut params_start = content.len();
+        let expected: Vec<ExpectedParameter> = if content.contains('(') {
+            params_start = content.find('(').unwrap();
+            let ref parameters = content[params_start..];
+            if parameters.is_empty() {
+                vec![]
+            } else {
+                parse_function_parameters(parameters)
+            }
+        } else {
+            vec![]
+        };
+        let identifier = content[..params_start].trim().to_owned();
         (identifier, expected)
     }
 
     fn from(buffer: Vec<Line>) -> Function {
-        if buffer.len() < 2 {
+        if buffer.len() < 1 {
             let (_, number) = buffer[0];
             panic!("Erro no parsing da função, começando na linha {}: Não possui linhas \
                     suficientes.",
@@ -157,15 +155,16 @@ impl Function {
         let (ref content, number) = buffer[0];
         let (identifier, parameters) = Function::parse_header(content, number);
         // Joga fora a primeira e ultima linha, onde fica o fim da declaração da função
-        let ref commands_buffer = buffer[1..buffer.len() - 2];
         let mut commands: Vec<Command> = vec![];
-        for command_buffer in commands_buffer {
-            let (line_content, number) = command_buffer.clone();
-            commands.push(Command::parse(build_line(line_content, number)));
+        if buffer.len() > 1 {
+            for command_buffer in &buffer[1..] {
+                let (line_content, number) = command_buffer.clone();
+                commands.push(Command::parse(build_line(line_content, number)));
+            }
         }
         Function {
             identifier: identifier,
-            inner_commands: vec![],
+            inner_commands: commands,
             expected_parameters: parameters,
         }
     }
@@ -184,9 +183,5 @@ impl Function {
 }
 
 pub fn parse_functions(buffers: Vec<Vec<Line>>) -> Vec<Function> {
-    if buffers.is_empty() {
-        vec![]
-    } else {
-        buffers.into_iter().map(|buffer| Function::from(buffer)).collect()
-    }
+    buffers.into_iter().map(|buffer| Function::from(buffer)).collect()
 }

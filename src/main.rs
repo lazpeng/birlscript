@@ -17,6 +17,8 @@ fn print_help() {
     println!("\t-t ou --tudo-cumpade                   : Imprime todos os comandos disponíveis");
     println!("\t-o ou --oloco-bixo                     : (DEBUG) Testa cada um dos exemplos pra \
               ter certeza que tá tudo funfando.");
+    println!("\t-s ou --string \"codigo\"             : Executa o codigo na string ao inves de \
+              um arquivo.");
 }
 
 /// Versão numérica
@@ -41,6 +43,8 @@ enum Param {
     ShowCmds,
     /// Testa todos os exemplos disponiveis
     Test,
+    /// Codigo via uma string
+    StringSource(String),
 }
 
 /// Faz parsing dos comandos passados e retorna uma lista deles
@@ -70,6 +74,16 @@ fn get_params() -> Vec<Param> {
                 "--versao-dessa-porra" => ret.push(Param::PrintVersion),
                 "-t" | "--tudo-cumpade" => ret.push(Param::ShowCmds),
                 "-o" | "--oloco-bixo" => ret.push(Param::Test),
+                "-s" | "--string" => {
+                    let actual_source = match params.next() {
+                        Some(x) => x,
+                        None => {
+                            panic!("Valor deve ser passado depois de -s, de preferencia entre \
+                                    parenteses.")
+                        }
+                    };
+                    ret.push(Param::StringSource(actual_source));
+                }
                 _ => ret.push(Param::InputFile(p)),
             }
         }
@@ -136,6 +150,7 @@ fn main() {
     let args = get_params();
     let mut did_something = false;
     let mut files: Vec<String> = vec![];
+    let mut string_sources: Vec<String> = vec![];
     if args.len() > 0 {
         for arg in args {
             match arg {
@@ -153,15 +168,22 @@ fn main() {
                     show_cmds()
                 }
                 Param::Test => test_programs(),
+                Param::StringSource(source) => string_sources.push(source),
             }
         }
     }
-    if files.len() == 0 && !did_something {
+    if files.is_empty() && !did_something && string_sources.is_empty() {
         panic!("Nenhum arquivo passado pra execução. Use -a ou --ajuda-o-maluco-ta-doente pra uma \
                 lista de comandos pro interpretador.")
     }
     let mut vm = vm::VM::new();
-    let asts: Vec<nparser::AST> = files.into_iter().map(|f| nparser::AST::load_file(&f)).collect();
+    let mut asts: Vec<nparser::AST> =
+        files.into_iter().map(|f| nparser::AST::load_file(&f)).collect();
+    if string_sources.len() > 0 {
+        for ss in string_sources {
+            asts.push(nparser::AST::load_string(&ss));
+        }
+    }
     vm.load(asts);
     vm.start(); // Inicia a execução do programa
 }

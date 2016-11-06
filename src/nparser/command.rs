@@ -44,9 +44,34 @@ pub enum Command {
     InputUpper(String),
 }
 
+fn replace_accents(line: &mut String) {
+    if !line.is_empty() {
+        let mut new_str = String::new();
+        for c in line.chars() {
+            let new = match c {
+                'Á' | 'À' | 'Ã' | 'Â' => 'A',
+                'á' | 'à' | 'ã' | 'â' => 'a',
+                'É' | 'È' | 'Ê' | 'Ẽ' => 'E',
+                'é' | 'è' | 'ê' | 'ẽ' => 'e',
+                'Ì' | 'Í' | 'Î' | 'Ĩ' => 'I',
+                'ì' | 'í' | 'î' | 'ĩ' => 'i',
+                'Ó' | 'Ò' | 'Õ' | 'Ô' => 'O',
+                'ó' | 'ò' | 'õ' | 'ô' => 'o',
+                'Ù' | 'Ú' | 'Û' | 'Ũ' => 'U',
+                'ú' | 'ù' | 'û' | 'ũ' => 'u',
+                _ => c,
+            };
+            new_str.push(new);
+        }
+        line.clear();
+        line.push_str(&new_str);
+    }
+}
+
 impl Command {
     pub fn parse(line: Line) -> Command {
-        let (cmd, indx) = line;
+        let (mut cmd, indx) = line;
+        replace_accents(&mut cmd);
         // Estrutura de um comando:
         // COMANDO: var1, var2, ...
         let cmd_parts = split_command(&cmd);
@@ -193,21 +218,6 @@ pub enum CommandType {
     Return,
     Input,
     InputUpper,
-}
-
-/// Troca caracteres acentuados para suas versões sem acento
-fn change_accents(src: &str) -> String {
-    let mut nstr = String::new();
-    for c in src.chars() {
-        nstr.push(match c {
-            'Á' | 'Ã' | 'À' => 'A',
-            'É' => 'E',
-            'Õ' | 'Ô' => 'O',
-            'Í' => 'I',
-            _ => c,
-        });
-    }
-    nstr
 }
 
 /// Verifica se foi passada a quantidade correta de argumentos para um comando

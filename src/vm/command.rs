@@ -8,9 +8,8 @@ mod cmd {
     use eval::{self, Value};
     use vm::variable::Variable;
     use vm::VM;
-    use nparser;
     use nparser::command::Command;
-    use nparser::function::{ExpectedParameter, parse_function_call_params};
+    use nparser::function::parse_function_call_params;
     use vm::comparision::Comparision;
     use vm::parameter::Parameter;
 

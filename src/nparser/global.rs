@@ -12,14 +12,6 @@ pub struct Global {
 }
 
 impl Global {
-    pub fn new() -> Global {
-        Global {
-            id: String::new(),
-            val: Value::NullOrEmpty,
-            is_const: false,
-        }
-    }
-
     pub fn from(id: Option<String>, val: Option<Value>, is_const: Option<bool>) -> Global {
         Global {
             id: id.unwrap_or(String::new()),
@@ -28,12 +20,20 @@ impl Global {
         }
     }
 
+    pub fn identifier(&self) -> &str {
+        &self.id
+    }
+
+    pub fn value(&self) -> &Value {
+        &self.val
+    }
+
     /// Faz o parsing de um global. Separa a keyword do identificador e do valor, faz o parsing do valor e coloca o valor junto com o identificador no hash pra futuros globais
     fn parse_global<'a, QObj>(src: &str, query_obj: &'a QObj) -> Result<Global, &'static str>
         where QObj: ValueQuery + 'a
     {
-        let mut start = 0usize;
-        let mut is_const;
+        let start;
+        let is_const;
         if src.starts_with(kw::GLOBAL_VAR) {
             // Global variavel
             start = kw::GLOBAL_VAR.len() + 1;
