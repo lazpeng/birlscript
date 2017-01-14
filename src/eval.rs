@@ -26,7 +26,7 @@ impl Value {
                 result
             }
             &Value::Num(v) => v.to_string(),
-            &Value::NullOrEmpty => String::new(),
+            &Value::NullOrEmpty => String::from(""),
         }
     }
 
@@ -69,9 +69,13 @@ impl ValueType {
 }
 
 pub trait ValueQuery {
-    fn query(&self, id: &str) -> Option<Value>;
+    fn query(&self, _: &str) -> Option<Value> {
+        unimplemented!()
+    }
 
-    fn query_raw(&self, id: &str) -> Option<String>;
+    fn query_raw(&self, _: &str) -> Option<String> {
+        unimplemented!()
+    }
 }
 
 fn expand_symbols<'a, QObj>(expression: &mut String, query_obj: &'a QObj, use_raw: bool)
@@ -149,7 +153,7 @@ pub const VALUETYPE_NUM: &'static str = "TRAPEZIO DESCENDENTE";
 
 /// Descobre o tipo de uma expressão
 fn expr_type(expr: &str) -> ValueType {
-    if expr == "" {
+    if expr.is_empty() {
         panic!("Expressão vazia!")
     }
     // Tenta descobrir o tipo da expressão por meio dos seus primeiros caracteres

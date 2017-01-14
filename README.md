@@ -12,21 +12,34 @@ de opções que podem ser passadas. Use *-t* ou *--tudo-cumpade* para uma lista 
 
 [Editor Online](https://birlscript.github.io/), teste agora mesmo!
 
-## Versão 1.1.6
+## Versão 1.2.0
 
-*Copyright© 2016 Rafael Rodrigues Nakano. Contato: lazpeng@gmail.com*
-
-## Sobre
-BIRLSCRIPT é uma espécie de dialeto [BASIC](https://pt.wikipedia.org/wiki/BASIC) com algumas pequenas (ou grandes)
-modificações pra fazer a vida de quem tá programando ou de quem tá escrevendo o parser
-(eu mereço) mais fácil. Há algumas limitações claras e 95% delas serão sanadas no futuro,
-com exceção de algumas que *não fazem sentido*, *dariam muito trabalho pra implementar* ou
-*tem outras formas de se chegar no mesmo resultado*.
+*Copyright© 2016, 2017 Rafael Rodrigues Nakano. Contato: lazpeng@gmail.com*
 
 Você tem acesso a globais (variáveis constantes diponíveis pra todo o programa), seções
 (que são como funções, porém muito mais primitivas e limitadas) e os comandos, que funcionam
 de forma similar que em BASIC, só que com frases e dizeres do mestre bodybuilder (alguns sim,
 outros não. Optei por deixar o que fizesse ao menos o mínimo de sentido).
+
+Algumas variáveis padrão são definidas 1 - no começo do programa ou 2 - no começo de cada seção.
+As definidas no começo do programa são "CUMPADE" que contém seu nome de usuário (ou CUMPADE se não encontrado), "UM" que contém
+o valor 1, "BODYBUILDER" que contem a string "BAMBAM". No momento, apenas uma é definida no inicio de cada seção,
+que é a "JAULA" que contem o nome da seção. Todas essas variáveis são constantes.
+
+Comandos como o BORA (que modifica um valor) e BORA, CUMPADE (e BORA, CUMPADE!!!) (que pedem entrada do usuário)
+esperam que a variável passada já exista.
+Quando uma variável é criada sem valor (VEM), seu valor é Nulo (antigamente era 0). Então qualquer
+expressão envolvendo essas variáveis pode resultar em erro.
+
+O Comando BIRL (de retorno) tem duas peculiaridades: 1º - Se chamado fora de alguma função (seção global)
+o programa termina sua execução. Se o valor passado pra ele nessa situação for um número, ele retorna pro SO
+com esse código. 2º - Você não precisa retornar um valor. BIRL pode ser chamado sem sequer os dois pontos,
+entretanto, talvez um outro código espere um valor na variavel TREZE (que é onde o retorno de uma seção fica
+guardado), que inicia a seção com valor Nulo e pode causar problemas.
+
+Uma variável que é definida a cada seção é TREZE, mas não é listada junto com as outras por não ser constante.
+Essa variável muda (ou não) a cada chamada de função (É HORA DO) (caso a última função não retorne nenhum valor,
+o valor da variável TREZE não é alterado).
 
 # Exemplos
 
@@ -107,6 +120,7 @@ JAULA FATORIAL (NUMERO: TRAPEZIO DESCENDENTE, ATUAL : TRAPEZIO DESCENDENTE)
     BORA: NUMERO, NUMERO - 1
     BORA: ATUAL, ATUAL * NUMERO
     E HORA DO: FATORIAL(NUMERO, ATUAL)
+    BIRL: TREZE
 SAINDO DA JAULA
 
 JAULA SHOW
@@ -126,5 +140,30 @@ JAULA SHOW
     E ELE MEMO: CE QUER VER ISSO: "NÃO QUERO FALAR COM BANDEIRANTES" # Caso seja igual, execute bandeirantes
     NUM E ELE: CE QUER VER ISSO: "COM " + EMISSORA + " EU FALO" # Diferente, execute outro
 SAINDO DA JAULA
+```
 
+## Sequencia fibonacci
+```python
+JAULA FIBONACCI(NUMERO: TRAPEZIO DESCENDENTE)
+E ELE QUE A GENTE QUER: NUMERO, 1
+MENOR OU E MEMO: BIRL: NUMERO
+VEM: RESULTADO
+E HORA DO: FIBONACCI(NUMERO - 1)
+BORA: RESULTADO, TREZE
+E HORA DO: FIBONACCI(NUMERO - 2)
+BIRL: RESULTADO + TREZE
+SAINDO DA JAULA
+
+JAULA PRINTA_FIBONACCI(TOTAL: TRAPEZIO DESCENDENTE, VEZES: TRAPEZIO DESCENDENTE)
+E ELE QUE A GENTE QUER: TOTAL, VEZES
+E ELE MEMO: BIRL
+E HORA DO: FIBONACCI(TOTAL)
+CE QUER VER ISSO: TREZE
+E HORA DO: PRINTA_FIBONACCI(TOTAL + 1, VEZES)
+SAINDO DA JAULA
+
+JAULA SHOW
+VEM, CUMPADE: VEZES, 13
+E HORA DO: PRINTA_FIBONACCI(0, VEZES)
+SAINDO DA JAULA
 ```

@@ -15,8 +15,8 @@ pub fn build_line(content: String, number: usize) -> Line {
 }
 
 pub struct AST {
-    decl_globals: Vec<Global>,
-    decl_functions: Vec<Function>,
+    pub decl_globals: Vec<Global>,
+    pub decl_functions: Vec<Function>,
 }
 
 #[derive(Debug)]
@@ -33,14 +33,6 @@ impl AST {
             decl_globals: vec![],
             decl_functions: vec![],
         }
-    }
-
-    pub fn declared_globals(&self) -> &Vec<Global> {
-        &self.decl_globals
-    }
-
-    pub fn declared_functions(&self) -> &Vec<Function> {
-        &self.decl_functions
     }
 
     pub fn load_file(name: &str) -> AST {

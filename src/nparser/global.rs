@@ -27,6 +27,10 @@ impl Global {
     pub fn value(&self) -> &Value {
         &self.val
     }
+    
+    pub fn constant(&self) -> bool {
+        self.is_const
+    }
 
     /// Faz o parsing de um global. Separa a keyword do identificador e do valor, faz o parsing do valor e coloca o valor junto com o identificador no hash pra futuros globais
     fn parse_global<'a, QObj>(src: &str, query_obj: &'a QObj) -> Result<Global, &'static str>
@@ -86,10 +90,6 @@ impl GlobalParser {
 }
 
 impl ValueQuery for GlobalParser {
-    fn query(&self, _id: &str) -> Option<Value> {
-        // Pesquisa normal por Valor no GlobalParser não permitida
-        unimplemented!()
-    }
 
     fn query_raw(&self, id: &str) -> Option<String> {
         if self.value_stack.len() > 1 {

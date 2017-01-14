@@ -1,4 +1,4 @@
-use eval;
+use eval::{Value, ValueType};
 use super::kw;
 use super::{Line, build_line};
 use super::command::Command;
@@ -8,7 +8,27 @@ pub struct ExpectedParameter {
     /// Identificador do parametro
     pub id: String,
     /// Tipo que o parametro espera
-    pub tp: eval::ValueType,
+    pub tp: ValueType,
+}
+
+impl ExpectedParameter {
+    pub fn matches_with(expected: &Vec<ExpectedParameter>, arguments: &Vec<Value>) -> bool {
+        // checa se os tipos e a quantidade batem
+        if arguments.len() != expected.len() { return false; }
+
+        let mut res = true;
+
+        for indx in 0..expected.len() {
+            let ref exp = expected [indx];
+            let ref arg = arguments[indx];
+            if exp.tp != arg.value_type() {
+                res = false;
+                break;
+            }
+        }
+
+        res
+    }
 }
 
 /// Faz parsing de um parametro
@@ -18,7 +38,7 @@ fn parse_parameter(param: &str) -> ExpectedParameter {
         None => panic!("Parametro deve ter tipo declarado depois do nome, separado por um ':'"),
     };
     let param_id = &param[..div_token];
-    let param_tp = match eval::ValueType::try_parse(&param[div_token + 1..]) {
+    let param_tp = match ValueType::try_parse(&param[div_token + 1..]) {
         Some(tp) => tp,
         None => {
             panic!("Tipo inválido para parâmetro: {}",
@@ -103,7 +123,7 @@ fn parse_function_parameters(decl_line: &str) -> Vec<ExpectedParameter> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Function {
     identifier: String,
     inner_commands: Vec<Command>,
