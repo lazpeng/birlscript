@@ -1,4 +1,4 @@
-use eval::{Value, evaluate_raw, evaluate, ValueQuery};
+use old::eval::{Value, evaluate, ValueQuery};
 use super::Line;
 use std::collections::HashMap;
 use super::kw;
@@ -54,8 +54,10 @@ impl Global {
             None => return Err("Não há espaços após o identificador do global."),
         };
         let (identifier, value) = (slice[..space].to_owned(), &slice[space + 1..].trim());
-        let evaluated = evaluate_raw(value, query_obj);
-        let evaluated = evaluate(&evaluated, query_obj);
+        let evaluated = match evaluate(value, query_obj) {
+            Ok(v) => v,
+            Err(e) => panic!(e),
+        };
         Ok(Global::from(Some(identifier), Some(evaluated), Some(is_const)))
     }
 }
