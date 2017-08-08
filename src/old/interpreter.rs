@@ -1,11 +1,11 @@
 //! Modulo do interpretador
 
-use nparser::function::{Function, ExpectedParameter, parse_function_call_params};
-use nparser::command::{Command};
-use nparser::global::Global;
-use nparser::kw::{SECT_GLOBAL, SECT_DEFAULT, RETVAL_VAR};
-use nparser::AST;
-use eval::{Value, ValueQuery, evaluate};
+use old::nparser::function::{Function, ExpectedParameter, parse_function_call_params};
+use old::nparser::command::{Command};
+use old::nparser::global::Global;
+use old::nparser::kw::{SECT_GLOBAL, SECT_DEFAULT, RETVAL_VAR};
+use old::nparser::AST;
+use old::eval::{Value, ValueQuery, evaluate};
 use std::rc::Rc;
 use std::sync::Mutex;
 
@@ -47,7 +47,7 @@ impl Comparision {
 
     /// Tenta comparar dois valores
     pub fn compare(left: Value, right: Value) -> Comparision {
-        use eval::Value::*;
+        use old::eval::Value::*;
         match left {
             Str(v1) => {
                 match right {
@@ -237,14 +237,17 @@ impl Interpreter {
 
     fn do_jump(&mut self, j_args: &str) {
         let (param_list, func_name) = parse_function_call_params(j_args);
-        let arguments = param_list.iter().map(|elem| evaluate(elem, self.last_section())).collect();
+        let arguments = param_list.iter().map(|elem| evaluate(elem, self.last_section()).expect("")).collect();
         self.call_function(&func_name, arguments);
     }
 
     fn do_return(&mut self, value: &Option<String>) {
         use std::process::exit;
         if let &Some(ref v) = value {
-            let returned_value = evaluate(v, self.last_section());
+            let returned_value = match  evaluate(v, self.last_section()) {
+                Ok(v) => v,
+                Err(e) => panic!(e),
+            };
             if self.call_stack.len() == 1 {
                 // Somente a seção global
                 match returned_value {
@@ -261,24 +264,36 @@ impl Interpreter {
     }
 
     fn execute_command(&mut self, command: &Command) {
-        use nparser::command::Command::*;
+        use old::nparser::command::Command::*;
         use std::process::exit;
 
         match command {
             &Move(ref dest, ref expr) => {
-                let expr_value = evaluate(expr, self.last_section());
+                let expr_value = match evaluate(expr, self.last_section()) {
+                    Ok(v) => v,
+                    Err(e) => panic!(e),
+                };
                 self.last_section_mut().modify(dest, expr_value);
             },
             &Clear(ref targ) => self.last_section_mut().modify(targ, Value::NullOrEmpty),
             &Decl(ref id) => self.last_section_mut().declare( Variable::Sym((id.to_owned(), Value::NullOrEmpty, false)) ),
             &DeclWV(ref id, ref val) => {
-                let value = evaluate(val, self.last_section());
+                let value = match evaluate(val, self.last_section()) {
+                    Ok(e) => e,
+                    Err(e) => panic!(e),
+                };
                 self.last_section_mut().declare(Variable::Sym((id.to_owned(), value, false)));
             }
             &Jump(ref jarg) => self.do_jump(jarg),
             &Cmp(ref lho, ref rho) => {
-                let lho_val = evaluate(lho, self.last_section());
-                let rho_val = evaluate(rho, self.last_section());
+                let lho_val = match evaluate(lho, self.last_section()) {
+                    Ok(v) => v,
+                    Err(e) => panic!(e),
+                };
+                let rho_val = match evaluate(rho, self.last_section()) {
+                    Ok(v) => v,
+                    Err(e) => panic!(e),
+                };
                 self.last_section_mut().set_comparision(Comparision::compare(lho_val, rho_val));
             },
             &CmpEq    (ref cmd) => { self.exec_if(Comparision::Equal, cmd); },
@@ -298,7 +313,10 @@ impl Interpreter {
             &Print(ref what) => {
                 if !what.is_empty() {
                     for w in what {
-                        let val = evaluate(w, self.last_section_mut());
+                        let val = match evaluate(w, self.last_section_mut()) {
+                            Ok(v) => v,
+                            Err(e) => panic!(e),
+                        };
                         print!("{}", val);
                     }
                 }
@@ -306,7 +324,10 @@ impl Interpreter {
             &Println(ref what) => {
                 if !what.is_empty() {
                     for w in what {
-                        let val = evaluate(w, self.last_section_mut());
+                        let val = match evaluate(w, self.last_section_mut()) {
+                            Ok(v) => v,
+                            Err(e) => panic!(e),
+                        };
                         print!("{}", val);
                     }
                 }

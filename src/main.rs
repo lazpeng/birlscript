@@ -1,12 +1,9 @@
-mod nparser;
-mod eval;
-mod interpreter;
+mod old; // The old backend
 
-use interpreter::Interpreter;
+use std::env::args;
 
-extern crate meval;
+use old::interpreter::Interpreter;
 
-/// Imprime mensagem de ajuda
 fn print_help() {
     println!("Ta querendo ajuda, cumpade?");
     println!("O uso é o seguinte: birl [opções] [arquivo ou arquivos]");
@@ -14,83 +11,72 @@ fn print_help() {
               é");
     println!("o ponto de partida do teu programa.");
     println!("As opções são as seguintes:");
-    println!("\t-a ou --ajuda-o-maluco-ta-doente       : Imprime essa mensagem de ajuda");
-    println!("\t-v ou --vers[ã ou a]o-dessa-porra      : Imprime a versão do programa");
-    println!("\t-o ou --oloco-bixo                     : (DEBUG) Testa cada um dos exemplos pra \
+    println!("\t-a ou --ajuda-o-maluco-ta-doente\t: Imprime essa mensagem de ajuda");
+    println!("\t-v ou --versao\t\t\t\t: Imprime a versão do programa");
+    println!("\t-t ou --testa-ai-cumpade\t\t: (DEBUG) Testa cada um dos exemplos pra \
               ter certeza que tá tudo funfando.");
-    println!("\t-s ou --string \"codigo\"             : Executa o codigo na string ao inves de \
+    println!("\t-s ou --string \"[codigo]\"\t\t: Executa o codigo na string ao inves de \
               um arquivo.");
+    println!("\t--frango\t\t\t\t: (DEBUG) Usa o backend velho e zoado (default por enquanto)");
+    println!("\t--monstro\t\t\t\t: (DEBUG) Usa o novo e não tão zoado backend (ainda não funciona)");
 }
 
-/// Versão numérica
-pub static BIRLSCRIPT_VERSION: &'static str = "1.2.0";
+pub static BIRLSCRIPT_VERSION: &'static str = "2.0.0-alpha";
 
-/// Imprime a mensagem de versão
 fn print_version() {
-    println!("Versão descendente:");
-    println!("Interpretador BIRLSCRIPT v{}", BIRLSCRIPT_VERSION);
-    println!("Copyright(r) 2016 Rafael R Nakano <lazpeng@gmail.com> - Licença: MIT");
+    println!("Interpretador e Compilador BIRLSCRIPT v{}", BIRLSCRIPT_VERSION);
+    println!("© 2016, 2017 Rafael Rodrigues Nakano <lazpeng@gmail.com>");
 }
 
-/// Coleção de parametros passados ao interpretador
+/// Parameters passed through the command line
 enum Param {
-    /// Pedido para printar versão
     PrintVersion,
-    /// Pedido para printar ajuda
     PrintHelp,
-    /// Arquivo passado para interpretação
+    /// Add a file to be processed
     InputFile(String),
-    /// Testa todos os exemplos disponiveis
+    /// Do all tests
     Test,
-    /// Codigo via uma string
+    /// Processes code from a given string
     StringSource(String),
+    /// Uses the old backend (default for now)
+    OldBackEnd(bool),
 }
 
-/// Faz parsing dos comandos passados e retorna uma lista deles
 fn get_params() -> Vec<Param> {
-    use std::env;
-    let mut ret: Vec<Param> = vec![];
-    let mut params = env::args();
-    // Se o proximo argumento é um valor que deve ser ignorado
-    let mut next_is_val = false;
-    if params.len() >= 2 {
-        params.next(); // Se livra do primeiro argumento
-        loop {
-            let p = match params.next() {
-                Some(v) => v,
-                None => break,
-            };
-            if next_is_val {
-                next_is_val = false;
-                continue;
-            }
-            match p.as_str() {
-                "-" | "--" => {}
-                "-a" |
-                "--ajuda-o-maluco-ta-doente" => ret.push(Param::PrintHelp),
-                "-v" |
-                "--versão-dessa-porra" |
-                "--versao-dessa-porra" => ret.push(Param::PrintVersion),
-                "-o" | "--oloco-bixo" => ret.push(Param::Test),
+    let mut arguments = args();
+    let mut result: Vec<Param> = vec![];
+
+    let _ = arguments.next().unwrap(); // Dispose of the first argument
+
+    loop {
+        if let Some(arg) = arguments.next() {
+            match arg.as_str() {
+                "-a" | "--ajuda-o-maluco-ta-doente" => result.push(Param::PrintHelp),
+                "-v" | "--versao-cumpade" => result.push(Param::PrintVersion),
+                "-t" | "--testa-ai-cumpade" => result.push(Param::Test),
                 "-s" | "--string" => {
-                    let actual_source = match params.next() {
-                        Some(x) => x,
-                        None => {
-                            panic!("Valor deve ser passado depois de -s, de preferencia entre \
-                                    parenteses.")
-                        }
-                    };
-                    ret.push(Param::StringSource(actual_source));
+                    // The next argument is expected to be a string containing source code
+                    if let Some(code) = arguments.next() {
+                        result.push(Param::StringSource(code));
+                    } else {
+                        println!("Erro: O argumento {} precisa de um conteúdo logo em seguida, bixo.", arg);
+                    }
                 }
-                _ => ret.push(Param::InputFile(p)),
+                "--frango" => result.push(Param::OldBackEnd(true)),
+                "--monstro" => result.push(Param::OldBackEnd(false)),
+                // Push the file to the result stack
+                _ => result.push(Param::InputFile(arg))
             }
+        } else {
+            break;
         }
     }
-    ret
+
+    result
 }
 
-/// Faz testes nos programas localizados em testes/
-fn test_programs() {
+// FIXME : Rewrite me later on
+fn test_programs(_ : bool) {
     use std::{fs, thread, process};
     let files =
         fs::read_dir("testes").unwrap_or_else(|error| {
@@ -135,6 +121,9 @@ fn main() {
     let mut did_something = false;
     let mut files: Vec<String> = vec![];
     let mut string_sources: Vec<String> = vec![];
+    let mut old_backend = true;
+    let mut test = false; // Should execute the test (so the backend and other properties can be set first)
+
     if args.len() > 0 {
         for arg in args {
             match arg {
@@ -147,17 +136,28 @@ fn main() {
                     print_version()
                 }
                 Param::InputFile(file) => files.push(file),
-                Param::Test => test_programs(),
+                Param::Test => test = true,
                 Param::StringSource(source) => string_sources.push(source),
+                Param::OldBackEnd(w) => old_backend = w,
             }
         }
     }
+
+    if test {
+        test_programs(old_backend);
+        did_something = true;
+    }
+
     if files.is_empty() && !did_something && string_sources.is_empty() {
         panic!("Nenhum arquivo passado pra execução. Use -a ou --ajuda-o-maluco-ta-doente pra uma \
                 lista de comandos pro interpretador.")
     }
-    let mut interpreter = Interpreter::new();
-    interpreter.load_files(files);
-    interpreter.load_sources(string_sources);
-    interpreter.start();
+    if old_backend {
+        let mut interpreter = Interpreter::new();
+        interpreter.load_files(files);
+        interpreter.load_sources(string_sources);
+        interpreter.start();
+    } else {
+        println!("O novo backend ainda não tá pronto, cumpade.");
+    }
 }
