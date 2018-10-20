@@ -2,7 +2,7 @@
 
 use birl::vm::{ Instruction, VirtualMachine };
 use birl::parser::{ parse_line, FunctionParameter, ParserResult, FunctionDeclaration };
-use birl::compiler::{ Compiler, Variable };
+use birl::compiler::{ Compiler, Variable, CompilerHint };
 
 use std::io::{ Write, stdin, stdout };
 
@@ -16,7 +16,6 @@ pub const BIRL_GLOBAL_FUNCTION_ID : u64 = 0;
 
 pub const BIRL_RET_VAL_VAR_ID : u64 = 0;
 
-#[derive(Clone)]
 pub struct FunctionEntry {
     pub name : String,
     pub id : u64,
@@ -184,22 +183,6 @@ impl Context {
     pub fn start_interactive(&mut self) {
         self.vm.set_interactive();
 
-        let entry = match self.get_entry_by_id(BIRL_GLOBAL_FUNCTION_ID) {
-            Some(e) => e.clone(), // FIXME: Totally a temporary fix. fuck rust
-            None => {
-                println!("Erro interno : Não existe uma entry pra função global");
-                return;
-            },
-        };
-
-        match self.vm.prepare_function(&entry) {
-            Ok(_) => {}
-            Err(e) => {
-                println!("Erro fatal na preparação da VM : {}", e);
-                return;
-            }
-        }
-
         print!("{}\n{}\n", BIRL_COPYRIGHT, BIRL_VERSION);
 
         let mut line = String::new();
@@ -236,8 +219,10 @@ impl Context {
 
             match result {
                 ParserResult::Command(cmd) => {
-                    let inst = {
-                        let entry = match self.get_global_mut() {
+                    let mut inst = vec![];
+
+                    let hint = {
+                        let entry = match self.get_global() {
                             Some(e) => e,
                             None => {
                                 println!("Erro fatal : Não existe uma entrada pra função global no escopo atual");
@@ -246,10 +231,10 @@ impl Context {
                             }
                         };
 
-                        let glb = None; // nevermind me
+                        let dummy = None;
 
-                        match Compiler::compile_command(cmd, entry, &glb) {
-                            Ok(i) => i,
+                        match Compiler::compile_command(cmd, entry, &dummy, &self.functions, &mut inst) {
+                            Ok(h) => h,
                             Err(e) => {
                                 println!("Erro de compilação : {}", e);
 
@@ -258,8 +243,35 @@ impl Context {
                         }
                     };
 
-                    for i in &inst {
-                        match self.vm.run(i) {
+                    match hint {
+                        Some(c) => {
+                            match c {
+                                CompilerHint::DeclareVar(v) => {
+                                    match self.get_global_mut() {
+                                        Some(g) => {
+                                            match g.add_var(v.name, v.writeable) {
+                                                Ok(_) => {}
+                                                Err(e) => {
+                                                    println!("Erro adicionando variável : {}", e);
+
+                                                    continue;
+                                                }
+                                            }
+                                        },
+                                        None => {
+                                            println!("Erro fatal : Não existe uma entrada pra função global no escopo atual");
+
+                                            continue;
+                                        }
+                                    }
+                                }
+                            };
+                        }
+                        None => {}
+                    }
+
+                    for i in inst {
+                        match self.vm.run(&i) {
                             Ok(_) => {}
                             Err(e) => {
                                 println!("Erro de execução : {}", e);

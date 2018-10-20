@@ -2,11 +2,14 @@ use birl::parser::{ Expression, ExpressionNode, Command, CommandArgument, MathOp
 use birl::vm::Instruction;
 use birl::context::{ BIRL_GLOBAL_FUNCTION_ID, FunctionEntry };
 
-#[derive(Clone)]
 pub struct Variable {
     pub name : String,
     pub id : u64,
     pub writeable : bool,
+}
+
+pub enum CompilerHint {
+    DeclareVar(Variable),
 }
 
 pub struct Compiler {}
@@ -23,7 +26,7 @@ impl Compiler {
     }
 
     fn compile_sub_expression(expr : &Expression, offset : &mut usize, inst : &mut Vec<Instruction>,
-                              func : &FunctionEntry, global : &Option<&mut FunctionEntry>) -> Result<(), String> {
+                              func : &FunctionEntry, global : &Option<&FunctionEntry>) -> Result<(), String> {
         let mut buffer : Vec<Instruction> = vec![];
 
         let mut last_imp_op : Option<MathOperator> = None;
@@ -152,13 +155,13 @@ impl Compiler {
     }
 
     pub fn compile_expression(expr : &Expression, inst : &mut Vec<Instruction>, func : &FunctionEntry,
-                              global : &Option<&mut FunctionEntry>) -> Result<(), String> {
+                              global : &Option<&FunctionEntry>) -> Result<(), String> {
         let mut offset = 0usize;
         Compiler::compile_sub_expression(expr, &mut offset, inst, func, global)
     }
 
-    pub fn compile_command(mut cmd : Command, func : &mut FunctionEntry, global : &Option<&mut FunctionEntry>) -> Result<Vec<Instruction>, String> {
-        let mut instructions : Vec<Instruction> = vec![];
+    pub fn compile_command(mut cmd : Command, func : &FunctionEntry, global : &Option<&FunctionEntry>,
+        funcs : &Vec<FunctionEntry>, instructions : &mut Vec<Instruction>) -> Result<Option<CompilerHint>, String> {
 
         match cmd.kind {
             CommandKind::PrintDebug => {
@@ -171,7 +174,7 @@ impl Compiler {
                 for arg in cmd.arguments {
                     match arg {
                         CommandArgument::Expression(expr) => {
-                            match Compiler::compile_expression(&expr, &mut instructions, &func, global) {
+                            match Compiler::compile_expression(&expr, instructions, &func, global) {
                                 Ok(_) => {},
                                 Err(e) => return Err(e),
                             };
@@ -186,7 +189,7 @@ impl Compiler {
                 for arg in cmd.arguments {
                     match arg {
                         CommandArgument::Expression(expr) => {
-                            match Compiler::compile_expression(&expr, &mut instructions, &func, global) {
+                            match Compiler::compile_expression(&expr, instructions, &func, global) {
                                 Ok(_) => {},
                                 Err(e) => return Err(e),
                             };
@@ -203,7 +206,7 @@ impl Compiler {
                 for arg in cmd.arguments {
                     match arg {
                         CommandArgument::Expression(expr) => {
-                            match Compiler::compile_expression(&expr, &mut instructions, &func, global) {
+                            match Compiler::compile_expression(&expr, instructions, &func, global) {
                                 Ok(_) => {},
                                 Err(e) => return Err(e),
                             };
@@ -264,7 +267,7 @@ impl Compiler {
 
                 match expr_arg {
                     CommandArgument::Expression(expr) => {
-                        match Compiler::compile_expression(&expr, &mut instructions, &func, global) {
+                        match Compiler::compile_expression(&expr, instructions, &func, global) {
                             Ok(_) => {}
                             Err(e) => return Err(e)
                         }
@@ -298,7 +301,7 @@ impl Compiler {
 
                 match expr_arg {
                     CommandArgument::Expression(expr) => {
-                        match Compiler::compile_expression(&expr, &mut instructions, &func, global) {
+                        match Compiler::compile_expression(&expr, instructions, &func, global) {
                             Ok(_) => {}
                             Err(e) => return Err(e)
                         }
@@ -308,10 +311,9 @@ impl Compiler {
 
                 // Add the variable after the expression is parsed, so we can't use the variable before a value is set
 
-                let id = match func.add_var(name, true) {
-                    Ok(i) => i,
-                    Err(e) => return Err(e)
-                };
+                let id = func.next_var_id;
+
+                let result = CompilerHint::DeclareVar(Variable { name, id, writeable : true });
 
                 instructions.push(Instruction::CreateVarWithId(id));
 
@@ -320,6 +322,8 @@ impl Compiler {
                 } else {
                     instructions.push(Instruction::WriteToVarWithId(id));
                 }
+
+                return Ok(Some(result));
             }
             CommandKind::Return => {
                 if cmd.arguments.is_empty() {
@@ -329,7 +333,7 @@ impl Compiler {
 
                     match expr_arg {
                         CommandArgument::Expression(expr) => {
-                            match Compiler::compile_expression(&expr, &mut instructions, &func, global) {
+                            match Compiler::compile_expression(&expr, instructions, &func, global) {
                                 Ok(_) => {}
                                 Err(e) => return Err(e)
                             }
@@ -345,7 +349,7 @@ impl Compiler {
 
                 match left_expr_arg {
                     CommandArgument::Expression(expr) => {
-                        match Compiler::compile_expression(&expr, &mut instructions, &func, global) {
+                        match Compiler::compile_expression(&expr, instructions, &func, global) {
                             Ok(_) => {}
                             Err(e) => return Err(e)
                         }
@@ -357,7 +361,7 @@ impl Compiler {
 
                 match right_expr_arg {
                     CommandArgument::Expression(expr) => {
-                        match Compiler::compile_expression(&expr, &mut instructions, &func, global) {
+                        match Compiler::compile_expression(&expr, instructions, &func, global) {
                             Ok(_) => {}
                             Err(e) => return Err(e)
                         }
@@ -368,8 +372,17 @@ impl Compiler {
                 instructions.push(Instruction::CompareMainTop);
             }
             CommandKind::EndExecuteIf => instructions.push(Instruction::EndExecuteIf),
+            CommandKind::ExecuteIfEqual => instructions.push(Instruction::ExecuteIfEqual),
+            CommandKind::ExecuteIfNotEqual => instructions.push(Instruction::ExecuteIfNotEqual),
+            CommandKind::ExecuteIfEqualOrGreater => instructions.push(Instruction::ExecuteIfGreaterOrEqual),
+            CommandKind::ExecuteIfGreater => instructions.push(Instruction::ExecuteIfGreater),
+            CommandKind::ExecuteIfEqualOrLess => instructions.push(Instruction::ExecuteIfLessOrEqual),
+            CommandKind::ExecuteIfLess => instructions.push(Instruction::ExecuteIfLess),
+            CommandKind::Call => {
+                // TODO
+            }
         }
 
-        Ok(instructions)
+        Ok(None)
     }
 }

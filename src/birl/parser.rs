@@ -1,6 +1,10 @@
 //! The parser for BirlScript
+//!
+#[cfg(target_pointer_width = "64")]
+pub type IntegerType = i64;
 
-use birl::arch::IntegerType;
+#[cfg(target_pointer_width = "32")]
+pub type IntegerType = i32;
 
 const COMMENT_CHARACTER : char = '#';
 
@@ -17,6 +21,13 @@ pub enum KeyPhrase {
     Set,
     Compare,
     EndExecuteIf,
+    ExecuteIfEqual,
+    ExecuteIfNotEqual,
+    ExecuteIfEqualOrLess,
+    ExecuteIfLess,
+    ExecuteIfEqualOrGreater,
+    ExecuteIfGreater,
+    Call,
     TypeInt,
     TypeNum,
     TypeStr,
@@ -44,6 +55,13 @@ impl KeyPhrase {
             "E ELE QUE A GENTE QUER" |
             "É ELE QUE A GENTE QUER" => Some(KeyPhrase::Compare),
             "FIM" => Some(KeyPhrase::EndExecuteIf),
+            "E HORA DO" | "É HORA DO" => Some(KeyPhrase::Call),
+            "E ELE MESMO" | "É ELE MESMO" => Some(KeyPhrase::ExecuteIfEqual),
+            "NUM E ELE" | "NUM É ELE" => Some(KeyPhrase::ExecuteIfNotEqual),
+            "E MAIOR" | "É MAIOR" => Some(KeyPhrase::ExecuteIfGreater),
+            "É MENOR" | "E MENOR" => Some(KeyPhrase::ExecuteIfLess),
+            "MENOR OU E MEMO" | "MENOR OU É MEMO" => Some(KeyPhrase::ExecuteIfEqualOrLess),
+            "MAIOR OU E MEMO" | "MAIOR OU É MEMO" => Some(KeyPhrase::ExecuteIfEqualOrGreater),
             _ => None,
         }
     }
@@ -357,7 +375,6 @@ impl TypeKind {
     }
 }
 
-#[derive(Clone)]
 pub struct FunctionParameter {
     pub name : String,
     pub kind : TypeKind,
@@ -426,6 +443,13 @@ pub enum CommandKind {
     Set,
     Compare,
     EndExecuteIf,
+    ExecuteIfEqual,
+    ExecuteIfNotEqual,
+    ExecuteIfEqualOrLess,
+    ExecuteIfLess,
+    ExecuteIfEqualOrGreater,
+    ExecuteIfGreater,
+    Call,
 }
 
 impl CommandKind {
@@ -440,6 +464,13 @@ impl CommandKind {
             KeyPhrase::Set => Some(CommandKind::Set),
             KeyPhrase::Compare => Some(CommandKind::Compare),
             KeyPhrase::EndExecuteIf => Some(CommandKind::EndExecuteIf),
+            KeyPhrase::ExecuteIfEqual => Some(CommandKind::ExecuteIfEqual),
+            KeyPhrase::ExecuteIfNotEqual => Some(CommandKind::ExecuteIfNotEqual),
+            KeyPhrase::ExecuteIfEqualOrGreater => Some(CommandKind::ExecuteIfEqualOrGreater),
+            KeyPhrase::ExecuteIfGreater => Some(CommandKind::ExecuteIfGreater),
+            KeyPhrase::ExecuteIfEqualOrLess => Some(CommandKind::ExecuteIfEqualOrLess),
+            KeyPhrase::ExecuteIfLess => Some(CommandKind::ExecuteIfLess),
+            KeyPhrase::Call => Some(CommandKind::Call),
             _ => None,
         }
     }
@@ -491,6 +522,18 @@ impl CommandInfo {
                                              CommandArgumentKind::Expression])
             }
             CommandKind::EndExecuteIf => {
+                CommandInfo::from(0, 0, vec![])
+            }
+            CommandKind::Call => {
+                CommandInfo::from(1, -1, vec![CommandArgumentKind::Name,
+                                              CommandArgumentKind::Expression])
+            }
+            CommandKind::ExecuteIfEqual |
+            CommandKind::ExecuteIfNotEqual |
+            CommandKind::ExecuteIfLess |
+            CommandKind::ExecuteIfGreater |
+            CommandKind::ExecuteIfEqualOrLess |
+            CommandKind::ExecuteIfEqualOrGreater => {
                 CommandInfo::from(0, 0, vec![])
             }
         }

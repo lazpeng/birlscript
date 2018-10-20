@@ -1,6 +1,6 @@
 //! The virtual machine runs code (DUH)
 
-use birl::arch::IntegerType;
+use birl::parser::IntegerType;
 use birl::context::{ FunctionEntry, BIRL_RET_VAL_VAR_ID };
 
 use std::io::{ Write, stdout };
@@ -10,7 +10,7 @@ type StringStorageID = u64;
 
 const MAIN_STACK_SIZE : usize = 256;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Comparision {
     Equal,
     NotEqual,
@@ -118,6 +118,8 @@ pub struct FunctionFrame {
     runtime_vars : Vec<RuntimeVariable>,
     next_address : usize,
     string_storage : StringStorage,
+    ready : bool,
+    skip_level : u32,
 }
 
 impl FunctionFrame {
@@ -130,6 +132,8 @@ impl FunctionFrame {
             runtime_vars : vec![],
             next_address : 0usize,
             string_storage : StringStorage::new(),
+            ready : false,
+            skip_level : 0,
         }
     }
 
@@ -142,6 +146,16 @@ impl FunctionFrame {
 
         None
     }
+
+    fn create_runtime_var(&mut self, id : u64) -> Result<(), String> {
+        let address = self.next_address;
+        self.next_address += 1;
+
+        self.runtime_vars.push(RuntimeVariable { id, address });
+        self.stack.push(DynamicValue::Null);
+
+        Ok(())
+    }
 }
 
 pub struct VirtualMachine {
@@ -151,7 +165,6 @@ pub struct VirtualMachine {
     main_storage : StringStorage,
     callstack : Vec<FunctionFrame>,
     is_interactive : bool,
-    skip_level : u32,
 }
 
 impl VirtualMachine {
@@ -163,7 +176,6 @@ impl VirtualMachine {
             main_storage : StringStorage::new(),
             callstack : vec![FunctionFrame::new(0)],
             is_interactive : false,
-            skip_level : 0,
         }
     }
 
@@ -171,11 +183,65 @@ impl VirtualMachine {
         self.is_interactive = true;
     }
 
+    pub fn get_current_skip_level(&self) -> u32 {
+        match self.get_last_ready_ref() {
+            Some(f) => f.skip_level,
+            None => 0,
+        }
+    }
+
+    fn get_last_ready_ref(&self) -> Option<&FunctionFrame> {
+        let len = self.callstack.len();
+
+        if len == 0 {
+            None
+        } else if len == 1 {
+            if self.callstack[0].ready {
+                Some(&self.callstack[0])
+            } else {
+                None
+            }
+        } else {
+            for i in (len - 1)..0 {
+                if self.callstack[i].ready {
+                    return Some(&self.callstack[i])
+                }
+            }
+
+            None
+        }
+    }
+
+    fn get_last_ready_mut(&mut self) -> Option<&mut FunctionFrame> {
+        let len = self.callstack.len();
+
+        if len == 0 {
+            None
+        } else if len == 1 {
+            if self.callstack[0].ready {
+                Some(&mut self.callstack[0])
+            } else {
+                None
+            }
+        } else {
+            for i in (len - 1)..0 {
+                if self.callstack[i].ready {
+                    return Some(&mut self.callstack[i])
+                }
+            }
+
+            None
+        }
+    }
+
     pub fn get_current_id(&self) -> Option<u64> {
         if self.callstack.is_empty() {
             None
         } else {
-            Some(self.callstack.last().unwrap().id)
+            match self.get_last_ready_ref() {
+                Some(f) => Some(f.id),
+                None => None,
+            }
         }
     }
 
@@ -494,7 +560,17 @@ impl VirtualMachine {
 
         let addr = match frame.get_address_of(id) {
             Some(a) => a,
-            None => return Err(format!("Não encontrada variável com ID {}", id))
+            None => {
+                match frame.create_runtime_var(id) {
+                    Ok(_) => {
+                        match frame.get_address_of(id) {
+                            Some(i) => i,
+                            None => return Err(format!("ID {} not found", id)),
+                        }
+                    }
+                    Err(e) => return Err(e),
+                }
+            }
         };
 
         if frame.stack.len() <= addr {
@@ -506,18 +582,18 @@ impl VirtualMachine {
         Ok(())
     }
 
-    pub fn prepare_function(&mut self, func : &FunctionEntry) -> Result<(), String> {
-
-        // Declare all parameters and variables
-
-        for v in &func.vars {
-            match self.create_runtime_var(v.id) {
-                Ok(_) => {}
-                Err(e) => return Err(e)
-            }
+    fn increase_skip_level(&mut self) {
+        match self.get_last_ready_mut() {
+            Some(f) => f.skip_level += 1,
+            None => {}
         }
+    }
 
-        Ok(())
+    fn decrease_skip_level(&mut self) {
+        match self.get_last_ready_mut() {
+            Some(f) => f.skip_level -= 1,
+            None => {}
+        }
     }
 
     fn create_runtime_var(&mut self, id : u64) -> Result<(), String> {
@@ -527,19 +603,13 @@ impl VirtualMachine {
 
         let frame = self.callstack.last_mut().unwrap();
 
-        let address = frame.next_address;
-        frame.next_address += 1;
-
-        frame.runtime_vars.push(RuntimeVariable { id, address });
-        frame.stack.push(DynamicValue::Null);
-
-        Ok(())
+        frame.create_runtime_var(id)
     }
 
     pub fn run(&mut self, inst : &Instruction) -> Result<(), String> {
-        if self.skip_level > 0 {
+        if self.get_current_skip_level() > 0 {
             if let &Instruction::EndExecuteIf = inst {
-                self.skip_level -= 1;
+                self.decrease_skip_level();
             }
 
             return Ok(());
@@ -819,6 +889,100 @@ impl VirtualMachine {
                     Err(e) => return Err(e)
                 }
             }
+            Instruction::ExecuteIfEqual => {
+                if self.get_current_skip_level() > 0 {
+                    self.increase_skip_level();
+                } else {
+                    let last = match self.get_last_comparision() {
+                        Ok(c) => c,
+                        Err(e) => return Err(e)
+                    };
+
+                    if last != Comparision::Equal {
+                        self.increase_skip_level();
+                    }
+                }
+            }
+            Instruction::ExecuteIfNotEqual => {
+                if self.get_current_skip_level() > 0 {
+                    self.increase_skip_level();
+                } else {
+                    let last = match self.get_last_comparision() {
+                        Ok(c) => c,
+                        Err(e) => return Err(e)
+                    };
+
+                    if last == Comparision::Equal {
+                        self.increase_skip_level();
+                    }
+                }
+            }
+            Instruction::ExecuteIfGreater => {
+                if self.get_current_skip_level() > 0 {
+                    self.increase_skip_level();
+                } else {
+                    let last = match self.get_last_comparision() {
+                        Ok(c) => c,
+                        Err(e) => return Err(e)
+                    };
+
+                    if last != Comparision::MoreThan {
+                        self.increase_skip_level();
+                    }
+                }
+            }
+            Instruction::ExecuteIfGreaterOrEqual => {
+                if self.get_current_skip_level() > 0 {
+                    self.increase_skip_level();
+                } else {
+                    let last = match self.get_last_comparision() {
+                        Ok(c) => c,
+                        Err(e) => return Err(e)
+                    };
+
+                    if last != Comparision::Equal && last != Comparision::MoreThan {
+                        self.increase_skip_level();
+                    }
+                }
+            }
+            Instruction::ExecuteIfLess => {
+                if self.get_current_skip_level() > 0 {
+                    self.increase_skip_level();
+                } else {
+                    let last = match self.get_last_comparision() {
+                        Ok(c) => c,
+                        Err(e) => return Err(e)
+                    };
+
+                    if last != Comparision::LessThan {
+                        self.increase_skip_level();
+                    }
+                }
+            }
+            Instruction::ExecuteIfLessOrEqual => {
+                if self.get_current_skip_level() > 0 {
+                    self.increase_skip_level();
+                } else {
+                    let last = match self.get_last_comparision() {
+                        Ok(c) => c,
+                        Err(e) => return Err(e)
+                    };
+
+                    if last != Comparision::LessThan && last != Comparision::Equal {
+                        self.increase_skip_level();
+                    }
+                }
+            }
+            Instruction::MakeNewFrame => {
+                // Add a new, not ready frame to the callstack
+            }
+            Instruction::SetLastFrameReady => {
+                // Set the last frame to ready
+
+                if ! self.callstack.is_empty() {
+                    self.callstack.last_mut().unwrap().ready = true;
+                }
+            }
         }
 
         Ok(())
@@ -829,7 +993,6 @@ impl VirtualMachine {
     }
 }
 
-#[derive(Clone)]
 pub enum Instruction {
     PushMainInt(IntegerType),
     PushMainNum(f64),
@@ -852,4 +1015,12 @@ pub enum Instruction {
     CompareMainTop,
     Return,
     EndExecuteIf,
+    ExecuteIfEqual,
+    ExecuteIfNotEqual,
+    ExecuteIfGreater,
+    ExecuteIfGreaterOrEqual,
+    ExecuteIfLess,
+    ExecuteIfLessOrEqual,
+    MakeNewFrame,
+    SetLastFrameReady,
 }
