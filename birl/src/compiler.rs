@@ -1,7 +1,8 @@
-use birl::parser::{ Expression, ExpressionNode, Command, CommandArgument, MathOperator, MathValue, CommandKind };
-use birl::vm::Instruction;
-use birl::context::{ BIRL_GLOBAL_FUNCTION_ID, FunctionEntry };
+use parser::{ Expression, ExpressionNode, Command, CommandArgument, MathOperator, MathValue, CommandKind };
+use vm::Instruction;
+use context::{ BIRL_GLOBAL_FUNCTION_ID, FunctionEntry };
 
+#[derive(Debug, Clone)]
 pub struct Variable {
     pub name : String,
     pub id : u64,
@@ -10,6 +11,8 @@ pub struct Variable {
 
 pub enum CompilerHint {
     DeclareVar(Variable),
+    ScopeStart,
+    ScopeEnd,
 }
 
 pub struct Compiler {}
@@ -134,6 +137,17 @@ impl Compiler {
                     };
 
                     buffer.push(inst);
+
+                    if let Some(op) = last_imp_op {
+                        let i = match Compiler::get_inst_for_op(op) {
+                            Some(i) => i,
+                            None => return Err("Invalid operator in important operator".to_owned()),
+                        };
+
+                        buffer.push(i);
+
+                        last_imp_op = None;
+                    }
                 }
             }
         }
@@ -158,6 +172,35 @@ impl Compiler {
                               global : &Option<&FunctionEntry>) -> Result<(), String> {
         let mut offset = 0usize;
         Compiler::compile_sub_expression(expr, &mut offset, inst, func, global)
+    }
+
+    fn get_id_and_globalness(name : &str, func : &FunctionEntry, global : &Option<&FunctionEntry>, is_global : &mut bool) -> Option<u64> {
+        match func.get_id_for(name) {
+            Some(id) => {
+                if func.id == BIRL_GLOBAL_FUNCTION_ID {
+                    *is_global = true;
+                }
+
+                Some(id)
+            }
+            None => {
+                if func.id == BIRL_GLOBAL_FUNCTION_ID {
+                    return None;
+                }
+
+                if let Some(g) = global {
+                    match g.get_id_for(name) {
+                        Some(id) => {
+                            *is_global = true;
+                            Some(id)
+                        }
+                        None => None,
+                    }
+                } else {
+                    None
+                }
+            }
+        }
     }
 
     pub fn compile_command(mut cmd : Command, func : &FunctionEntry, global : &Option<&FunctionEntry>,
@@ -234,33 +277,9 @@ impl Compiler {
 
                 let mut is_global = false;
 
-                let id = {
-                    match func.get_id_for(name.as_str()) {
-                        Some(id) => {
-                            if func.id == BIRL_GLOBAL_FUNCTION_ID {
-                                is_global = true;
-                            }
-
-                            id
-                        }
-                        None => {
-                            if func.id == BIRL_GLOBAL_FUNCTION_ID {
-                                return Err(format!("Variável {} não encontrada", name));
-                            }
-
-                            if let Some(g) = global {
-                                match g.get_id_for(name.as_str()) {
-                                    Some(id) => {
-                                        is_global = true;
-                                        id
-                                    }
-                                    None => return Err(format!("Variável {} não encontrada", name)),
-                                }
-                            } else {
-                                return Err(format!("Erro interno : Func não é global, mas global é None"));
-                            }
-                        }
-                    }
+                let id = match Compiler::get_id_and_globalness(name.as_str(), func, global, &mut is_global) {
+                    Some(id) => id,
+                    None => return Err(format!("Variável {} não encontrada", name))
                 };
 
                 let expr_arg = cmd.arguments.remove(0);
@@ -371,15 +390,267 @@ impl Compiler {
 
                 instructions.push(Instruction::CompareMainTop);
             }
-            CommandKind::EndExecuteIf => instructions.push(Instruction::EndExecuteIf),
-            CommandKind::ExecuteIfEqual => instructions.push(Instruction::ExecuteIfEqual),
-            CommandKind::ExecuteIfNotEqual => instructions.push(Instruction::ExecuteIfNotEqual),
-            CommandKind::ExecuteIfEqualOrGreater => instructions.push(Instruction::ExecuteIfGreaterOrEqual),
-            CommandKind::ExecuteIfGreater => instructions.push(Instruction::ExecuteIfGreater),
-            CommandKind::ExecuteIfEqualOrLess => instructions.push(Instruction::ExecuteIfLessOrEqual),
-            CommandKind::ExecuteIfLess => instructions.push(Instruction::ExecuteIfLess),
+            CommandKind::EndExecuteIf => {
+                instructions.push(Instruction::EndExecuteIf);
+
+                return Ok(Some(CompilerHint::ScopeEnd));
+            },
+            CommandKind::ExecuteIfEqual => {
+                instructions.push(Instruction::ExecuteIfEqual);
+
+                return Ok(Some(CompilerHint::ScopeStart));
+            },
+            CommandKind::ExecuteIfNotEqual => {
+                instructions.push(Instruction::ExecuteIfNotEqual);
+
+                return Ok(Some(CompilerHint::ScopeStart));
+            },
+            CommandKind::ExecuteIfEqualOrGreater => {
+                instructions.push(Instruction::ExecuteIfGreaterOrEqual);
+
+                return Ok(Some(CompilerHint::ScopeStart));
+            },
+            CommandKind::ExecuteIfGreater => {
+                instructions.push(Instruction::ExecuteIfGreater);
+
+                return Ok(Some(CompilerHint::ScopeStart));
+            },
+            CommandKind::ExecuteIfEqualOrLess => {
+                instructions.push(Instruction::ExecuteIfLessOrEqual);
+
+                return Ok(Some(CompilerHint::ScopeStart));
+            },
+            CommandKind::ExecuteIfLess => {
+                instructions.push(Instruction::ExecuteIfLess);
+
+                return Ok(Some(CompilerHint::ScopeStart));
+            },
             CommandKind::Call => {
-                // TODO
+                // First argument is the function name
+
+                let name_arg = cmd.arguments.remove(0);
+
+                let name = match name_arg {
+                    CommandArgument::Name(n) => n,
+                    _ => return Err(format!("Erro interno : Esperado um nome pra função")),
+                };
+
+                for cf in funcs {
+                    if cf.name == name {
+
+                        instructions.push(Instruction::MakeNewFrame(cf.id));
+
+                        // Check number of arguments
+
+                        if cf.params.len() != cmd.arguments.len() {
+                            return Err(format!("A função {} espera {} argumentos, mas {} foram passados",
+                                name, cf.params.len(), cmd.arguments.len()));
+                        }
+
+                        // Push arguments and check their type
+
+                        for index in 0..cf.params.len() {
+                            let arg_arg = cmd.arguments.remove(0);
+
+                            let expr = match arg_arg {
+                                CommandArgument::Expression(e) => e,
+                                _ => return Err("Erro interno : Era esperado um valor como argumento \
+                                                    pro comando.".to_owned()),
+                            };
+
+                            let expected_type = cf.params[index].kind;
+                            let arg_name = cf.params[index].name.as_str();
+
+                            let mut arg_id = None;
+
+                            for v in &cf.vars {
+                                if v.name == arg_name {
+                                    arg_id = Some(v.id);
+                                }
+                            }
+
+                            if let None = arg_id {
+                                return Err(format!("Erro interno : O parâmetro {} não está registrado como variável",
+                                                   arg_name));
+                            }
+
+                            match Compiler::compile_expression(&expr, instructions, &func, global) {
+                                Ok(_) => {}
+                                Err(e) => return Err(e)
+                            };
+
+                            instructions.push(Instruction::AssertMainTopTypeCompatible(expected_type));
+
+                            instructions.push(Instruction::WriteToLastFrameVarWithId(arg_id.unwrap()));
+                        }
+
+                        instructions.push(Instruction::SetLastFrameReady);
+
+                        return Ok(None);
+                    }
+                }
+
+                return Err(format!("A função {} não foi encontrada", name));
+            }
+            CommandKind::GetStringInput => {
+                let name_arg = cmd.arguments.remove(0);
+
+                let name = match name_arg {
+                    CommandArgument::Name(s) => s,
+                    _ => return Err("Erro interno : Esperado um nome pra GetInput*".to_owned()),
+                };
+
+                let mut is_global = false;
+
+                let id = match Compiler::get_id_and_globalness(name.as_str(), func, global, &mut is_global) {
+                    Some(id) => id,
+                    None => return Err(format!("Variável {} não encontrada", name))
+                };
+
+                instructions.push(Instruction::ReadInput);
+
+                if is_global {
+                    instructions.push(Instruction::WriteToGlobalVarWithId(id));
+                } else {
+                    instructions.push(Instruction::WriteToVarWithId(id));
+                }
+            }
+            CommandKind::GetIntegerInput => {
+                let name_arg = cmd.arguments.remove(0);
+
+                let name = match name_arg {
+                    CommandArgument::Name(s) => s,
+                    _ => return Err("Erro interno : Esperado um nome pra GetInput*".to_owned()),
+                };
+
+                let mut is_global = false;
+
+                let id = match Compiler::get_id_and_globalness(name.as_str(), func, global, &mut is_global) {
+                    Some(id) => id,
+                    None => return Err(format!("Variável {} não encontrada", name))
+                };
+
+                instructions.push(Instruction::ReadInput);
+
+                instructions.push(Instruction::ConvertToInt);
+
+                if is_global {
+                    instructions.push(Instruction::WriteToGlobalVarWithId(id));
+                } else {
+                    instructions.push(Instruction::WriteToVarWithId(id));
+                }
+            }
+            CommandKind::GetNumberInput => {
+                let name_arg = cmd.arguments.remove(0);
+
+                let name = match name_arg {
+                    CommandArgument::Name(s) => s,
+                    _ => return Err("Erro interno : Esperado um nome pra GetInput*".to_owned()),
+                };
+
+                let mut is_global = false;
+
+                let id = match Compiler::get_id_and_globalness(name.as_str(), func, global, &mut is_global) {
+                    Some(id) => id,
+                    None => return Err(format!("Variável {} não encontrada", name))
+                };
+
+                instructions.push(Instruction::ReadInput);
+
+                instructions.push(Instruction::ConvertToNum);
+
+                if is_global {
+                    instructions.push(Instruction::WriteToGlobalVarWithId(id));
+                } else {
+                    instructions.push(Instruction::WriteToVarWithId(id));
+                }
+            }
+            CommandKind::ConvertToInt => {
+                let name_arg = cmd.arguments.remove(0);
+
+                let name = match name_arg {
+                    CommandArgument::Name(s) => s,
+                    _ => return Err("Erro interno : Esperado um nome pra GetInput*".to_owned()),
+                };
+
+                let mut is_global = false;
+
+                let id = match Compiler::get_id_and_globalness(name.as_str(), func, global, &mut is_global) {
+                    Some(id) => id,
+                    None => return Err(format!("Variável {} não encontrada", name))
+                };
+
+                if is_global {
+                    instructions.push(Instruction::ReadGlobalVarWithId(id));
+                } else {
+                    instructions.push(Instruction::ReadVarWithId(id));
+                }
+
+                instructions.push(Instruction::ConvertToInt);
+
+                if is_global {
+                    instructions.push(Instruction::WriteToGlobalVarWithId(id));
+                } else {
+                    instructions.push(Instruction::WriteToVarWithId(id));
+                }
+            }
+            CommandKind::ConvertToNum => {
+                let name_arg = cmd.arguments.remove(0);
+
+                let name = match name_arg {
+                    CommandArgument::Name(s) => s,
+                    _ => return Err("Erro interno : Esperado um nome pra GetInput*".to_owned()),
+                };
+
+                let mut is_global = false;
+
+                let id = match Compiler::get_id_and_globalness(name.as_str(), func, global, &mut is_global) {
+                    Some(id) => id,
+                    None => return Err(format!("Variável {} não encontrada", name))
+                };
+
+                if is_global {
+                    instructions.push(Instruction::ReadGlobalVarWithId(id));
+                } else {
+                    instructions.push(Instruction::ReadVarWithId(id));
+                }
+
+                instructions.push(Instruction::ConvertToNum);
+
+                if is_global {
+                    instructions.push(Instruction::WriteToGlobalVarWithId(id));
+                } else {
+                    instructions.push(Instruction::WriteToVarWithId(id));
+                }
+            }
+            CommandKind::IntoString => {
+                let name_arg = cmd.arguments.remove(0);
+
+                let name = match name_arg {
+                    CommandArgument::Name(s) => s,
+                    _ => return Err("Erro interno : Esperado um nome pra GetInput*".to_owned()),
+                };
+
+                let mut is_global = false;
+
+                let id = match Compiler::get_id_and_globalness(name.as_str(), func, global, &mut is_global) {
+                    Some(id) => id,
+                    None => return Err(format!("Variável {} não encontrada", name))
+                };
+
+                if is_global {
+                    instructions.push(Instruction::ReadGlobalVarWithId(id));
+                } else {
+                    instructions.push(Instruction::ReadVarWithId(id));
+                }
+
+                instructions.push(Instruction::ConvertToString);
+
+                if is_global {
+                    instructions.push(Instruction::WriteToGlobalVarWithId(id));
+                } else {
+                    instructions.push(Instruction::WriteToVarWithId(id));
+                }
             }
         }
 

@@ -28,6 +28,12 @@ pub enum KeyPhrase {
     ExecuteIfEqualOrGreater,
     ExecuteIfGreater,
     Call,
+    GetStringInput,
+    GetNumberInput,
+    GetIntegerInput,
+    IntoString,
+    ConvertToInt,
+    ConverToNum,
     TypeInt,
     TypeNum,
     TypeStr,
@@ -56,12 +62,18 @@ impl KeyPhrase {
             "É ELE QUE A GENTE QUER" => Some(KeyPhrase::Compare),
             "FIM" => Some(KeyPhrase::EndExecuteIf),
             "E HORA DO" | "É HORA DO" => Some(KeyPhrase::Call),
-            "E ELE MESMO" | "É ELE MESMO" => Some(KeyPhrase::ExecuteIfEqual),
+            "E ELE MEMO" | "É ELE MEMO" => Some(KeyPhrase::ExecuteIfEqual),
             "NUM E ELE" | "NUM É ELE" => Some(KeyPhrase::ExecuteIfNotEqual),
             "E MAIOR" | "É MAIOR" => Some(KeyPhrase::ExecuteIfGreater),
             "É MENOR" | "E MENOR" => Some(KeyPhrase::ExecuteIfLess),
             "MENOR OU E MEMO" | "MENOR OU É MEMO" => Some(KeyPhrase::ExecuteIfEqualOrLess),
             "MAIOR OU E MEMO" | "MAIOR OU É MEMO" => Some(KeyPhrase::ExecuteIfEqualOrGreater),
+            "FALA AI" | "FALA AÍ" => Some(KeyPhrase::GetStringInput),
+            "FALA UM NÚMERO" | "FALA UM NUMERO" => Some(KeyPhrase::GetNumberInput),
+            "FALA AI UM INTEIRO" | "FALA AÍ UM INTEIRO" => Some(KeyPhrase::GetIntegerInput),
+            "MUDA PRA TEXTO" => Some(KeyPhrase::IntoString),
+            "MUDA PRA NUMERO" | "MUDA PRA NÚMERO" => Some(KeyPhrase::ConverToNum),
+            "MUDA PRA INTEIRO" => Some(KeyPhrase::ConvertToInt),
             _ => None,
         }
     }
@@ -244,7 +256,7 @@ fn symbol_token(input : &[char], offset : &mut usize, first : char) -> Result<To
 
         let cur = input[*offset];
 
-        if cur == COMMENT_CHARACTER || cur == '\n' {
+        if cur == COMMENT_CHARACTER || cur == '\n' || cur == '\r' {
             break;
         }
 
@@ -263,17 +275,17 @@ fn symbol_token(input : &[char], offset : &mut usize, first : char) -> Result<To
                 first_char = true;
             }
         } else {
-            if let Some(op) = get_op(cur) {
+            if let Some(_) = get_op(cur) {
                 break;
             }
 
-            if let Some(n) = get_digit(cur) {
+            if let Some(_) = get_digit(cur) {
                 if first_char {
                     break;
                 }
             }
 
-            if let Some(p) = get_ponct(cur) {
+            if let Some(_) = get_ponct(cur) {
                 break;
             }
 
@@ -320,7 +332,7 @@ pub fn next_token(input : &[char], offset : &mut usize) -> Result<Token, String>
         return Ok(Token::Comment);
     }
 
-    if first_char == '\n' {
+    if first_char == '\n'  || first_char == '\r'{
         return Ok(Token::NewLine);
     }
 
@@ -332,7 +344,7 @@ pub fn next_token(input : &[char], offset : &mut usize) -> Result<Token, String>
         return Ok(Token::Ponctuation(p));
     }
 
-    if let Some(d) = get_digit(first_char) {
+    if let Some(_) = get_digit(first_char) {
         return number_token(input, offset, first_char);
     }
 
@@ -347,7 +359,7 @@ pub fn next_token(input : &[char], offset : &mut usize) -> Result<Token, String>
     symbol_token(input, offset, first_char)
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum TypeKind {
     Integer,
     Number,
@@ -355,16 +367,6 @@ pub enum TypeKind {
 }
 
 impl TypeKind {
-    pub fn from(src : &str) -> Option<TypeKind> {
-        match src {
-            "FIBRA" => Some(TypeKind::Text),
-            "TRAPEZIO DESCENDENTE" |
-            "TRAPÉZIO DESCENDENTE" => Some(TypeKind::Number),
-            "BATATA DOCE" => Some(TypeKind::Integer),
-            _ => None,
-        }
-    }
-
     fn from_kp(kp : KeyPhrase) -> Option<TypeKind> {
         match kp {
             KeyPhrase::TypeInt => Some(TypeKind::Integer),
@@ -375,6 +377,7 @@ impl TypeKind {
     }
 }
 
+#[derive(Debug, PartialEq, Clone)]
 pub struct FunctionParameter {
     pub name : String,
     pub kind : TypeKind,
@@ -389,6 +392,7 @@ impl FunctionParameter {
     }
 }
 
+#[derive(Debug, PartialEq)]
 pub struct FunctionDeclaration {
     pub name : String,
     pub arguments : Vec<FunctionParameter>,
@@ -450,6 +454,12 @@ pub enum CommandKind {
     ExecuteIfEqualOrGreater,
     ExecuteIfGreater,
     Call,
+    GetStringInput,
+    GetNumberInput,
+    GetIntegerInput,
+    ConvertToNum,
+    ConvertToInt,
+    IntoString,
 }
 
 impl CommandKind {
@@ -471,6 +481,12 @@ impl CommandKind {
             KeyPhrase::ExecuteIfEqualOrLess => Some(CommandKind::ExecuteIfEqualOrLess),
             KeyPhrase::ExecuteIfLess => Some(CommandKind::ExecuteIfLess),
             KeyPhrase::Call => Some(CommandKind::Call),
+            KeyPhrase::GetStringInput => Some(CommandKind::GetStringInput),
+            KeyPhrase::GetNumberInput => Some(CommandKind::GetNumberInput),
+            KeyPhrase::IntoString => Some(CommandKind::IntoString),
+            KeyPhrase::ConvertToInt => Some(CommandKind::ConvertToInt),
+            KeyPhrase::ConverToNum => Some(CommandKind::ConvertToNum),
+            KeyPhrase::GetIntegerInput => Some(CommandKind::GetIntegerInput),
             _ => None,
         }
     }
@@ -536,6 +552,10 @@ impl CommandInfo {
             CommandKind::ExecuteIfEqualOrGreater => {
                 CommandInfo::from(0, 0, vec![])
             }
+            CommandKind::GetStringInput | CommandKind::GetNumberInput | CommandKind::IntoString |
+            CommandKind::ConvertToNum | CommandKind::ConvertToInt | CommandKind::GetIntegerInput => {
+                CommandInfo::from(1, 1, vec![CommandArgumentKind::Name])
+            }
         }
     }
 }
@@ -546,16 +566,45 @@ pub enum CommandArgument {
     Expression(Expression),
 }
 
+#[derive(Debug)]
 pub struct Command {
     pub kind : CommandKind,
     pub arguments : Vec<CommandArgument>,
 }
 
+#[derive(Debug)]
 pub enum ParserResult {
     FunctionStart(FunctionDeclaration),
     FunctionEnd,
     Command(Command),
     Nothing,
+}
+
+fn parse_parameter(src : &[char], offset : &mut usize) -> Result<FunctionParameter, String> {
+    let name = match next_token(src, offset) {
+        Ok(Token::Symbol(s)) => s,
+        Ok(t) => return Err(format!("Esperado um nome pro parâmetro, encontrado {:?}", t)),
+        Err(e) => return Err(e)
+    };
+
+    match next_token(src, offset) {
+        Ok(Token::Ponctuation(PonctuationKind::Colon)) => {} // OK,
+        Ok(t) => return Err(format!("Esperado um : depois do nome, encontrado {:?}", t)),
+        Err(e) => return Err(e)
+    };
+
+    let kind = match next_token(src, offset) {
+        Ok(Token::Command(kp)) => {
+            match TypeKind::from_kp(kp) {
+                Some(t) => t,
+                None => return Err(format!("Esperado um tipo pro parâmetro, mas {:?} não existe", kp)),
+            }
+        }
+        Ok(t) => return Err(format!("Esperado um tipo pro parâmetro, encontrado {:?}", t)),
+        Err(e) => return Err(e)
+    };
+
+    Ok(FunctionParameter::from(name, kind))
 }
 
 fn parse_function(src : &[char], offset : &mut usize) -> Result<ParserResult, String> {
@@ -583,45 +632,24 @@ fn parse_function(src : &[char], offset : &mut usize) -> Result<ParserResult, St
 
                    loop {
                        if *offset >= src.len() {
-                           return Err("Lista de parâmetros terminou incompleta".to_owned());
+                           return Err("A lista de argumentos acaba incompleta".to_owned());
                        }
 
-                       let name = match next_token(src, offset) {
-                           Ok(t) => {
-                               match t {
-                                   Token::Symbol(n) => n,
-                                   _ => return Err(format!("Esperado um nome pro parâmetro, encontrado {:?}", t)),
-                               }
-                           }
+                       let param = match parse_parameter(src, offset) {
+                           Ok(p) => p,
                            Err(e) => return Err(e)
                        };
+
+                       func.arguments.push(param);
+
+                       // Check next token
 
                        match next_token(src, offset) {
-                           Ok(t) => {
-                               match t {
-                                   Token::Ponctuation(PonctuationKind::Colon) => {} // Ok
-                                   _ => return Err(format!("Esperado um : depois do nome do parâmetro, encontrado {:?}", t)),
-                               }
-                           }
+                           Ok(Token::Ponctuation(PonctuationKind::Comma)) => {} // Ok
+                           Ok(Token::Operator(MathOperator::ParenthesisRight)) => break, // End
+                           Ok(t) => return Err(format!("Esperado uma vírgula ou o fim da lista de parâmetros, encontrado {:?}", t)),
                            Err(e) => return Err(e),
-                       }
-
-                       let kind = match next_token(src, offset) {
-                           Ok(t) => {
-                               match t {
-                                   Token::Command(kp) => {
-                                       match TypeKind::from_kp(kp) {
-                                           Some(t) => t,
-                                           None => return Err(format!("Tipo inválido para o parâmetro : {:?}", t))
-                                       }
-                                   }
-                                       _ => return Err(format!("Esperado um tipo pro parâmetro, encontrado : {:?}", t)),
-                               }
-                           }
-                           Err(e) => return Err(e)
                        };
-
-                       func.arguments.push(FunctionParameter::from(name, kind));
                    }
                }
                _ => return Err(format!("Esperado o fim da declaração ou uma lista de parâmetros, encontrado {:?}", t)),
@@ -635,7 +663,7 @@ fn parse_function(src : &[char], offset : &mut usize) -> Result<ParserResult, St
 
 fn parse_sub_expression(src : &[char], offset : &mut usize, expr : &mut Expression, root : bool) -> Result<(), String> {
 
-    let mut last_was_value = false;
+    let mut last_was_value;
 
     let mut dummy_offset = *offset;
 
@@ -729,7 +757,6 @@ fn parse_sub_expression(src : &[char], offset : &mut usize, expr : &mut Expressi
             Token::None | Token::Comment => return Ok(()),
             Token::Integer(i) => {
                 if last_was_value {
-                    println!("here");
                     return Err("Dois valores seguidos na expressão".to_owned());
                 }
 
@@ -783,7 +810,7 @@ fn parse_sub_expression(src : &[char], offset : &mut usize, expr : &mut Expressi
 
                 expr.nodes.push(ExpressionNode::Operator(MathOperator::ParenthesisRight));
 
-                return Ok(());
+                break
             },
             Token::Operator(o) => {
                 if !last_was_value {
@@ -799,16 +826,20 @@ fn parse_sub_expression(src : &[char], offset : &mut usize, expr : &mut Expressi
                     PonctuationKind::Comma if root => {
                         // Ok. Do not set offset to dummy_offset, since we want the lower calls and the parser to see the comma
 
-                        return Ok(());
+                        break;
                     }
                     _ => return Err(format!("Erro: A expressão deveria começar com um valor ou operador unário, mas começa com {:?}", p)),
                 }
             }
-            Token::NewLine => return Ok(()),
+            Token::NewLine => break,
             _ => return Err(format!("Esperado um valor ou operador na expressão, encontrado {:?}", current)),
         }
 
         *offset = dummy_offset;
+    }
+
+    if !last_was_value {
+        return Err("Expressão termina com um operador".to_owned());
     }
 
     Ok(())
@@ -839,7 +870,7 @@ fn parse_command(src : &[char], offset : &mut usize, kp : KeyPhrase) -> Result<P
 
     let info = CommandInfo::from_kind(cmd_kind);
 
-    let has_arguments = if cmd_kind == CommandKind::PrintDebug {
+    let mut has_arguments = if cmd_kind == CommandKind::PrintDebug {
         true
     } else {
         match next_token(src, offset) {
@@ -854,6 +885,14 @@ fn parse_command(src : &[char], offset : &mut usize, kp : KeyPhrase) -> Result<P
         }
     };
 
+    let mut dummy_offset = *offset;
+
+    match next_token(src, &mut dummy_offset) {
+        Ok(Token::NewLine) | Ok(Token::None) => has_arguments = false,
+        Ok(_) => {},
+        Err(e) => return Err(e)
+    }
+
     if has_arguments {
         let mut arg_index = 0usize;
         let mut arg_count = 0usize;
@@ -863,7 +902,7 @@ fn parse_command(src : &[char], offset : &mut usize, kp : KeyPhrase) -> Result<P
                 break;
             }
 
-            if arg_index >= info.max_args as usize {
+            if arg_index >= info.expected_args.len() {
                 if info.max_args < 0 {
                     arg_index = info.expected_args.len() - 1;
                 } else {
@@ -964,8 +1003,43 @@ pub fn parse_line(src : &str) -> Result<ParserResult, String> {
 
 mod tests {
     #[test]
+    fn functions() {
+        use parser::*;
+
+        {
+            let src = "JAULA TESTANDO";
+
+            let got_func = match parse_line(src) {
+                Ok(ParserResult::FunctionStart(func)) => func,
+                Ok(res) => panic!("Era esperado uma função, recebido {:?}", res),
+                Err(e) => panic!("{}", e)
+            };
+
+            let expected = FunctionDeclaration::from("TESTANDO".to_owned());
+
+            assert_eq!(got_func, expected);
+        }
+
+        {
+            let src = "JAULA F(ARG1 : FIBRA, ARG2 : TRAPÉZIO DESCENDENTE)";
+
+            let got_func = match parse_line(src) {
+                Ok(ParserResult::FunctionStart(func)) => func,
+                Ok(res) => panic!("Era esperado uma função, recebido {:?}", res),
+                Err(e) => panic!("{}", e)
+            };
+
+            let mut expected = FunctionDeclaration::from("F".to_owned());
+            expected.arguments.push(FunctionParameter::from("ARG1".to_owned(), TypeKind::Text));
+            expected.arguments.push(FunctionParameter::from("ARG2".to_owned(), TypeKind::Number));
+
+            assert_eq!(got_func, expected);
+        }
+    }
+
+    #[test]
     fn numeric_tokens() {
-        use birl::parser::*;
+        use parser::*;
 
         {
             let src = "1234";
@@ -1000,7 +1074,7 @@ mod tests {
 
     #[test]
     fn text_tokens() {
-        use birl::parser::*;
+        use parser::*;
 
         let src = "\"test string\"";
 
@@ -1020,7 +1094,7 @@ mod tests {
 
     #[test]
     fn symbols_and_keyphrases() {
-        use birl::parser::*;
+        use parser::*;
 
         {
             let src = "THIS IS A SYMBOL:+()1";

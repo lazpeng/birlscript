@@ -1,9 +1,9 @@
 //! The virtual machine runs code (DUH)
 
-use birl::parser::IntegerType;
-use birl::context::{ FunctionEntry, BIRL_RET_VAL_VAR_ID };
+use parser::{ TypeKind, IntegerType };
+use context::BIRL_RET_VAL_VAR_ID;
 
-use std::io::{ Write, stdout };
+use std::io::{ Write, stdout, stdin };
 use std::fmt::{ Display, self };
 
 type StringStorageID = u64;
@@ -37,11 +37,13 @@ enum DynamicValue {
     Null,
 }
 
+#[derive(Debug)]
 struct StringEntry {
     id : u64,
     content : String,
 }
 
+#[derive(Debug)]
 struct StringStorage {
     entries : Vec<StringEntry>,
     last_id : u64,
@@ -90,30 +92,36 @@ impl StringStorage {
     }
 
     fn add(&mut self, content : &str) -> u64 {
-        let current_id = self.last_id + 1;
+        self.add_string(content.to_owned())
+    }
+
+    fn add_string(&mut self, content : String) -> u64 {
+        let id = self.last_id + 1;
 
         let entry = StringEntry {
-            content : content.to_owned(),
-            id : current_id,
+            content,
+            id,
         };
 
         self.entries.push(entry);
 
-        self.last_id = current_id;
+        self.last_id = id;
 
-        current_id
+        id
     }
 }
 
+#[derive(Debug)]
 struct RuntimeVariable {
     id : u64,
     address : usize,
 }
 
+#[derive(Debug)]
 pub struct FunctionFrame {
     id : u64,
     stack : Vec<DynamicValue>,
-    program_counter : u64,
+    program_counter : usize,
     last_comparision : Option<Comparision>,
     runtime_vars : Vec<RuntimeVariable>,
     next_address : usize,
@@ -158,6 +166,12 @@ impl FunctionFrame {
     }
 }
 
+pub enum ExecutionStatus {
+    Normal,
+    Quit,
+    Returned,
+}
+
 pub struct VirtualMachine {
     has_quit : bool,
     main_stack : [DynamicValue; MAIN_STACK_SIZE],
@@ -174,7 +188,7 @@ impl VirtualMachine {
             main_stack : [DynamicValue::Null; MAIN_STACK_SIZE],
             main_stack_top : 0,
             main_storage : StringStorage::new(),
-            callstack : vec![FunctionFrame::new(0)],
+            callstack : vec![],
             is_interactive : false,
         }
     }
@@ -191,47 +205,25 @@ impl VirtualMachine {
     }
 
     fn get_last_ready_ref(&self) -> Option<&FunctionFrame> {
-        let len = self.callstack.len();
-
-        if len == 0 {
-            None
-        } else if len == 1 {
-            if self.callstack[0].ready {
-                Some(&self.callstack[0])
-            } else {
-                None
+        let callstack = &self.callstack;
+        for frame in callstack.into_iter().rev() {
+            if frame.ready {
+                return Some(frame);
             }
-        } else {
-            for i in (len - 1)..0 {
-                if self.callstack[i].ready {
-                    return Some(&self.callstack[i])
-                }
-            }
-
-            None
         }
+
+        None
     }
 
     fn get_last_ready_mut(&mut self) -> Option<&mut FunctionFrame> {
-        let len = self.callstack.len();
-
-        if len == 0 {
-            None
-        } else if len == 1 {
-            if self.callstack[0].ready {
-                Some(&mut self.callstack[0])
-            } else {
-                None
+        let callstack = &mut self.callstack;
+        for frame in callstack.into_iter().rev() {
+            if frame.ready {
+                return Some(frame);
             }
-        } else {
-            for i in (len - 1)..0 {
-                if self.callstack[i].ready {
-                    return Some(&mut self.callstack[i])
-                }
-            }
-
-            None
         }
+
+        None
     }
 
     pub fn get_current_id(&self) -> Option<u64> {
@@ -440,6 +432,8 @@ impl VirtualMachine {
             None => return Err("MainPrintDebug : Main stack is empty".to_owned()),
         };
 
+        print!("<");
+
         match top {
             DynamicValue::Integer(i) => {
                 println!("(Integer) : {}", i);
@@ -523,7 +517,30 @@ impl VirtualMachine {
             DynamicValue::Text(l_t) => {
                 match right {
                     DynamicValue::Text(r_t) => {
-                        unimplemented!()
+                        let ltext = match self.main_storage.get_ref(l_t) {
+                            Some(t) => t,
+                            None => return Err(format!("Erro : TextID não encontrada : {}", l_t)),
+                        };
+
+                        let rtext = match self.main_storage.get_ref(r_t) {
+                            Some(t) => t,
+                            None => return Err(format!("Erro : TextID não encontrada : {}", r_t)),
+                        };
+
+                        let llen = ltext.len();
+                        let rlen = rtext.len();
+
+                        if llen > rlen {
+                            Comparision::MoreThan
+                        } else if llen < rlen {
+                            Comparision::LessThan
+                        } else {
+                            if ltext == rtext {
+                                Comparision::Equal
+                            } else {
+                                Comparision::NotEqual
+                            }
+                        }
                     }
                     _ => Comparision::NotEqual
                 }
@@ -542,6 +559,28 @@ impl VirtualMachine {
         self.callstack.last_mut().unwrap().last_comparision = Some(comp);
 
         Ok(())
+    }
+
+    // This function doesn't search all the callstack, just the first frame
+    fn get_last_ready_index(&self) -> Option<usize> {
+        if self.callstack.is_empty() {
+            None
+        }
+        else if self.callstack.len() < 2 {
+            if self.callstack[0].ready {
+                Some(0)
+            } else {
+                None
+            }
+        } else {
+            let last = self.callstack.len() - 1;
+
+            if self.callstack[last].ready {
+                Some(last)
+            } else {
+                Some(last - 1)
+            }
+        }
     }
 
     fn write_main_top_to(&mut self, stack_index : usize, id : u64) -> Result<(), String> {
@@ -577,23 +616,39 @@ impl VirtualMachine {
             return Err("Endereço inválido pra stack".to_owned());
         }
 
-        frame.stack[addr] = val;
+        match val {
+            DynamicValue::Text(t) => {
+                let raw = match self.main_storage.get_ref(t) {
+                    Some(t) => t,
+                    None => return Err(format!("TextID {} é inválida.", t))
+                };
+
+                let id = frame.string_storage.add(raw);
+
+                frame.stack[addr] = DynamicValue::Text(id);
+            }
+            _ => frame.stack[addr] = val,
+        }
 
         Ok(())
     }
 
-    fn increase_skip_level(&mut self) {
+    fn increase_skip_level(&mut self) -> Result<(), String> {
         match self.get_last_ready_mut() {
             Some(f) => f.skip_level += 1,
-            None => {}
+            None => return Err("Nenhuma função ready em execução".to_owned())
         }
+
+        Ok(())
     }
 
-    fn decrease_skip_level(&mut self) {
+    fn decrease_skip_level(&mut self) -> Result<(), String> {
         match self.get_last_ready_mut() {
             Some(f) => f.skip_level -= 1,
-            None => {}
+            None => return Err("Nenhuma função ready em execução".to_owned())
         }
+
+        Ok(())
     }
 
     fn create_runtime_var(&mut self, id : u64) -> Result<(), String> {
@@ -606,13 +661,134 @@ impl VirtualMachine {
         frame.create_runtime_var(id)
     }
 
-    pub fn run(&mut self, inst : &Instruction) -> Result<(), String> {
-        if self.get_current_skip_level() > 0 {
-            if let &Instruction::EndExecuteIf = inst {
-                self.decrease_skip_level();
+    fn read_from_id_to_main(&mut self, index : usize, id : u64) -> Result<(), String> {
+        if self.callstack.len() < index {
+            return Err(format!("Index out of bounds for read : {}", index));
+        }
+
+        let val = {
+
+            let frame = &mut self.callstack[index];
+
+            let addr = match frame.get_address_of(id) {
+                Some(a) => a,
+                None => {
+                    match frame.create_runtime_var(id) {
+                        Ok(_) => {
+                            match frame.get_address_of(id) {
+                                Some(a) => a,
+                                None => return Err("Erro fatal : Não foi possível criar variável".to_owned())
+                            }
+                        }
+                        Err(e) => return Err(e),
+                    }
+                }
+            };
+
+            if frame.stack.len() <= addr {
+                return Err("Erro : Endereço pra variável é inválido".to_owned());
             }
 
-            return Ok(());
+            frame.stack[addr]
+        };
+
+        match self.push_main(val) {
+            Some(_) => {}
+            None => return Err("Main stack overflow".to_owned()),
+        }
+
+        Ok(())
+    }
+
+    pub fn unset_quit(&mut self) {
+        self.has_quit = false;
+    }
+
+    pub fn has_quit(&self) -> bool {
+        self.has_quit
+    }
+
+    pub fn get_current_pc(&self) -> Option<usize> {
+        match self.get_last_ready_ref() {
+            Some(f) => Some(f.program_counter),
+            None => None
+        }
+    }
+
+    pub fn increment_pc(&mut self) -> Result<(), String> {
+        match self.get_last_ready_mut() {
+            Some(f) => f.program_counter += 1,
+            None => return Err("Nenhuma função em execução".to_owned())
+        }
+
+        Ok(())
+    }
+
+    fn conv_to_string(&mut self, val : DynamicValue) -> Result<String, String> {
+        match val {
+            DynamicValue::Text(t) => {
+                let s = match self.main_storage.get(t) {
+                    Some(s) => s,
+                    None => return Err("Invalid string ID".to_owned()),
+                };
+
+                Ok(s)
+            }
+            DynamicValue::Integer(i) => Ok(format!("{}", i)),
+            DynamicValue::Number(n) => Ok(format!("{}", n)),
+            DynamicValue::Null => Ok(String::from("<Null>")),
+        }
+    }
+
+    fn conv_to_int(&mut self, val : DynamicValue) -> Result<IntegerType, String> {
+        match val {
+            DynamicValue::Text(t) => {
+                let text = match self.main_storage.get(t) {
+                    Some(v) => v,
+                    None => return Err("Invalid text id".to_owned())
+                };
+
+                let i = match text.parse::<IntegerType>() {
+                    Ok(i) => i,
+                    Err(_) => return Err(format!("Não foi possível converter \"{}\" pra Int", text))
+                };
+
+                Ok(i)
+            }
+            DynamicValue::Number(n) => Ok(n as IntegerType),
+            DynamicValue::Integer(i) => Ok(i),
+            DynamicValue::Null => return Err("Convert : <Null>".to_owned()),
+        }
+    }
+
+    fn conv_to_num(&mut self, val : DynamicValue) -> Result<f64, String> {
+        match val {
+            DynamicValue::Text(t) => {
+                let text = match self.main_storage.get(t) {
+                    Some(v) => v,
+                    None => return Err("Invalid text id".to_owned())
+                };
+
+                let n = match text.parse::<f64>() {
+                    Ok(n) => n,
+                    Err(_) => return Err(format!("Não foi possível converter \"{}\" pra Num", text))
+                };
+
+                Ok(n)
+            }
+            DynamicValue::Number(n) => Ok(n),
+            DynamicValue::Integer(i) => Ok(i as f64),
+            DynamicValue::Null => return Err("Convert : <Null>".to_owned()),
+        }
+    }
+
+    pub fn run(&mut self, inst : &Instruction) -> Result<ExecutionStatus, String> {
+        if self.get_current_skip_level() > 0 {
+            if let &Instruction::EndExecuteIf = inst {
+                self.decrease_skip_level()?;
+            }
+
+            return Ok(ExecutionStatus::Normal);
         }
 
         match inst {
@@ -748,7 +924,7 @@ impl VirtualMachine {
                             None => return Err(format!("MainPrint : Não foi encontrado text com ID {}", t)),
                         };
 
-                        print!("\"{}\"", t);
+                        print!("{}", t);
                     }
                     DynamicValue::Null => print!("<Null>"),
                 }
@@ -764,44 +940,35 @@ impl VirtualMachine {
             }
             Instruction::Quit => {
                 self.has_quit = true;
+
+                return Ok(ExecutionStatus::Quit);
             }
             Instruction::FlushStdout => {
                 self.flush_stdout();
             }
             Instruction::ReadVarWithId(id) => {
-                if self.callstack.is_empty() {
-                    return Err("Callstack vazia. Possível erro interno".to_owned());
-                }
-
-                let val = {
-
-                    let frame = self.callstack.last().unwrap();
-
-                    let addr = match frame.get_address_of(*id) {
-                        Some(a) => a,
-                        None => return Err(format!("Endereço pra ID {} não encontrado.", *id)),
-                    };
-
-                    if frame.stack.len() <= addr {
-                        return Err("Erro : Endereço pra variável é inválido".to_owned());
-                    }
-
-                    frame.stack[addr]
+                let index = match self.get_last_ready_index() {
+                    Some(i) => i,
+                    None => return Err("Nenhuma função em execução".to_owned())
                 };
 
-                match self.push_main(val) {
-                    Some(_) => {}
-                    None => return Err("Main stack overflow".to_owned()),
+                match self.read_from_id_to_main(index, *id) {
+                    Ok(_) => {}
+                    Err(e) => return Err(e)
                 }
             }
             Instruction::WriteToVarWithId(id) => {
-                if self.is_interactive {
-                    match self.print_debug_main_top() {
-                        Ok(_) => {}
-                        Err(e) => return Err(e)
-                    }
-                }
+                let index = match self.get_last_ready_index() {
+                    Some(i) => i,
+                    None => return Err("Nenhuma função em execução".to_owned())
+                };
 
+                match self.write_main_top_to(index, *id) {
+                    Ok(_) => {}
+                    Err(e) => return Err(e)
+                }
+            }
+            Instruction::WriteToLastFrameVarWithId(id) => {
                 let len = self.callstack.len();
                 match self.write_main_top_to(len - 1, *id) {
                     Ok(_) => {}
@@ -809,39 +976,12 @@ impl VirtualMachine {
                 }
             }
             Instruction::ReadGlobalVarWithId(id) => {
-                if self.callstack.is_empty() {
-                    return Err("Callstack vazia. Possível erro interno".to_owned());
-                }
-
-                let val = {
-
-                    let frame = self.callstack.last().unwrap();
-
-                    let addr = match frame.get_address_of(*id) {
-                        Some(a) => a,
-                        None => return Err(format!("Endereço pra ID {} não encontrado.", *id)),
-                    };
-
-                    if frame.stack.len() <= addr {
-                        return Err("Erro : Endereço pra variável é inválido".to_owned());
-                    }
-
-                    frame.stack[addr]
-                };
-
-                match self.push_main(val) {
-                    Some(_) => {}
-                    None => return Err("Main stack overflow".to_owned()),
+                match self.read_from_id_to_main(0, *id) {
+                    Ok(_) => {}
+                    Err(e) => return Err(e)
                 }
             }
             Instruction::WriteToGlobalVarWithId(id) => {
-                if self.is_interactive {
-                    match self.print_debug_main_top() {
-                        Ok(_) => {}
-                        Err(e) => return Err(e)
-                    }
-                }
-
                 match self.write_main_top_to(0, *id) {
                     Ok(_) => {}
                     Err(e) => return Err(e)
@@ -867,14 +1007,16 @@ impl VirtualMachine {
                     Ok(_) => {}
                     Err(e) => return Err(e)
                 }
-
-                if self.is_interactive {
-                    println!("(Comparação) : {}", result);
-                }
             }
             Instruction::Return => {
-                if self.callstack.len() < 2 {
-                    return Err("Return : Não é possível retornar na função global".to_owned());
+                if self.callstack.len() == 1 {
+                    self.has_quit = true;
+
+                    return Ok(ExecutionStatus::Quit);
+                }
+
+                if self.main_stack_top == 0 {
+                    self.push_main(DynamicValue::Null);
                 }
 
                 let len = self.callstack.len();
@@ -882,6 +1024,10 @@ impl VirtualMachine {
                     Ok(_) => {}
                     Err(e) => return Err(e),
                 }
+
+                let _ = self.callstack.pop();
+
+                return Ok(ExecutionStatus::Returned);
             }
             Instruction::CreateVarWithId(id) => {
                 match self.create_runtime_var(*id) {
@@ -891,7 +1037,7 @@ impl VirtualMachine {
             }
             Instruction::ExecuteIfEqual => {
                 if self.get_current_skip_level() > 0 {
-                    self.increase_skip_level();
+                    self.increase_skip_level()?;
                 } else {
                     let last = match self.get_last_comparision() {
                         Ok(c) => c,
@@ -899,13 +1045,13 @@ impl VirtualMachine {
                     };
 
                     if last != Comparision::Equal {
-                        self.increase_skip_level();
+                        self.increase_skip_level()?;
                     }
                 }
             }
             Instruction::ExecuteIfNotEqual => {
                 if self.get_current_skip_level() > 0 {
-                    self.increase_skip_level();
+                    self.increase_skip_level()?;
                 } else {
                     let last = match self.get_last_comparision() {
                         Ok(c) => c,
@@ -913,13 +1059,13 @@ impl VirtualMachine {
                     };
 
                     if last == Comparision::Equal {
-                        self.increase_skip_level();
+                        self.increase_skip_level()?;
                     }
                 }
             }
             Instruction::ExecuteIfGreater => {
                 if self.get_current_skip_level() > 0 {
-                    self.increase_skip_level();
+                    self.increase_skip_level()?;
                 } else {
                     let last = match self.get_last_comparision() {
                         Ok(c) => c,
@@ -927,13 +1073,13 @@ impl VirtualMachine {
                     };
 
                     if last != Comparision::MoreThan {
-                        self.increase_skip_level();
+                        self.increase_skip_level()?;
                     }
                 }
             }
             Instruction::ExecuteIfGreaterOrEqual => {
                 if self.get_current_skip_level() > 0 {
-                    self.increase_skip_level();
+                    self.increase_skip_level()?;
                 } else {
                     let last = match self.get_last_comparision() {
                         Ok(c) => c,
@@ -941,13 +1087,13 @@ impl VirtualMachine {
                     };
 
                     if last != Comparision::Equal && last != Comparision::MoreThan {
-                        self.increase_skip_level();
+                        self.increase_skip_level()?;
                     }
                 }
             }
             Instruction::ExecuteIfLess => {
                 if self.get_current_skip_level() > 0 {
-                    self.increase_skip_level();
+                    self.increase_skip_level()?;
                 } else {
                     let last = match self.get_last_comparision() {
                         Ok(c) => c,
@@ -955,13 +1101,13 @@ impl VirtualMachine {
                     };
 
                     if last != Comparision::LessThan {
-                        self.increase_skip_level();
+                        self.increase_skip_level()?;
                     }
                 }
             }
             Instruction::ExecuteIfLessOrEqual => {
                 if self.get_current_skip_level() > 0 {
-                    self.increase_skip_level();
+                    self.increase_skip_level()?;
                 } else {
                     let last = match self.get_last_comparision() {
                         Ok(c) => c,
@@ -969,30 +1115,136 @@ impl VirtualMachine {
                     };
 
                     if last != Comparision::LessThan && last != Comparision::Equal {
-                        self.increase_skip_level();
+                        self.increase_skip_level()?;
                     }
                 }
             }
-            Instruction::MakeNewFrame => {
+            Instruction::MakeNewFrame(id) => {
                 // Add a new, not ready frame to the callstack
+
+                let frame = FunctionFrame::new(*id);
+
+                self.callstack.push(frame);
             }
             Instruction::SetLastFrameReady => {
                 // Set the last frame to ready
 
                 if ! self.callstack.is_empty() {
                     self.callstack.last_mut().unwrap().ready = true;
+                } else {
+                    return Err("Callstack vazia".to_owned());
+                }
+            }
+            Instruction::AssertMainTopTypeCompatible(kind) => {
+                let v = match self.get_main_top() {
+                    Some(v) => v,
+                    None => return Err("AssertMainTopType : Main stack vazia".to_owned()),
+                };
+
+                match v {
+                    DynamicValue::Null => return Err("Tipo incompatível : Null".to_owned()),
+                    DynamicValue::Text(_) => {
+                        if kind == &TypeKind::Text {
+                            // Ok
+                        } else {
+                            return Err("Tipo incompatível : Texto".to_owned());
+                        }
+                    }
+                    DynamicValue::Integer(_) => {
+                        if kind == &TypeKind::Integer || kind == &TypeKind::Number {
+                            // Ok
+                        } else {
+                            return Err("Tipo incompatível : Int ou Num".to_owned());
+                        }
+                    }
+                    DynamicValue::Number(_) => {
+                        if kind == &TypeKind::Number {
+                            // Ok
+                        } else {
+                            return Err("Tipo incompatível : Number".to_owned());
+                        }
+                    }
+                }
+            }
+            Instruction::ReadInput => {
+                let input = stdin();
+
+                let mut line = String::new();
+
+                match input.read_line(&mut line) {
+                    Ok(_) => {}
+                    Err(e) => return Err(format!("Erro lendo input : {:?}", e))
+                };
+
+                // FIXME
+                // Kinda slow, but necessary to trim the /r and /n depending on the platform
+                // I'll probably roll my own solution later tho
+                let line = line.trim();
+
+                let id = self.main_storage.add_string(line.to_owned());
+
+                match self.push_main(DynamicValue::Text(id)) {
+                    Some(_) => {}
+                    None => return Err("Main stack overflow".to_owned())
+                };
+            }
+            Instruction::ConvertToNum => {
+                let top = match self.pop_main() {
+                    Some(v) => v,
+                    None => return Err("Main stack underflow".to_owned())
+                };
+
+                let v = match self.conv_to_num(top) {
+                    Ok(v) => v,
+                    Err(e) => return Err(e)
+                };
+
+                match self.push_main(DynamicValue::Number(v)) {
+                    Some(_) => {}
+                    None => return Err("Main stack overflow".to_owned())
+                }
+            }
+            Instruction::ConvertToInt => {
+                let top = match self.pop_main() {
+                    Some(v) => v,
+                    None => return Err("Main stack underflow".to_owned())
+                };
+
+                let v = match self.conv_to_int(top) {
+                    Ok(v) => v,
+                    Err(e) => return Err(e)
+                };
+
+                match self.push_main(DynamicValue::Integer(v)) {
+                    Some(_) => {}
+                    None => return Err("Main stack overflow".to_owned())
+                }
+            }
+            Instruction::ConvertToString => {
+                let top = match self.pop_main() {
+                    Some(v) => v,
+                    None => return Err("Main stack underflow".to_owned())
+                };
+
+                let v = match self.conv_to_string(top) {
+                    Ok(v) => v,
+                    Err(e) => return Err(e)
+                };
+
+                let id = self.main_storage.add_string(v);
+
+                match self.push_main(DynamicValue::Text(id)) {
+                    Some(_) => {}
+                    None => return Err("Main stack overflow".to_owned())
                 }
             }
         }
 
-        Ok(())
-    }
-
-    pub fn has_quit(&self) -> bool {
-        self.has_quit
+        Ok(ExecutionStatus::Normal)
     }
 }
 
+#[derive(Clone, Debug)]
 pub enum Instruction {
     PushMainInt(IntegerType),
     PushMainNum(f64),
@@ -1010,6 +1262,7 @@ pub enum Instruction {
     ReadVarWithId(u64),
     ReadGlobalVarWithId(u64),
     WriteToVarWithId(u64),
+    WriteToLastFrameVarWithId(u64),
     WriteToGlobalVarWithId(u64),
     CreateVarWithId(u64),
     CompareMainTop,
@@ -1021,6 +1274,17 @@ pub enum Instruction {
     ExecuteIfGreaterOrEqual,
     ExecuteIfLess,
     ExecuteIfLessOrEqual,
-    MakeNewFrame,
+    MakeNewFrame(u64),
     SetLastFrameReady,
+    // For use when pushing arguments for a function. Check if the value on the top of the main stack
+    // has a compatible type
+    AssertMainTopTypeCompatible(TypeKind),
+    // Get a line of input and put it at the top of the main stack
+    ReadInput,
+    // Turn the main stack top into string
+    ConvertToString,
+    // Turn the main stack top into num
+    ConvertToNum,
+    // Turn the main stack top into int
+    ConvertToInt,
 }
