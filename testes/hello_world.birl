@@ -1,3 +1,0 @@
-# A JAULA SHOW é opcional, codigos podem ser executados fora de uma JAULA
-# porem uma jaula (no caso, a show) permite que se faça uso de recursão, o que não é disponivel em comandos globais
-CE QUER VER ISSO: "BORA, " + CUMPADE + "!" # O operador + em strings só pode ser usado com outra string

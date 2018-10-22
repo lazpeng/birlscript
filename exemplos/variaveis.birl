@@ -1,0 +1,7 @@
+JAULA SHOW
+    VEM: MONSTRO, 0 # Declara variavel com o valor 0
+    VEM: IBIRAPUERA, "BIRL" # Declara IBIRAPUERA com valor "BIRL"
+    BORA: MONSTRO, 2 # Da o valor 2 para MONSTRO
+    BORA: MONSTRO, MONSTRO * 2 # Multiplica o valor de MONSTRO por 2
+    CE QUER VER ISSO: "MONSTRO: ", MONSTRO, " IBIRAPUERA: " + IBIRAPUERA
+SAINDO DA JAULA

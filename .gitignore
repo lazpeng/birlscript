@@ -1,4 +1,9 @@
 target/
+birl/target/
+birlscript/target
 .idea/
+birl/.idea/
+birlscript/.idea
 .c9/
-Cargo.lock
+birl/Cargo.lock
+birlscript/Cargo.lock

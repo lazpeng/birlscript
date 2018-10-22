@@ -1,7 +1,0 @@
-JAULA SHOW
-  VEM: MONSTRO # Declara variavel com o valor padrão, 0
-  VEM, CUMPADE: IBIRAPUERA, "BIRL" # Declara IBIRAPUERA com valor "BIRL"
-  BORA: MONSTRO, 2 # Da o valor 2 para MONSTRO
-  BORA: MONSTRO, MONSTRO * 2 # Multiplica o valor de MONSTRO por 2
-  CE QUER VER ISSO: "MONSTRO: ", MONSTRO, " IBIRAPUERA: " + IBIRAPUERA
-SAINDO DA JAULA
