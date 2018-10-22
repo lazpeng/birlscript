@@ -1,7 +1,0 @@
-JAULA SHOW
-    VEM: EMISSORA # Cria variavel EMISSORA
-    BORA, CUMPADE!!!: EMISSORA # Guarda valor da entrada em EMISSORA com letras maiusculas
-    E ELE QUE A GENTE QUER: EMISSORA, "BANDEIRANTES" # Compara com bandeirantes
-    E ELE MEMO: CE QUER VER ISSO: "NÃO QUERO FALAR COM BANDEIRANTES" # Caso seja igual, execute bandeirantes
-    NUM E ELE: CE QUER VER ISSO: "COM " + EMISSORA + " EU FALO" # Diferente, execute outro
-SAINDO DA JAULA
