@@ -3,7 +3,7 @@
 use parser::{ TypeKind, IntegerType };
 use context::BIRL_RET_VAL_VAR_ID;
 
-use std::io::{ Write, stdout, stdin };
+use std::io::{ Write, BufRead };
 use std::fmt::{ Display, self };
 
 type StringStorageID = u64;
@@ -179,6 +179,19 @@ pub struct VirtualMachine {
     main_storage : StringStorage,
     callstack : Vec<FunctionFrame>,
     is_interactive : bool,
+    stdout: Option<Box<Write>>,
+    stdin:  Option<Box<BufRead>>,
+}
+
+macro_rules! vm_write{
+    ($out:expr,$($arg:tt)*) => ({
+        if let Some(output) = $out.as_mut(){
+            write!(output, $($arg)*)
+                .map_err(|what| format!("Deu pra escrever não cumpade: {:?}", what))
+        }else{
+            Ok(())
+        }
+    })
 }
 
 impl VirtualMachine {
@@ -190,10 +203,29 @@ impl VirtualMachine {
             main_storage : StringStorage::new(),
             callstack : vec![],
             is_interactive : false,
+            stdout: None,
+            stdin: None,
         }
     }
 
+    pub fn set_stdout(&mut self, write: Option<Box<Write>>) -> Option<Box<Write>>{
+        use std::mem;
+        mem::replace(&mut self.stdout, write)
+    }
+
+    pub fn set_stdin(&mut self, read: Option<Box<BufRead>>) -> Option<Box<BufRead>>{
+        use std::mem;
+        mem::replace(&mut self.stdin, read)
+    }
+
     pub fn set_interactive(&mut self) {
+        /// TODO: THIS IS NOT A GOOD IDEA. Bodge job needed to keep the
+        /// stock console code working when allowing for stdin and out
+        /// to be changed in the virtual machine. Please solve this asap.
+        use std::io::{stdin, stdout, BufReader};
+        let _ = self.set_stdout(Some(Box::new(stdout())));
+        let _ = self.set_stdin(Some(Box::new(BufReader::new(stdin()))));
+
         self.is_interactive = true;
     }
 
@@ -271,12 +303,12 @@ impl VirtualMachine {
         Some(())
     }
 
-    pub fn flush_stdout(&self) {
-        let mut out = stdout();
-
-        match out.flush() {
-            Ok(_) => {}
-            Err(_) => {}
+    pub fn flush_stdout(&mut self) {
+        if let Some(ref mut out) = self.stdout.as_mut(){
+            match out.flush() {
+                Ok(_) => {}
+                Err(_) => {}
+            }
         }
     }
 
@@ -916,17 +948,17 @@ impl VirtualMachine {
                 };
 
                 match top {
-                    DynamicValue::Integer(i) => print!("{}", i),
-                    DynamicValue::Number(n) => print!("{}", n),
+                    DynamicValue::Integer(i) => vm_write!(self.stdout, "{}", i)?,
+                    DynamicValue::Number(n) => vm_write!(self.stdout, "{}", n)?,
                     DynamicValue::Text(t) => {
                         let t = match self.main_storage.get_ref(t) {
                             Some(t) => t,
                             None => return Err(format!("MainPrint : Não foi encontrado text com ID {}", t)),
                         };
 
-                        print!("{}", t);
+                        vm_write!(self.stdout, "{}", t)?
                     }
-                    DynamicValue::Null => print!("<Null>"),
+                    DynamicValue::Null => vm_write!(self.stdout, "<Null>")?,
                 }
             }
             Instruction::MainPrintDebug => {
@@ -936,7 +968,7 @@ impl VirtualMachine {
                 }
             }
             Instruction::PrintNewLine => {
-                println!();
+                vm_write!(self.stdout, "\n")?
             }
             Instruction::Quit => {
                 self.has_quit = true;
@@ -1167,26 +1199,27 @@ impl VirtualMachine {
                 }
             }
             Instruction::ReadInput => {
-                let input = stdin();
+                let line = if let Some(ref mut input) = self.stdin.as_mut(){
+                    let mut line = String::new();
+                    match input.read_line(&mut line) {
+                        Ok(_) => {}
+                        Err(e) => return Err(format!("Erro lendo input : {:?}", e))
+                    };
 
-                let mut line = String::new();
+                    // FIXME
+                    // Kinda slow, but necessary to trim the /r and /n
+                    // depending on the platform I'll probably roll my own
+                    // solution later tho
+                    Some(line.trim().to_owned())
+                } else { None };
 
-                match input.read_line(&mut line) {
-                    Ok(_) => {}
-                    Err(e) => return Err(format!("Erro lendo input : {:?}", e))
-                };
-
-                // FIXME
-                // Kinda slow, but necessary to trim the /r and /n depending on the platform
-                // I'll probably roll my own solution later tho
-                let line = line.trim();
-
-                let id = self.main_storage.add_string(line.to_owned());
-
-                match self.push_main(DynamicValue::Text(id)) {
-                    Some(_) => {}
-                    None => return Err("Main stack overflow".to_owned())
-                };
+                if let Some(line) = line{
+                    let id = self.main_storage.add_string(line);
+                    match self.push_main(DynamicValue::Text(id)) {
+                        Some(_) => {}
+                        None => return Err("Main stack overflow".to_owned())
+                    };
+                }
             }
             Instruction::ConvertToNum => {
                 let top = match self.pop_main() {
