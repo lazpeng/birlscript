@@ -178,7 +178,6 @@ pub struct VirtualMachine {
     main_stack_top : usize,
     main_storage : StringStorage,
     callstack : Vec<FunctionFrame>,
-    is_interactive : bool,
     stdout: Option<Box<Write>>,
     stdin:  Option<Box<BufRead>>,
 }
@@ -202,7 +201,6 @@ impl VirtualMachine {
             main_stack_top : 0,
             main_storage : StringStorage::new(),
             callstack : vec![],
-            is_interactive : false,
             stdout: None,
             stdin: None,
         }
@@ -216,18 +214,7 @@ impl VirtualMachine {
     pub fn set_stdin(&mut self, read: Option<Box<BufRead>>) -> Option<Box<BufRead>>{
         use std::mem;
         mem::replace(&mut self.stdin, read)
-    }
-
-    pub fn set_interactive(&mut self) {
-        /// TODO: THIS IS NOT A GOOD IDEA. Bodge job needed to keep the
-        /// stock console code working when allowing for stdin and out
-        /// to be changed in the virtual machine. Please solve this asap.
-        use std::io::{stdin, stdout, BufReader};
-        let _ = self.set_stdout(Some(Box::new(stdout())));
-        let _ = self.set_stdin(Some(Box::new(BufReader::new(stdin()))));
-
-        self.is_interactive = true;
-    }
+    } 
 
     pub fn get_current_skip_level(&self) -> u32 {
         match self.get_last_ready_ref() {
@@ -243,7 +230,6 @@ impl VirtualMachine {
                 return Some(frame);
             }
         }
-
         None
     }
 
@@ -254,7 +240,6 @@ impl VirtualMachine {
                 return Some(frame);
             }
         }
-
         None
     }
 
@@ -273,7 +258,6 @@ impl VirtualMachine {
         if self.main_stack_top == 0 {
             return None;
         }
-
         Some(self.main_stack[self.main_stack_top - 1])
     }
 
@@ -281,12 +265,10 @@ impl VirtualMachine {
         if self.main_stack_top == 0 {
             return None;
         }
-
         let d = match self.get_main_top() {
             Some(v) => v,
             None => return None,
         };
-
         self.main_stack_top -= 1;
 
         Some(d)
@@ -455,10 +437,6 @@ impl VirtualMachine {
     }
 
     fn print_debug_main_top(&self) -> Result<(), String> {
-        if ! self.is_interactive {
-            return Err("PrintDebug on non-interactive mode".to_owned());
-        }
-
         let top = match self.get_main_top() {
             Some(t) => t,
             None => return Err("MainPrintDebug : Main stack is empty".to_owned()),
