@@ -6,7 +6,7 @@ use vm::{ Instruction, VirtualMachine, ExecutionStatus };
 use parser::{ parse_line, FunctionParameter, ParserResult, IntegerType, FunctionDeclaration };
 use compiler::{ Compiler, Variable, CompilerHint };
 
-use std::io::{ BufRead, BufReader };
+use std::io::{ BufRead, BufReader, Write };
 use std::fs::File;
 
 pub const BIRL_COPYRIGHT : &'static str 
@@ -30,7 +30,7 @@ pub struct FunctionEntry {
     pub next_var_id : u64,
 }
 impl FunctionEntry {
-    pub fn get_id_for(&self, var : &str) -> Option<u64> {
+	pub fn get_id_for(&self, var : &str) -> Option<u64> {
         for v in &self.vars {
             if v.name == var {
                 return Some(v.id);
@@ -115,6 +115,15 @@ impl ScopeManager {
 }
 
 impl Context {
+    /// Alias for vm.set_stdout().
+    pub fn set_stdout(&mut self, write: Option<Box<Write>>) -> Option<Box<Write>>{
+        self.vm.set_stdout(write)
+    }
+
+    /// Alias for vm.set_stdin().
+    pub fn set_stdin(&mut self, read: Option<Box<BufRead>>) -> Option<Box<BufRead>>{
+        self.vm.set_stdin(read)
+    }
     fn new_global() -> FunctionEntry {
         FunctionEntry::from("__global__".to_owned(), BIRL_GLOBAL_FUNCTION_ID, vec![])
     }
@@ -190,7 +199,7 @@ impl Context {
         Ok(id)
     }
 
-    fn process_line(&mut self, line : &str) -> Result<(), String> {
+    pub fn process_line(&mut self, line : &str) -> Result<(), String> {
         let mut instructions = vec![];
 
         let result = match parse_line(line) {
