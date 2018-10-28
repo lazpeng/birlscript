@@ -166,6 +166,7 @@ impl FunctionFrame {
     }
 }
 
+#[derive(Clone, Debug)]
 pub enum ExecutionStatus {
     Normal,
     Quit,
@@ -233,7 +234,7 @@ impl VirtualMachine {
         None
     }
 
-    fn get_last_ready_mut(&mut self) -> Option<&mut FunctionFrame> {
+    pub fn get_last_ready_mut(&mut self) -> Option<&mut FunctionFrame> {
         let callstack = &mut self.callstack;
         for frame in callstack.into_iter().rev() {
             if frame.ready {
@@ -732,6 +733,16 @@ impl VirtualMachine {
         }
 
         Ok(())
+    }
+
+    pub fn decrement_pc(&mut self) -> Result<(), String> {
+        match self.get_last_ready_mut() {
+            Some(f) => f.program_counter -= 1,
+            None => return Err("Nenhuma função em execução".to_owned())
+        }
+
+        Ok(())
+
     }
 
     fn conv_to_string(&mut self, val : DynamicValue) -> Result<String, String> {

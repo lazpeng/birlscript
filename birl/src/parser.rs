@@ -969,7 +969,7 @@ fn parse_command(src : &[char], offset : &mut usize, kp : KeyPhrase) -> Result<P
 }
 
 pub fn parse_line(src : &str) -> Result<ParserResult, String> {
-    if src.is_empty() {
+    if src.trim().is_empty() {
         return Ok(ParserResult::Nothing);
     }
 

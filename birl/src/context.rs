@@ -82,7 +82,7 @@ pub enum RawValue {
 }
 
 pub struct Context {
-    vm : VirtualMachine,
+    pub vm : VirtualMachine,
     functions : Vec<FunctionEntry>,
     scope : Scope,
     has_main : bool,
@@ -197,6 +197,43 @@ impl Context {
         self.last_function_id = id;
 
         Ok(id)
+    }
+    
+    pub fn end_function(&mut self) -> Result<(), String>{
+        if self.scope != Scope::Function {
+            return Err("Erro : Fim de função fora de uma função".to_owned());
+        }
+
+        if self.function_scope.len() > 1 {
+            return Err("Erro : Feche todos os scopes antes de terminar a função".to_owned());
+        } else if self.function_scope.is_empty() {
+            return Err("Erro fatal : Scopes tá vazio".to_owned());
+        }
+
+        let last_scope = self.function_scope.remove(0);
+        let id = self.last_function_id;
+        match self.get_entry_by_id_mut(id) {
+            Some(f) => last_scope.at_end(f),
+            None => return Err(format!("Erro fatal : Nenhuma função com ID {}", id))
+        }
+
+        self.scope = Scope::Global;
+        Ok(())
+    }
+
+    pub fn start_function(&mut self, func: FunctionDeclaration) -> Result<(), String>{
+        if self.scope != Scope::Global {
+            return Err("Erro : Declaração de função fora do escopo global".to_owned());
+        }
+
+        match self.add_function(func) {
+            Ok(_) => {},
+            Err(e) => return Err(e)
+        }
+
+        self.scope = Scope::Function;
+        self.function_scope.push(ScopeManager::empty());
+        Ok(())
     }
 
     pub fn process_line(&mut self, line : &str) -> Result<(), String> {
@@ -353,42 +390,8 @@ impl Context {
                     body.push(i);
                 }
             }
-            ParserResult::FunctionEnd => {
-                if self.scope != Scope::Function {
-                    return Err("Erro : Fim de função fora de uma função".to_owned());
-                }
-
-                if self.function_scope.len() > 1 {
-                    return Err("Erro : Feche todos os scopes antes de terminar a função".to_owned());
-                } else if self.function_scope.is_empty() {
-                    return Err("Erro fatal : Scopes tá vazio".to_owned());
-                }
-
-                let mut last_scope = self.function_scope.remove(0);
-
-                let id = self.last_function_id;
-
-                match self.get_entry_by_id_mut(id) {
-                    Some(f) => last_scope.at_end(f),
-                    None => return Err(format!("Erro fatal : Nenhuma função com ID {}", id))
-                }
-
-                self.scope = Scope::Global;
-            }
-            ParserResult::FunctionStart(func) => {
-                if self.scope != Scope::Global {
-                    return Err("Erro : Declaração de função fora do escopo global".to_owned());
-                }
-
-                match self.add_function(func) {
-                    Ok(_) => {},
-                    Err(e) => return Err(e)
-                }
-
-                self.scope = Scope::Function;
-
-                self.function_scope.push(ScopeManager::empty());
-            }
+            ParserResult::FunctionEnd => self.end_function()?,
+            ParserResult::FunctionStart(func) => self.start_function(func)?,
             ParserResult::Nothing => return Ok(())
         }
 
@@ -520,7 +523,7 @@ impl Context {
         }
     }
 
-    fn execute_next_instruction(&mut self) -> Result<ExecutionStatus, String> {
+    pub fn execute_next_instruction(&mut self) -> Result<ExecutionStatus, String> {
 
         let pc = match self.vm.get_current_pc() {
             Some(p) => p,
@@ -544,17 +547,33 @@ impl Context {
                 }
             }
             None => return Err(format!("Nenhuma função com ID {}", id))
-        };
-
+        }; 
+		
         match self.vm.increment_pc() {
             Ok(_) => {}
-            Err(e) => return Err(e)
+           	Err(e) => return Err(e)
         }
-
+        
         let status = match self.vm.run(&instruction) {
             Ok(status) => status,
             Err(e) => return Err(e)
         };
+
+        /* We REEEALY don't want to increment the counter if we're
+         * dealing with quit instructions. As the counter would
+         * otherwise be increased when we reach the end of an
+         * instruction buffer. And since instruction buffers can be
+         * appended to and re-run to completion, increasing the
+         * counter in cases of end-of-buffer breaks behaviour.
+         *
+         * And it has to be done this way, instead of selectively
+         * incrementing the counter because of arcane magic
+         * side-effects, put in place by nature and not under my
+         * control. */
+        if let &ExecutionStatus::Quit = &status{
+            self.vm.decrement_pc()
+                .expect("Fatal error: Could not decrement PC")
+		}
 
         Ok(status)
     }

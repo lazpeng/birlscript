@@ -7,3 +7,4 @@ birlscript/.idea
 .c9/
 birl/Cargo.lock
 birlscript/Cargo.lock
+*.swp
