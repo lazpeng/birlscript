@@ -1,4 +1,15 @@
-# BIRLSCRIPT
+# BIRLSCRIPT/MBR
+
+## Vá com cuidado, amigo.
+Esse fork quebra compatibilidade com a API do interpretador original,
+por fazer parte do esforço de expôr uma interface em núvem.
+Vá ao [Repositório Oficial](https://github.com/birlscript/birlscript)
+do BirlScript se quiser a real, o oficial, o inigualável. Se quiser
+ficar, é melhor que tenha em mente que esse aqui vai estar em descompasso
+com a língua por enquanto ou pode ser que seja reincorporado ao projeto
+original.
+
+## Agora pro que importa.
 
 É a linguagem de scripting dos programadores codebuilders! Dos que não saem de casa
 sem codar pra caralho! Se você ta achando que é moleza, ta enganado, aqui não é

@@ -3,7 +3,7 @@
 use parser::{ TypeKind, IntegerType };
 use context::BIRL_RET_VAL_VAR_ID;
 
-use std::io::{ Write, stdout, stdin };
+use std::io::{ Write, BufRead };
 use std::fmt::{ Display, self };
 
 type StringStorageID = u64;
@@ -166,6 +166,7 @@ impl FunctionFrame {
     }
 }
 
+#[derive(Clone, Debug)]
 pub enum ExecutionStatus {
     Normal,
     Quit,
@@ -178,7 +179,19 @@ pub struct VirtualMachine {
     main_stack_top : usize,
     main_storage : StringStorage,
     callstack : Vec<FunctionFrame>,
-    is_interactive : bool,
+    stdout: Option<Box<Write>>,
+    stdin:  Option<Box<BufRead>>,
+}
+
+macro_rules! vm_write{
+    ($out:expr,$($arg:tt)*) => ({
+        if let Some(output) = $out.as_mut(){
+            write!(output, $($arg)*)
+                .map_err(|what| format!("Deu pra escrever não cumpade: {:?}", what))
+        }else{
+            Ok(())
+        }
+    })
 }
 
 impl VirtualMachine {
@@ -189,13 +202,20 @@ impl VirtualMachine {
             main_stack_top : 0,
             main_storage : StringStorage::new(),
             callstack : vec![],
-            is_interactive : false,
+            stdout: None,
+            stdin: None,
         }
     }
 
-    pub fn set_interactive(&mut self) {
-        self.is_interactive = true;
+    pub fn set_stdout(&mut self, write: Option<Box<Write>>) -> Option<Box<Write>>{
+        use std::mem;
+        mem::replace(&mut self.stdout, write)
     }
+
+    pub fn set_stdin(&mut self, read: Option<Box<BufRead>>) -> Option<Box<BufRead>>{
+        use std::mem;
+        mem::replace(&mut self.stdin, read)
+    } 
 
     pub fn get_current_skip_level(&self) -> u32 {
         match self.get_last_ready_ref() {
@@ -211,18 +231,16 @@ impl VirtualMachine {
                 return Some(frame);
             }
         }
-
         None
     }
 
-    fn get_last_ready_mut(&mut self) -> Option<&mut FunctionFrame> {
+    pub fn get_last_ready_mut(&mut self) -> Option<&mut FunctionFrame> {
         let callstack = &mut self.callstack;
         for frame in callstack.into_iter().rev() {
             if frame.ready {
                 return Some(frame);
             }
         }
-
         None
     }
 
@@ -241,7 +259,6 @@ impl VirtualMachine {
         if self.main_stack_top == 0 {
             return None;
         }
-
         Some(self.main_stack[self.main_stack_top - 1])
     }
 
@@ -249,12 +266,10 @@ impl VirtualMachine {
         if self.main_stack_top == 0 {
             return None;
         }
-
         let d = match self.get_main_top() {
             Some(v) => v,
             None => return None,
         };
-
         self.main_stack_top -= 1;
 
         Some(d)
@@ -271,12 +286,12 @@ impl VirtualMachine {
         Some(())
     }
 
-    pub fn flush_stdout(&self) {
-        let mut out = stdout();
-
-        match out.flush() {
-            Ok(_) => {}
-            Err(_) => {}
+    pub fn flush_stdout(&mut self) {
+        if let Some(ref mut out) = self.stdout.as_mut(){
+            match out.flush() {
+                Ok(_) => {}
+                Err(_) => {}
+            }
         }
     }
 
@@ -423,10 +438,6 @@ impl VirtualMachine {
     }
 
     fn print_debug_main_top(&self) -> Result<(), String> {
-        if ! self.is_interactive {
-            return Err("PrintDebug on non-interactive mode".to_owned());
-        }
-
         let top = match self.get_main_top() {
             Some(t) => t,
             None => return Err("MainPrintDebug : Main stack is empty".to_owned()),
@@ -724,6 +735,16 @@ impl VirtualMachine {
         Ok(())
     }
 
+    pub fn decrement_pc(&mut self) -> Result<(), String> {
+        match self.get_last_ready_mut() {
+            Some(f) => f.program_counter -= 1,
+            None => return Err("Nenhuma função em execução".to_owned())
+        }
+
+        Ok(())
+
+    }
+
     fn conv_to_string(&mut self, val : DynamicValue) -> Result<String, String> {
         match val {
             DynamicValue::Text(t) => {
@@ -916,17 +937,17 @@ impl VirtualMachine {
                 };
 
                 match top {
-                    DynamicValue::Integer(i) => print!("{}", i),
-                    DynamicValue::Number(n) => print!("{}", n),
+                    DynamicValue::Integer(i) => vm_write!(self.stdout, "{}", i)?,
+                    DynamicValue::Number(n) => vm_write!(self.stdout, "{}", n)?,
                     DynamicValue::Text(t) => {
                         let t = match self.main_storage.get_ref(t) {
                             Some(t) => t,
                             None => return Err(format!("MainPrint : Não foi encontrado text com ID {}", t)),
                         };
 
-                        print!("{}", t);
+                        vm_write!(self.stdout, "{}", t)?
                     }
-                    DynamicValue::Null => print!("<Null>"),
+                    DynamicValue::Null => vm_write!(self.stdout, "<Null>")?,
                 }
             }
             Instruction::MainPrintDebug => {
@@ -936,7 +957,7 @@ impl VirtualMachine {
                 }
             }
             Instruction::PrintNewLine => {
-                println!();
+                vm_write!(self.stdout, "\n")?
             }
             Instruction::Quit => {
                 self.has_quit = true;
@@ -1167,26 +1188,27 @@ impl VirtualMachine {
                 }
             }
             Instruction::ReadInput => {
-                let input = stdin();
+                let line = if let Some(ref mut input) = self.stdin.as_mut(){
+                    let mut line = String::new();
+                    match input.read_line(&mut line) {
+                        Ok(_) => {}
+                        Err(e) => return Err(format!("Erro lendo input : {:?}", e))
+                    };
 
-                let mut line = String::new();
+                    // FIXME
+                    // Kinda slow, but necessary to trim the /r and /n
+                    // depending on the platform I'll probably roll my own
+                    // solution later tho
+                    Some(line.trim().to_owned())
+                } else { None };
 
-                match input.read_line(&mut line) {
-                    Ok(_) => {}
-                    Err(e) => return Err(format!("Erro lendo input : {:?}", e))
-                };
-
-                // FIXME
-                // Kinda slow, but necessary to trim the /r and /n depending on the platform
-                // I'll probably roll my own solution later tho
-                let line = line.trim();
-
-                let id = self.main_storage.add_string(line.to_owned());
-
-                match self.push_main(DynamicValue::Text(id)) {
-                    Some(_) => {}
-                    None => return Err("Main stack overflow".to_owned())
-                };
+                if let Some(line) = line{
+                    let id = self.main_storage.add_string(line);
+                    match self.push_main(DynamicValue::Text(id)) {
+                        Some(_) => {}
+                        None => return Err("Main stack overflow".to_owned())
+                    };
+                }
             }
             Instruction::ConvertToNum => {
                 let top = match self.pop_main() {
