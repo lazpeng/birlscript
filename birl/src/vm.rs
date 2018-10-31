@@ -1,7 +1,7 @@
 //! The virtual machine runs code (DUH)
 
 use parser::{ TypeKind, IntegerType };
-use context::BIRL_RET_VAL_VAR_ID;
+use context::BIRL_RET_VAL_VAR_ADDRESS;
 
 use std::io::{ Write, BufRead };
 use std::fmt::{ Display, self };
@@ -9,6 +9,7 @@ use std::fmt::{ Display, self };
 type StringStorageID = u64;
 
 const MAIN_STACK_SIZE : usize = 256;
+const STACK_DEFAULT_SIZE : usize = 128;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Comparision {
@@ -112,18 +113,11 @@ impl StringStorage {
 }
 
 #[derive(Debug)]
-struct RuntimeVariable {
-    id : u64,
-    address : usize,
-}
-
-#[derive(Debug)]
 pub struct FunctionFrame {
     id : u64,
     stack : Vec<DynamicValue>,
     program_counter : usize,
     last_comparision : Option<Comparision>,
-    runtime_vars : Vec<RuntimeVariable>,
     next_address : usize,
     string_storage : StringStorage,
     ready : bool,
@@ -131,38 +125,17 @@ pub struct FunctionFrame {
 }
 
 impl FunctionFrame {
-    pub fn new(id : u64) -> FunctionFrame {
+    pub fn new(id : u64, stack_size : usize) -> FunctionFrame {
         FunctionFrame {
             id,
-            stack : vec![],
+            stack : vec![DynamicValue::Null; stack_size],
             program_counter : 0,
             last_comparision : None,
-            runtime_vars : vec![],
             next_address : 0usize,
             string_storage : StringStorage::new(),
             ready : false,
             skip_level : 0,
         }
-    }
-
-    fn get_address_of(&self, id : u64) -> Option<usize> {
-        for v in &self.runtime_vars {
-            if v.id == id {
-                return Some(v.address);
-            }
-        }
-
-        None
-    }
-
-    fn create_runtime_var(&mut self, id : u64) -> Result<(), String> {
-        let address = self.next_address;
-        self.next_address += 1;
-
-        self.runtime_vars.push(RuntimeVariable { id, address });
-        self.stack.push(DynamicValue::Null);
-
-        Ok(())
     }
 }
 
@@ -176,6 +149,7 @@ pub enum ExecutionStatus {
 pub struct VirtualMachine {
     has_quit : bool,
     main_stack : [DynamicValue; MAIN_STACK_SIZE],
+    stack_size : usize,
     main_stack_top : usize,
     main_storage : StringStorage,
     callstack : Vec<FunctionFrame>,
@@ -201,6 +175,7 @@ impl VirtualMachine {
             main_stack : [DynamicValue::Null; MAIN_STACK_SIZE],
             main_stack_top : 0,
             main_storage : StringStorage::new(),
+            stack_size : STACK_DEFAULT_SIZE,
             callstack : vec![],
             stdout: None,
             stdin: None,
@@ -594,7 +569,7 @@ impl VirtualMachine {
         }
     }
 
-    fn write_main_top_to(&mut self, stack_index : usize, id : u64) -> Result<(), String> {
+    fn write_main_top_to(&mut self, stack_index : usize, address : usize) -> Result<(), String> {
         if self.callstack.len() <= stack_index {
             return Err(format!("Index inválido : {}", stack_index));
         }
@@ -608,22 +583,7 @@ impl VirtualMachine {
 
         let frame = &mut self.callstack[stack_index];
 
-        let addr = match frame.get_address_of(id) {
-            Some(a) => a,
-            None => {
-                match frame.create_runtime_var(id) {
-                    Ok(_) => {
-                        match frame.get_address_of(id) {
-                            Some(i) => i,
-                            None => return Err(format!("ID {} not found", id)),
-                        }
-                    }
-                    Err(e) => return Err(e),
-                }
-            }
-        };
-
-        if frame.stack.len() <= addr {
+        if frame.stack.len() <= address {
             return Err("Endereço inválido pra stack".to_owned());
         }
 
@@ -636,9 +596,9 @@ impl VirtualMachine {
 
                 let id = frame.string_storage.add(raw);
 
-                frame.stack[addr] = DynamicValue::Text(id);
+                frame.stack[address] = DynamicValue::Text(id);
             }
-            _ => frame.stack[addr] = val,
+            _ => frame.stack[address] = val,
         }
 
         Ok(())
@@ -662,17 +622,7 @@ impl VirtualMachine {
         Ok(())
     }
 
-    fn create_runtime_var(&mut self, id : u64) -> Result<(), String> {
-        if self.callstack.is_empty() {
-            return Err("CreateVar : Callstack tá vazia. Possível erro interno".to_owned());
-        }
-
-        let frame = self.callstack.last_mut().unwrap();
-
-        frame.create_runtime_var(id)
-    }
-
-    fn read_from_id_to_main(&mut self, index : usize, id : u64) -> Result<(), String> {
+    fn read_from_id_to_main(&mut self, index : usize, address : usize) -> Result<(), String> {
         if self.callstack.len() < index {
             return Err(format!("Index out of bounds for read : {}", index));
         }
@@ -681,26 +631,11 @@ impl VirtualMachine {
 
             let frame = &mut self.callstack[index];
 
-            let addr = match frame.get_address_of(id) {
-                Some(a) => a,
-                None => {
-                    match frame.create_runtime_var(id) {
-                        Ok(_) => {
-                            match frame.get_address_of(id) {
-                                Some(a) => a,
-                                None => return Err("Erro fatal : Não foi possível criar variável".to_owned())
-                            }
-                        }
-                        Err(e) => return Err(e),
-                    }
-                }
-            };
-
-            if frame.stack.len() <= addr {
+            if frame.stack.len() <= address {
                 return Err("Erro : Endereço pra variável é inválido".to_owned());
             }
 
-            frame.stack[addr]
+            frame.stack[address]
         };
 
         match self.push_main(val) {
@@ -801,6 +736,10 @@ impl VirtualMachine {
             DynamicValue::Integer(i) => Ok(i as f64),
             DynamicValue::Null => return Err("Convert : <Null>".to_owned()),
         }
+    }
+
+    pub fn set_stack_size(&mut self, size : usize) {
+        self.stack_size = size;
     }
 
     pub fn run(&mut self, inst : &Instruction) -> Result<ExecutionStatus, String> {
@@ -967,43 +906,43 @@ impl VirtualMachine {
             Instruction::FlushStdout => {
                 self.flush_stdout();
             }
-            Instruction::ReadVarWithId(id) => {
+            Instruction::ReadVarFromAddress(address) => {
                 let index = match self.get_last_ready_index() {
                     Some(i) => i,
                     None => return Err("Nenhuma função em execução".to_owned())
                 };
 
-                match self.read_from_id_to_main(index, *id) {
+                match self.read_from_id_to_main(index, *address) {
                     Ok(_) => {}
                     Err(e) => return Err(e)
                 }
             }
-            Instruction::WriteToVarWithId(id) => {
+            Instruction::WriteToVarAtAddress(address) => {
                 let index = match self.get_last_ready_index() {
                     Some(i) => i,
                     None => return Err("Nenhuma função em execução".to_owned())
                 };
 
-                match self.write_main_top_to(index, *id) {
+                match self.write_main_top_to(index, *address) {
                     Ok(_) => {}
                     Err(e) => return Err(e)
                 }
             }
-            Instruction::WriteToLastFrameVarWithId(id) => {
+            Instruction::WriteToLastFrameVarAtAddress(address) => {
                 let len = self.callstack.len();
-                match self.write_main_top_to(len - 1, *id) {
+                match self.write_main_top_to(len - 1, *address) {
                     Ok(_) => {}
                     Err(e) => return Err(e)
                 }
             }
-            Instruction::ReadGlobalVarWithId(id) => {
-                match self.read_from_id_to_main(0, *id) {
+            Instruction::ReadGlobalVarFromAddress(address) => {
+                match self.read_from_id_to_main(0, *address) {
                     Ok(_) => {}
                     Err(e) => return Err(e)
                 }
             }
-            Instruction::WriteToGlobalVarWithId(id) => {
-                match self.write_main_top_to(0, *id) {
+            Instruction::WriteToGlobalVarAtAddress(address) => {
+                match self.write_main_top_to(0, *address) {
                     Ok(_) => {}
                     Err(e) => return Err(e)
                 }
@@ -1041,7 +980,7 @@ impl VirtualMachine {
                 }
 
                 let len = self.callstack.len();
-                match self.write_main_top_to(len - 2, BIRL_RET_VAL_VAR_ID) {
+                match self.write_main_top_to(len - 2, BIRL_RET_VAL_VAR_ADDRESS) {
                     Ok(_) => {}
                     Err(e) => return Err(e),
                 }
@@ -1049,12 +988,6 @@ impl VirtualMachine {
                 let _ = self.callstack.pop();
 
                 return Ok(ExecutionStatus::Returned);
-            }
-            Instruction::CreateVarWithId(id) => {
-                match self.create_runtime_var(*id) {
-                    Ok(_) => {}
-                    Err(e) => return Err(e)
-                }
             }
             Instruction::ExecuteIfEqual => {
                 if self.get_current_skip_level() > 0 {
@@ -1143,7 +1076,7 @@ impl VirtualMachine {
             Instruction::MakeNewFrame(id) => {
                 // Add a new, not ready frame to the callstack
 
-                let frame = FunctionFrame::new(*id);
+                let frame = FunctionFrame::new(*id, self.stack_size);
 
                 self.callstack.push(frame);
             }
@@ -1281,12 +1214,11 @@ pub enum Instruction {
     MainPrintDebug,
     FlushStdout,
     Quit,
-    ReadVarWithId(u64),
-    ReadGlobalVarWithId(u64),
-    WriteToVarWithId(u64),
-    WriteToLastFrameVarWithId(u64),
-    WriteToGlobalVarWithId(u64),
-    CreateVarWithId(u64),
+    ReadVarFromAddress(usize),
+    ReadGlobalVarFromAddress(usize),
+    WriteToVarAtAddress(usize),
+    WriteToLastFrameVarAtAddress(usize),
+    WriteToGlobalVarAtAddress(usize),
     CompareMainTop,
     Return,
     EndExecuteIf,

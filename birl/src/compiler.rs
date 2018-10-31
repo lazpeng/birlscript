@@ -5,7 +5,7 @@ use context::{ BIRL_GLOBAL_FUNCTION_ID, FunctionEntry };
 #[derive(Debug, Clone)]
 pub struct Variable {
     pub name : String,
-    pub id : u64,
+    pub address : usize,
     pub writeable : bool,
 }
 
@@ -15,7 +15,13 @@ pub enum CompilerHint {
     ScopeEnd,
 }
 
-pub struct Compiler {}
+enum SubScopeKind {
+    ForLoop,
+    ExecuteIf
+}
+
+pub struct Compiler {
+}
 
 impl Compiler {
     fn get_inst_for_op(op : MathOperator) -> Option<Instruction> {
@@ -104,7 +110,7 @@ impl Compiler {
                 &ExpressionNode::Symbol(ref s) => {
                     let mut on_global = false;
 
-                    let id = match func.get_id_for(s.as_str()) {
+                    let address = match func.get_address_for(s.as_str()) {
                         Some(i) => {
                             if func.id == BIRL_GLOBAL_FUNCTION_ID {
                                 on_global = true;
@@ -120,7 +126,7 @@ impl Compiler {
                             if let &Some(ref g) = global {
                                 on_global = true;
 
-                                match g.get_id_for(s.as_str()) {
+                                match g.get_address_for(s.as_str()) {
                                     Some(i) => i,
                                     None => return Err(format!("Variável não encontrada : {}", s.as_str())),
                                 }
@@ -131,9 +137,9 @@ impl Compiler {
                     };
 
                     let inst = if on_global {
-                        Instruction::ReadGlobalVarWithId(id)
+                        Instruction::ReadGlobalVarFromAddress(address)
                     } else {
-                        Instruction::ReadVarWithId(id)
+                        Instruction::ReadVarFromAddress(address)
                     };
 
                     buffer.push(inst);
@@ -174,14 +180,15 @@ impl Compiler {
         Compiler::compile_sub_expression(expr, &mut offset, inst, func, global)
     }
 
-    fn get_id_and_globalness(name : &str, func : &FunctionEntry, global : &Option<&FunctionEntry>, is_global : &mut bool) -> Option<u64> {
-        match func.get_id_for(name) {
-            Some(id) => {
+    fn get_address_and_globalness(name : &str, func : &FunctionEntry, global : &Option<&FunctionEntry>,
+                                  is_global : &mut bool) -> Option<usize> {
+        match func.get_address_for(name) {
+            Some(addr) => {
                 if func.id == BIRL_GLOBAL_FUNCTION_ID {
                     *is_global = true;
                 }
 
-                Some(id)
+                Some(addr)
             }
             None => {
                 if func.id == BIRL_GLOBAL_FUNCTION_ID {
@@ -189,10 +196,10 @@ impl Compiler {
                 }
 
                 if let Some(g) = global {
-                    match g.get_id_for(name) {
-                        Some(id) => {
+                    match g.get_address_for(name) {
+                        Some(addr) => {
                             *is_global = true;
-                            Some(id)
+                            Some(addr)
                         }
                         None => None,
                     }
@@ -277,7 +284,7 @@ impl Compiler {
 
                 let mut is_global = false;
 
-                let id = match Compiler::get_id_and_globalness(name.as_str(), func, global, &mut is_global) {
+                let address = match Compiler::get_address_and_globalness(name.as_str(), func, global, &mut is_global) {
                     Some(id) => id,
                     None => return Err(format!("Variável {} não encontrada", name))
                 };
@@ -295,9 +302,9 @@ impl Compiler {
                 }
 
                 let inst = if is_global {
-                    Instruction::WriteToGlobalVarWithId(id)
+                    Instruction::WriteToGlobalVarAtAddress(address)
                 } else {
-                    Instruction::WriteToVarWithId(id)
+                    Instruction::WriteToVarAtAddress(address)
                 };
 
                 instructions.push(inst);
@@ -330,16 +337,14 @@ impl Compiler {
 
                 // Add the variable after the expression is parsed, so we can't use the variable before a value is set
 
-                let id = func.next_var_id;
+                let address = func.next_var_address;
 
-                let result = CompilerHint::DeclareVar(Variable { name, id, writeable : true });
-
-                instructions.push(Instruction::CreateVarWithId(id));
+                let result = CompilerHint::DeclareVar(Variable { name, address, writeable : true });
 
                 if is_global {
-                    instructions.push(Instruction::WriteToGlobalVarWithId(id));
+                    instructions.push(Instruction::WriteToGlobalVarAtAddress(address));
                 } else {
-                    instructions.push(Instruction::WriteToVarWithId(id));
+                    instructions.push(Instruction::WriteToVarAtAddress(address));
                 }
 
                 return Ok(Some(result));
@@ -390,37 +395,48 @@ impl Compiler {
 
                 instructions.push(Instruction::CompareMainTop);
             }
-            CommandKind::EndExecuteIf => {
+            CommandKind::EndSubScope => {
+                /*match self.get_last_subscope() {
+                    Some(SubScopeKind::ExecuteIf) => instructions.push(Instruction::EndExecuteIf),
+                    _ => unimplemented!(),
+                    None => return Err("Nenhum scope pra fechar".to_owned())
+                }*/
                 instructions.push(Instruction::EndExecuteIf);
 
                 return Ok(Some(CompilerHint::ScopeEnd));
             },
             CommandKind::ExecuteIfEqual => {
+                //self.subscopes.push(SubScopeKind::ExecuteIf);
                 instructions.push(Instruction::ExecuteIfEqual);
 
                 return Ok(Some(CompilerHint::ScopeStart));
             },
             CommandKind::ExecuteIfNotEqual => {
+                //self.subscopes.push(SubScopeKind::ExecuteIf);
                 instructions.push(Instruction::ExecuteIfNotEqual);
 
                 return Ok(Some(CompilerHint::ScopeStart));
             },
             CommandKind::ExecuteIfEqualOrGreater => {
+                //self.subscopes.push(SubScopeKind::ExecuteIf);
                 instructions.push(Instruction::ExecuteIfGreaterOrEqual);
 
                 return Ok(Some(CompilerHint::ScopeStart));
             },
             CommandKind::ExecuteIfGreater => {
+                //self.subscopes.push(SubScopeKind::ExecuteIf);
                 instructions.push(Instruction::ExecuteIfGreater);
 
                 return Ok(Some(CompilerHint::ScopeStart));
             },
             CommandKind::ExecuteIfEqualOrLess => {
+                //self.subscopes.push(SubScopeKind::ExecuteIf);
                 instructions.push(Instruction::ExecuteIfLessOrEqual);
 
                 return Ok(Some(CompilerHint::ScopeStart));
             },
             CommandKind::ExecuteIfLess => {
+                //self.subscopes.push(SubScopeKind::ExecuteIf);
                 instructions.push(Instruction::ExecuteIfLess);
 
                 return Ok(Some(CompilerHint::ScopeStart));
@@ -461,15 +477,15 @@ impl Compiler {
                             let expected_type = cf.params[index].kind;
                             let arg_name = cf.params[index].name.as_str();
 
-                            let mut arg_id = None;
+                            let mut arg_address = None;
 
                             for v in &cf.vars {
                                 if v.name == arg_name {
-                                    arg_id = Some(v.id);
+                                    arg_address = Some(v.address);
                                 }
                             }
 
-                            if let None = arg_id {
+                            if let None = arg_address {
                                 return Err(format!("Erro interno : O parâmetro {} não está registrado como variável",
                                                    arg_name));
                             }
@@ -481,7 +497,7 @@ impl Compiler {
 
                             instructions.push(Instruction::AssertMainTopTypeCompatible(expected_type));
 
-                            instructions.push(Instruction::WriteToLastFrameVarWithId(arg_id.unwrap()));
+                            instructions.push(Instruction::WriteToLastFrameVarAtAddress(arg_address.unwrap()));
                         }
 
                         instructions.push(Instruction::SetLastFrameReady);
@@ -502,7 +518,7 @@ impl Compiler {
 
                 let mut is_global = false;
 
-                let id = match Compiler::get_id_and_globalness(name.as_str(), func, global, &mut is_global) {
+                let address = match Compiler::get_address_and_globalness(name.as_str(), func, global, &mut is_global) {
                     Some(id) => id,
                     None => return Err(format!("Variável {} não encontrada", name))
                 };
@@ -510,9 +526,9 @@ impl Compiler {
                 instructions.push(Instruction::ReadInput);
 
                 if is_global {
-                    instructions.push(Instruction::WriteToGlobalVarWithId(id));
+                    instructions.push(Instruction::WriteToGlobalVarAtAddress(address));
                 } else {
-                    instructions.push(Instruction::WriteToVarWithId(id));
+                    instructions.push(Instruction::WriteToVarAtAddress(address));
                 }
             }
             CommandKind::GetIntegerInput => {
@@ -525,7 +541,7 @@ impl Compiler {
 
                 let mut is_global = false;
 
-                let id = match Compiler::get_id_and_globalness(name.as_str(), func, global, &mut is_global) {
+                let address = match Compiler::get_address_and_globalness(name.as_str(), func, global, &mut is_global) {
                     Some(id) => id,
                     None => return Err(format!("Variável {} não encontrada", name))
                 };
@@ -535,9 +551,9 @@ impl Compiler {
                 instructions.push(Instruction::ConvertToInt);
 
                 if is_global {
-                    instructions.push(Instruction::WriteToGlobalVarWithId(id));
+                    instructions.push(Instruction::WriteToGlobalVarAtAddress(address));
                 } else {
-                    instructions.push(Instruction::WriteToVarWithId(id));
+                    instructions.push(Instruction::WriteToVarAtAddress(address));
                 }
             }
             CommandKind::GetNumberInput => {
@@ -550,7 +566,7 @@ impl Compiler {
 
                 let mut is_global = false;
 
-                let id = match Compiler::get_id_and_globalness(name.as_str(), func, global, &mut is_global) {
+                let address = match Compiler::get_address_and_globalness(name.as_str(), func, global, &mut is_global) {
                     Some(id) => id,
                     None => return Err(format!("Variável {} não encontrada", name))
                 };
@@ -560,9 +576,9 @@ impl Compiler {
                 instructions.push(Instruction::ConvertToNum);
 
                 if is_global {
-                    instructions.push(Instruction::WriteToGlobalVarWithId(id));
+                    instructions.push(Instruction::WriteToGlobalVarAtAddress(address));
                 } else {
-                    instructions.push(Instruction::WriteToVarWithId(id));
+                    instructions.push(Instruction::WriteToVarAtAddress(address));
                 }
             }
             CommandKind::ConvertToInt => {
@@ -575,23 +591,23 @@ impl Compiler {
 
                 let mut is_global = false;
 
-                let id = match Compiler::get_id_and_globalness(name.as_str(), func, global, &mut is_global) {
+                let address = match Compiler::get_address_and_globalness(name.as_str(), func, global, &mut is_global) {
                     Some(id) => id,
                     None => return Err(format!("Variável {} não encontrada", name))
                 };
 
                 if is_global {
-                    instructions.push(Instruction::ReadGlobalVarWithId(id));
+                    instructions.push(Instruction::ReadGlobalVarFromAddress(address));
                 } else {
-                    instructions.push(Instruction::ReadVarWithId(id));
+                    instructions.push(Instruction::ReadVarFromAddress(address));
                 }
 
                 instructions.push(Instruction::ConvertToInt);
 
                 if is_global {
-                    instructions.push(Instruction::WriteToGlobalVarWithId(id));
+                    instructions.push(Instruction::WriteToGlobalVarAtAddress(address));
                 } else {
-                    instructions.push(Instruction::WriteToVarWithId(id));
+                    instructions.push(Instruction::WriteToVarAtAddress(address));
                 }
             }
             CommandKind::ConvertToNum => {
@@ -604,23 +620,23 @@ impl Compiler {
 
                 let mut is_global = false;
 
-                let id = match Compiler::get_id_and_globalness(name.as_str(), func, global, &mut is_global) {
-                    Some(id) => id,
+                let address = match Compiler::get_address_and_globalness(name.as_str(), func, global, &mut is_global) {
+                    Some(addr) => addr,
                     None => return Err(format!("Variável {} não encontrada", name))
                 };
 
                 if is_global {
-                    instructions.push(Instruction::ReadGlobalVarWithId(id));
+                    instructions.push(Instruction::ReadGlobalVarFromAddress(address));
                 } else {
-                    instructions.push(Instruction::ReadVarWithId(id));
+                    instructions.push(Instruction::ReadVarFromAddress(address));
                 }
 
-                instructions.push(Instruction::ConvertToNum);
+                instructions.push(Instruction::ConvertToInt);
 
                 if is_global {
-                    instructions.push(Instruction::WriteToGlobalVarWithId(id));
+                    instructions.push(Instruction::WriteToGlobalVarAtAddress(address));
                 } else {
-                    instructions.push(Instruction::WriteToVarWithId(id));
+                    instructions.push(Instruction::WriteToVarAtAddress(address));
                 }
             }
             CommandKind::IntoString => {
@@ -633,23 +649,23 @@ impl Compiler {
 
                 let mut is_global = false;
 
-                let id = match Compiler::get_id_and_globalness(name.as_str(), func, global, &mut is_global) {
+                let address = match Compiler::get_address_and_globalness(name.as_str(), func, global, &mut is_global) {
                     Some(id) => id,
                     None => return Err(format!("Variável {} não encontrada", name))
                 };
 
                 if is_global {
-                    instructions.push(Instruction::ReadGlobalVarWithId(id));
+                    instructions.push(Instruction::ReadGlobalVarFromAddress(address));
                 } else {
-                    instructions.push(Instruction::ReadVarWithId(id));
+                    instructions.push(Instruction::ReadVarFromAddress(address));
                 }
 
-                instructions.push(Instruction::ConvertToString);
+                instructions.push(Instruction::ConvertToInt);
 
                 if is_global {
-                    instructions.push(Instruction::WriteToGlobalVarWithId(id));
+                    instructions.push(Instruction::WriteToGlobalVarAtAddress(address));
                 } else {
-                    instructions.push(Instruction::WriteToVarWithId(id));
+                    instructions.push(Instruction::WriteToVarAtAddress(address));
                 }
             }
         }

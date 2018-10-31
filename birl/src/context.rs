@@ -18,7 +18,7 @@ pub const BIRL_MAIN_FUNCTION : &str
 
 pub const BIRL_MAIN_FUNCTION_ID     : u64 = 1;
 pub const BIRL_GLOBAL_FUNCTION_ID   : u64 = 0;
-pub const BIRL_RET_VAL_VAR_ID       : u64 = 0;
+pub const BIRL_RET_VAL_VAR_ADDRESS  : usize = 0;
 
 #[derive(Debug, Clone)]
 pub struct FunctionEntry {
@@ -27,13 +27,14 @@ pub struct FunctionEntry {
     pub body : Vec<Instruction>,
     pub params : Vec<FunctionParameter>,
     pub vars : Vec<Variable>,
-    pub next_var_id : u64,
+    pub next_var_address : usize,
 }
+
 impl FunctionEntry {
-	pub fn get_id_for(&self, var : &str) -> Option<u64> {
+	pub fn get_address_for(&self, var : &str) -> Option<usize> {
         for v in &self.vars {
             if v.name == var {
-                return Some(v.id);
+                return Some(v.address);
             }
         }
         None
@@ -47,25 +48,25 @@ impl FunctionEntry {
             params,
             vars : vec![Variable {
                 name : "TREZE".to_owned(),
-                id : BIRL_RET_VAL_VAR_ID,
+                address : BIRL_RET_VAL_VAR_ADDRESS,
                 writeable : true
             }],
-            next_var_id : 1,
+            next_var_address : 1,
         }
     }
 
-    pub fn add_var(&mut self, name : String, writeable : bool) -> Result<u64, String> {
+    pub fn add_var(&mut self, name : String, writeable : bool) -> Result<usize, String> {
         for v in &self.vars {
             if name == v.name.as_str() {
                 return Err(format!("A variável {} já está declarada.", name.as_str()));
             }
         }
 
-        let id = self.next_var_id;
-        self.vars.push(Variable { name, id, writeable });
-        self.next_var_id += 1;
+        let address = self.next_var_address;
+        self.vars.push(Variable { name, address, writeable });
+        self.next_var_address += 1;
 
-        Ok(id)
+        Ok(address)
     }
 }
 
@@ -93,19 +94,22 @@ pub struct Context {
 }
 
 struct ScopeManager {
-    ids : Vec<u64>
+    starting_address : usize,
+    addresses : Vec<usize>
 }
 impl ScopeManager {
-    fn empty() -> ScopeManager {
+    fn new(starting_address : usize) -> ScopeManager {
         ScopeManager {
-            ids : vec![]
+            starting_address,
+            addresses : vec![]
         }
     }
 
     fn at_end(self, func : &mut FunctionEntry) {
-        for id in self.ids {
+        func.next_var_address = self.starting_address;
+        for address in self.addresses {
             for i in 0..func.vars.len() {
-                if func.vars[i].id == id {
+                if func.vars[i].address == address {
                     func.vars.remove(i);
                     break;
                 }
@@ -135,7 +139,7 @@ impl Context {
             scope : Scope::Global,
             has_main : false,
             next_function_id : 2,
-            global_scope : vec![ScopeManager::empty()],
+            global_scope : vec![ScopeManager::new(0)],
             function_scope : vec![],
             last_function_id : 0,
         }
@@ -232,7 +236,7 @@ impl Context {
         }
 
         self.scope = Scope::Function;
-        self.function_scope.push(ScopeManager::empty());
+        self.function_scope.push(ScopeManager::new(0));
         Ok(())
     }
 
@@ -282,7 +286,7 @@ impl Context {
                 if let Some(hint) = hint {
                     match hint {
                         CompilerHint::DeclareVar(var) => {
-                            let id = {
+                            let address = {
                                 let entry = match self.scope {
                                     Scope::Global => {
                                         match self.get_entry_by_id_mut(BIRL_GLOBAL_FUNCTION_ID) {
@@ -322,15 +326,30 @@ impl Context {
                                 }
                             };
 
-                            scope.ids.push(id);
+                            scope.addresses.push(address);
                         }
                         CompilerHint::ScopeStart => {
-                            let scope = match self.scope {
-                                Scope::Global => &mut self.global_scope,
-                                Scope::Function => &mut self.function_scope,
+                            let (scope, starting_address) = match self.scope {
+                                Scope::Global => {
+                                    let addr = match self.get_entry_by_id(BIRL_GLOBAL_FUNCTION_ID) {
+                                        Some(i) => i.next_var_address,
+                                        None => return Err("Could not retrieve global function".to_owned())
+                                    };
+
+                                    (&mut self.global_scope, addr)
+                                },
+                                Scope::Function => {
+                                    let cur = self.last_function_id;
+                                    let addr = match self.get_entry_by_id(cur) {
+                                        Some(i) => i.next_var_address,
+                                        None => return Err("Could not retrieve last function entry".to_owned())
+                                    };
+
+                                    (&mut self.function_scope, addr)
+                                },
                             };
 
-                            scope.push(ScopeManager::empty());
+                            scope.push(ScopeManager::new(starting_address));
                         }
                         CompilerHint::ScopeEnd => {
                             let scope = {
@@ -464,7 +483,7 @@ impl Context {
 
                     for v in &f.vars {
                         if v.name == arg_name {
-                            eid = Some(v.id);
+                            eid = Some(v.address);
 
                             break;
                         }
@@ -484,7 +503,7 @@ impl Context {
 
                     instructions.push(Instruction::AssertMainTopTypeCompatible(exp));
 
-                    instructions.push(Instruction::WriteToVarWithId(eid.unwrap()));
+                    instructions.push(Instruction::WriteToVarAtAddress(eid.unwrap()));
                 }
 
                 instructions.push(Instruction::SetLastFrameReady);
