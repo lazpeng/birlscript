@@ -1,7 +1,6 @@
 //! The virtual machine runs code (DUH)
 
 use parser::{ TypeKind, IntegerType };
-use context::BIRL_RET_VAL_VAR_ADDRESS;
 
 use std::io::{ Write, BufRead };
 use std::fmt::{ Display, self };
@@ -22,7 +21,7 @@ pub enum Comparision {
 impl Display for Comparision {
     fn fmt(&self, f : &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Comparision::Equal =>    write!(f, "Igual"),
+            Comparision::Equal    => write!(f, "Igual"),
             Comparision::NotEqual => write!(f, "Diferente"),
             Comparision::LessThan => write!(f, "Menor"),
             Comparision::MoreThan => write!(f, "Maior"),
@@ -114,7 +113,7 @@ impl StringStorage {
 
 #[derive(Debug)]
 pub struct FunctionFrame {
-    id : u64,
+    id : usize,
     stack : Vec<DynamicValue>,
     program_counter : usize,
     last_comparision : Option<Comparision>,
@@ -122,10 +121,11 @@ pub struct FunctionFrame {
     string_storage : StringStorage,
     ready : bool,
     skip_level : u32,
+    stack_size : usize,
 }
 
 impl FunctionFrame {
-    pub fn new(id : u64, stack_size : usize) -> FunctionFrame {
+    pub fn new(id : usize, stack_size : usize) -> FunctionFrame {
         FunctionFrame {
             id,
             stack : vec![DynamicValue::Null; stack_size],
@@ -135,6 +135,7 @@ impl FunctionFrame {
             string_storage : StringStorage::new(),
             ready : false,
             skip_level : 0,
+            stack_size,
         }
     }
 }
@@ -144,6 +145,7 @@ pub enum ExecutionStatus {
     Normal,
     Quit,
     Returned,
+    Halt,
 }
 
 pub struct VirtualMachine {
@@ -155,6 +157,9 @@ pub struct VirtualMachine {
     callstack : Vec<FunctionFrame>,
     stdout: Option<Box<Write>>,
     stdin:  Option<Box<BufRead>>,
+    code : Vec<Vec<Instruction>>,
+    next_code_index : usize,
+    is_interactive : bool,
 }
 
 macro_rules! vm_write{
@@ -179,7 +184,55 @@ impl VirtualMachine {
             callstack : vec![],
             stdout: None,
             stdin: None,
+            code : vec![],
+            next_code_index : 0,
+            is_interactive : false,
         }
+    }
+
+    pub fn set_interactive_mode(&mut self) {
+        self.is_interactive = true;
+    }
+
+    pub fn execute_next_instruction(&mut self) -> Result<ExecutionStatus, String> {
+        if self.callstack.is_empty() {
+            return Err("Nenhuma função em execução".to_owned());
+        }
+
+        let pc = match self.get_current_pc() {
+            Some(p) => p,
+            None => return Err("Nenhuma função em execução".to_owned()),
+        };
+
+        let id = match self.get_current_id() {
+            Some(i) => i,
+            None => return Err("Nenhuma função em execução".to_owned())
+        };
+
+        if self.code.len() <= id {
+            return Err("ID atual pra função é inválida".to_owned());
+        }
+
+        let instruction = {
+            let code = &self.code[id];
+
+            if code.len() <= pc {
+                if self.callstack.len() == 1 && self.is_interactive {
+                    return Ok(ExecutionStatus::Halt);
+                } else {
+                    Instruction::Return
+                }
+            } else {
+                code[pc].clone()
+            }
+        };
+
+        match self.increment_pc() {
+            Ok(_) => {}
+            Err(e) => return Err(e),
+        }
+
+        self.run(instruction)
     }
 
     pub fn set_stdout(&mut self, write: Option<Box<Write>>) -> Option<Box<Write>>{
@@ -219,7 +272,7 @@ impl VirtualMachine {
         None
     }
 
-    pub fn get_current_id(&self) -> Option<u64> {
+    fn get_current_id(&self) -> Option<usize> {
         if self.callstack.is_empty() {
             None
         } else {
@@ -235,6 +288,26 @@ impl VirtualMachine {
             return None;
         }
         Some(self.main_stack[self.main_stack_top - 1])
+    }
+
+    pub fn get_next_code_id(&self) -> usize {
+        self.next_code_index
+    }
+
+    pub fn get_code_for(&mut self, id : usize) -> Option<&mut Vec<Instruction>> {
+        if self.code.len() <= id {
+            None
+        } else {
+            Some(&mut self.code[id])
+        }
+    }
+
+    pub fn add_new_code(&mut self) -> usize {
+        let id = self.next_code_index;
+        self.next_code_index += 1;
+        self.code.push(vec![]);
+
+        id
     }
 
     fn pop_main(&mut self) -> Option<DynamicValue> {
@@ -742,9 +815,9 @@ impl VirtualMachine {
         self.stack_size = size;
     }
 
-    pub fn run(&mut self, inst : &Instruction) -> Result<ExecutionStatus, String> {
+    pub fn run(&mut self, inst : Instruction) -> Result<ExecutionStatus, String> {
         if self.get_current_skip_level() > 0 {
-            if let &Instruction::EndExecuteIf = inst {
+            if let Instruction::EndExecuteIf = inst {
                 self.decrease_skip_level()?;
             }
 
@@ -754,7 +827,7 @@ impl VirtualMachine {
         match inst {
             Instruction::EndExecuteIf => {},
             Instruction::PushMainInt(i) => {
-                let dyn = DynamicValue::Integer(*i);
+                let dyn = DynamicValue::Integer(i);
 
                 match self.push_main(dyn) {
                     Some(_) => {}
@@ -762,15 +835,15 @@ impl VirtualMachine {
                 }
             }
             Instruction::PushMainNum(n) => {
-                let dyn = DynamicValue::Number(*n);
+                let dyn = DynamicValue::Number(n);
 
                 match self.push_main(dyn) {
                     Some(_) => {}
                     None => return Err("Main stack overflow".to_owned()),
                 }
             }
-            Instruction::PushMainStr(str) => {
-                let id = self.main_storage.add(str.as_str());
+            Instruction::PushMainStr(s) => {
+                let id = self.main_storage.add_string(s);
 
                 let dyn = DynamicValue::Text(id);
 
@@ -912,7 +985,7 @@ impl VirtualMachine {
                     None => return Err("Nenhuma função em execução".to_owned())
                 };
 
-                match self.read_from_id_to_main(index, *address) {
+                match self.read_from_id_to_main(index, address) {
                     Ok(_) => {}
                     Err(e) => return Err(e)
                 }
@@ -923,26 +996,26 @@ impl VirtualMachine {
                     None => return Err("Nenhuma função em execução".to_owned())
                 };
 
-                match self.write_main_top_to(index, *address) {
+                match self.write_main_top_to(index, address) {
                     Ok(_) => {}
                     Err(e) => return Err(e)
                 }
             }
             Instruction::WriteToLastFrameVarAtAddress(address) => {
                 let len = self.callstack.len();
-                match self.write_main_top_to(len - 1, *address) {
+                match self.write_main_top_to(len - 1, address) {
                     Ok(_) => {}
                     Err(e) => return Err(e)
                 }
             }
             Instruction::ReadGlobalVarFromAddress(address) => {
-                match self.read_from_id_to_main(0, *address) {
+                match self.read_from_id_to_main(0, address) {
                     Ok(_) => {}
                     Err(e) => return Err(e)
                 }
             }
             Instruction::WriteToGlobalVarAtAddress(address) => {
-                match self.write_main_top_to(0, *address) {
+                match self.write_main_top_to(0, address) {
                     Ok(_) => {}
                     Err(e) => return Err(e)
                 }
@@ -970,9 +1043,7 @@ impl VirtualMachine {
             }
             Instruction::Return => {
                 if self.callstack.len() == 1 {
-                    self.has_quit = true;
-
-                    return Ok(ExecutionStatus::Quit);
+                    return Err("Return usado na função global".to_owned());
                 }
 
                 if self.main_stack_top == 0 {
@@ -980,7 +1051,7 @@ impl VirtualMachine {
                 }
 
                 let len = self.callstack.len();
-                match self.write_main_top_to(len - 2, BIRL_RET_VAL_VAR_ADDRESS) {
+                match self.write_main_top_to(len - 2, 0) {
                     Ok(_) => {}
                     Err(e) => return Err(e),
                 }
@@ -1076,7 +1147,7 @@ impl VirtualMachine {
             Instruction::MakeNewFrame(id) => {
                 // Add a new, not ready frame to the callstack
 
-                let frame = FunctionFrame::new(*id, self.stack_size);
+                let frame = FunctionFrame::new(id, self.stack_size);
 
                 self.callstack.push(frame);
             }
@@ -1098,21 +1169,21 @@ impl VirtualMachine {
                 match v {
                     DynamicValue::Null => return Err("Tipo incompatível : Null".to_owned()),
                     DynamicValue::Text(_) => {
-                        if kind == &TypeKind::Text {
+                        if kind == TypeKind::Text {
                             // Ok
                         } else {
                             return Err("Tipo incompatível : Texto".to_owned());
                         }
                     }
                     DynamicValue::Integer(_) => {
-                        if kind == &TypeKind::Integer || kind == &TypeKind::Number {
+                        if kind == TypeKind::Integer || kind == TypeKind::Number {
                             // Ok
                         } else {
                             return Err("Tipo incompatível : Int ou Num".to_owned());
                         }
                     }
                     DynamicValue::Number(_) => {
-                        if kind == &TypeKind::Number {
+                        if kind == TypeKind::Number {
                             // Ok
                         } else {
                             return Err("Tipo incompatível : Number".to_owned());
@@ -1228,7 +1299,7 @@ pub enum Instruction {
     ExecuteIfGreaterOrEqual,
     ExecuteIfLess,
     ExecuteIfLessOrEqual,
-    MakeNewFrame(u64),
+    MakeNewFrame(usize),
     SetLastFrameReady,
     // For use when pushing arguments for a function. Check if the value on the top of the main stack
     // has a compatible type

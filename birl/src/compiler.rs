@@ -1,29 +1,91 @@
-use parser::{ Expression, ExpressionNode, Command, CommandArgument, MathOperator, MathValue, CommandKind };
+use std::collections::HashMap;
+use parser::{ Expression, ExpressionNode, FunctionParameter, Command, TypeKind, CommandArgument, MathOperator, MathValue, CommandKind };
 use vm::Instruction;
-use context::{ BIRL_GLOBAL_FUNCTION_ID, FunctionEntry };
+use context::RawValue;
 
-#[derive(Debug, Clone)]
-pub struct Variable {
-    pub name : String,
-    pub address : usize,
-    pub writeable : bool,
+#[derive(Debug)]
+enum SubScopeKind {
+    ForLoop,
+    WhileLoop,
+    ExecuteIf,
+    Regular,
+}
+
+#[derive(PartialEq)]
+enum ScopeKind {
+    Function,
+    Global
+}
+
+#[derive(Debug)]
+struct SymbolEntry {
+    address : usize,
+    global : bool,
+}
+
+impl SymbolEntry {
+    fn from(address : usize, global : bool) -> SymbolEntry {
+        SymbolEntry { address, global }
+    }
+}
+
+#[derive(Debug)]
+struct ScopeInfo {
+    symbol_table : HashMap<String, SymbolEntry>,
+    scope_kind : SubScopeKind,
+    previous_next_var_address : usize,
+}
+
+impl ScopeInfo {
+    fn new(scope_kind : SubScopeKind, previous_next_var_address : usize, is_global : bool) -> ScopeInfo {
+        let mut symbol_table = HashMap::new();
+        symbol_table.insert("TREZE".to_owned(), SymbolEntry::from(0, is_global));
+
+        ScopeInfo {
+            symbol_table,
+            scope_kind,
+            previous_next_var_address,
+        }
+    }
+}
+
+struct FunctionInfo {
+    address : usize,
+    arguments : Vec<TypeKind>,
+}
+
+impl FunctionInfo {
+    fn from(address : usize, arguments : Vec<TypeKind>) -> FunctionInfo {
+        FunctionInfo { address, arguments }
+    }
 }
 
 pub enum CompilerHint {
-    DeclareVar(Variable),
     ScopeStart,
     ScopeEnd,
 }
 
-enum SubScopeKind {
-    ForLoop,
-    ExecuteIf
-}
-
 pub struct Compiler {
+    scopes : Vec<ScopeInfo>,
+    functions : HashMap<String, FunctionInfo>,
+    next_var_address : usize,
+    current_scope : ScopeKind,
 }
 
 impl Compiler {
+    pub fn new() -> Compiler {
+        let mut funcs = HashMap::new();
+        funcs.insert("__global__".to_owned(), FunctionInfo::from(0, vec![]));
+        funcs.insert("SHOW".to_owned(), FunctionInfo::from(1, vec![]));
+
+        Compiler {
+            scopes : vec![ScopeInfo::new(SubScopeKind::Regular, 1, true)],
+            functions : funcs,
+            next_var_address : 1,
+            current_scope : ScopeKind::Global,
+        }
+    }
+
     fn get_inst_for_op(op : MathOperator) -> Option<Instruction> {
         match op {
             MathOperator::Plus => Some(Instruction::MainAdd),
@@ -34,8 +96,8 @@ impl Compiler {
         }
     }
 
-    fn compile_sub_expression(expr : &Expression, offset : &mut usize, inst : &mut Vec<Instruction>,
-                              func : &FunctionEntry, global : &Option<&FunctionEntry>) -> Result<(), String> {
+    fn compile_sub_expression(&self, expr : &Expression, offset : &mut usize, inst : &mut Vec<Instruction>)
+            -> Result<(), String> {
         let mut buffer : Vec<Instruction> = vec![];
 
         let mut last_imp_op : Option<MathOperator> = None;
@@ -54,7 +116,7 @@ impl Compiler {
                 &ExpressionNode::Operator(op) => {
                     match op {
                         MathOperator::ParenthesisLeft => {
-                            match Compiler::compile_sub_expression(expr, offset, inst, func, &global) {
+                            match self.compile_sub_expression(expr, offset, inst) {
                                 Ok(_) => {}
                                 Err(e) => return Err(e),
                             }
@@ -108,38 +170,15 @@ impl Compiler {
                     }
                 }
                 &ExpressionNode::Symbol(ref s) => {
-                    let mut on_global = false;
-
-                    let address = match func.get_address_for(s.as_str()) {
-                        Some(i) => {
-                            if func.id == BIRL_GLOBAL_FUNCTION_ID {
-                                on_global = true;
-                            }
-
-                            i
-                        }
-                        None => {
-                            if func.id == BIRL_GLOBAL_FUNCTION_ID {
-                                return Err(format!("Variável não encontrada : {}", s.as_str()));
-                            }
-
-                            if let &Some(ref g) = global {
-                                on_global = true;
-
-                                match g.get_address_for(s.as_str()) {
-                                    Some(i) => i,
-                                    None => return Err(format!("Variável não encontrada : {}", s.as_str())),
-                                }
-                            } else {
-                                return Err("Erro interno : Função não é global e global é None".to_owned());
-                            }
-                        }
+                    let entry = match self.find_symbol(s) {
+                        Some(e) => e,
+                        None => return Err(format!("Variável {} não encontrada", s))
                     };
 
-                    let inst = if on_global {
-                        Instruction::ReadGlobalVarFromAddress(address)
+                    let inst = if entry.global {
+                        Instruction::ReadGlobalVarFromAddress(entry.address)
                     } else {
-                        Instruction::ReadVarFromAddress(address)
+                        Instruction::ReadVarFromAddress(entry.address)
                     };
 
                     buffer.push(inst);
@@ -174,45 +213,38 @@ impl Compiler {
         Ok(())
     }
 
-    pub fn compile_expression(expr : &Expression, inst : &mut Vec<Instruction>, func : &FunctionEntry,
-                              global : &Option<&FunctionEntry>) -> Result<(), String> {
+    pub fn compile_expression(&self, expr : &Expression, inst : &mut Vec<Instruction>) -> Result<(), String> {
         let mut offset = 0usize;
-        Compiler::compile_sub_expression(expr, &mut offset, inst, func, global)
+        self.compile_sub_expression(expr, &mut offset, inst)
     }
 
-    fn get_address_and_globalness(name : &str, func : &FunctionEntry, global : &Option<&FunctionEntry>,
-                                  is_global : &mut bool) -> Option<usize> {
-        match func.get_address_for(name) {
-            Some(addr) => {
-                if func.id == BIRL_GLOBAL_FUNCTION_ID {
-                    *is_global = true;
-                }
+    fn end_scope(&mut self, info : ScopeInfo) {
+        self.next_var_address = info.previous_next_var_address;
+    }
 
-                Some(addr)
-            }
-            None => {
-                if func.id == BIRL_GLOBAL_FUNCTION_ID {
-                    return None;
-                }
-
-                if let Some(g) = global {
-                    match g.get_address_for(name) {
-                        Some(addr) => {
-                            *is_global = true;
-                            Some(addr)
-                        }
-                        None => None,
-                    }
-                } else {
-                    None
-                }
+    fn find_symbol(&self, name : &str) -> Option<&SymbolEntry> {
+        for scope in (&self.scopes).into_iter().rev() {
+            match scope.symbol_table.get(name) {
+                Some(v) => return Some(v),
+                None => {}
             }
         }
+
+        None
     }
 
-    pub fn compile_command(mut cmd : Command, func : &FunctionEntry, global : &Option<&FunctionEntry>,
-        funcs : &Vec<FunctionEntry>, instructions : &mut Vec<Instruction>) -> Result<Option<CompilerHint>, String> {
+    fn get_function_info(&self, id : usize) -> Option<&FunctionInfo> {
+        for (_, f) in &self.functions {
+            if f.address == id {
+                return Some(f);
+            }
+        }
 
+        None
+    }
+
+    pub fn compile_command(&mut self, mut cmd : Command, instructions : &mut Vec<Instruction>)
+            -> Result<Option<CompilerHint>, String> {
         match cmd.kind {
             CommandKind::PrintDebug => {
                 // Evaluate the single argument and print-debug it
@@ -224,7 +256,7 @@ impl Compiler {
                 for arg in cmd.arguments {
                     match arg {
                         CommandArgument::Expression(expr) => {
-                            match Compiler::compile_expression(&expr, instructions, &func, global) {
+                            match self.compile_expression(&expr, instructions) {
                                 Ok(_) => {},
                                 Err(e) => return Err(e),
                             };
@@ -239,7 +271,7 @@ impl Compiler {
                 for arg in cmd.arguments {
                     match arg {
                         CommandArgument::Expression(expr) => {
-                            match Compiler::compile_expression(&expr, instructions, &func, global) {
+                            match self.compile_expression(&expr, instructions) {
                                 Ok(_) => {},
                                 Err(e) => return Err(e),
                             };
@@ -256,7 +288,7 @@ impl Compiler {
                 for arg in cmd.arguments {
                     match arg {
                         CommandArgument::Expression(expr) => {
-                            match Compiler::compile_expression(&expr, instructions, &func, global) {
+                            match self.compile_expression(&expr, instructions) {
                                 Ok(_) => {},
                                 Err(e) => return Err(e),
                             };
@@ -282,10 +314,8 @@ impl Compiler {
                     _ => return Err(format!("Erro interno : Esperado um nome pro BORA, encontrado {:?}", name_arg)),
                 };
 
-                let mut is_global = false;
-
-                let address = match Compiler::get_address_and_globalness(name.as_str(), func, global, &mut is_global) {
-                    Some(id) => id,
+                let entry = match self.find_symbol(name.as_str()) {
+                    Some(e) => e,
                     None => return Err(format!("Variável {} não encontrada", name))
                 };
 
@@ -293,7 +323,7 @@ impl Compiler {
 
                 match expr_arg {
                     CommandArgument::Expression(expr) => {
-                        match Compiler::compile_expression(&expr, instructions, &func, global) {
+                        match self.compile_expression(&expr, instructions) {
                             Ok(_) => {}
                             Err(e) => return Err(e)
                         }
@@ -301,10 +331,10 @@ impl Compiler {
                     _ => return Err(format!("Erro interno : Esperado uma expressão depois do nome, encontrado {:?}", expr_arg)),
                 }
 
-                let inst = if is_global {
-                    Instruction::WriteToGlobalVarAtAddress(address)
+                let inst = if entry.global {
+                    Instruction::WriteToGlobalVarAtAddress(entry.address)
                 } else {
-                    Instruction::WriteToVarAtAddress(address)
+                    Instruction::WriteToVarAtAddress(entry.address)
                 };
 
                 instructions.push(inst);
@@ -321,13 +351,13 @@ impl Compiler {
                     _ => return Err(format!("Erro interno : Esperado um nome pro BORA, encontrado {:?}", name_arg)),
                 };
 
-                let is_global = func.id == BIRL_GLOBAL_FUNCTION_ID;
+                let is_global = self.current_scope == ScopeKind::Global;
 
                 let expr_arg = cmd.arguments.remove(0);
 
                 match expr_arg {
                     CommandArgument::Expression(expr) => {
-                        match Compiler::compile_expression(&expr, instructions, &func, global) {
+                        match self.compile_expression(&expr, instructions) {
                             Ok(_) => {}
                             Err(e) => return Err(e)
                         }
@@ -337,17 +367,19 @@ impl Compiler {
 
                 // Add the variable after the expression is parsed, so we can't use the variable before a value is set
 
-                let address = func.next_var_address;
+                let address = self.next_var_address;
+                self.next_var_address += 1;
 
-                let result = CompilerHint::DeclareVar(Variable { name, address, writeable : true });
+                match self.scopes.last_mut() {
+                    Some(s) => s.symbol_table.insert(name, SymbolEntry::from(address, is_global)),
+                    None => return Err(format!("Scopes é vazio"))
+                };
 
                 if is_global {
                     instructions.push(Instruction::WriteToGlobalVarAtAddress(address));
                 } else {
                     instructions.push(Instruction::WriteToVarAtAddress(address));
                 }
-
-                return Ok(Some(result));
             }
             CommandKind::Return => {
                 if cmd.arguments.is_empty() {
@@ -357,7 +389,7 @@ impl Compiler {
 
                     match expr_arg {
                         CommandArgument::Expression(expr) => {
-                            match Compiler::compile_expression(&expr, instructions, &func, global) {
+                            match self.compile_expression(&expr, instructions) {
                                 Ok(_) => {}
                                 Err(e) => return Err(e)
                             }
@@ -373,7 +405,7 @@ impl Compiler {
 
                 match left_expr_arg {
                     CommandArgument::Expression(expr) => {
-                        match Compiler::compile_expression(&expr, instructions, &func, global) {
+                        match self.compile_expression(&expr, instructions) {
                             Ok(_) => {}
                             Err(e) => return Err(e)
                         }
@@ -385,7 +417,7 @@ impl Compiler {
 
                 match right_expr_arg {
                     CommandArgument::Expression(expr) => {
-                        match Compiler::compile_expression(&expr, instructions, &func, global) {
+                        match self.compile_expression(&expr, instructions) {
                             Ok(_) => {}
                             Err(e) => return Err(e)
                         }
@@ -396,47 +428,64 @@ impl Compiler {
                 instructions.push(Instruction::CompareMainTop);
             }
             CommandKind::EndSubScope => {
-                /*match self.get_last_subscope() {
-                    Some(SubScopeKind::ExecuteIf) => instructions.push(Instruction::EndExecuteIf),
-                    _ => unimplemented!(),
-                    None => return Err("Nenhum scope pra fechar".to_owned())
-                }*/
-                instructions.push(Instruction::EndExecuteIf);
+                let scope_info = match self.scopes.pop() {
+                    Some(s) => s,
+                    None => return Err(format!("FIM fora de qualquer scope"))
+                };
+
+                match scope_info.scope_kind {
+                    SubScopeKind::ExecuteIf => instructions.push(Instruction::EndExecuteIf),
+                    _ => {}
+                }
+
+                self.end_scope(scope_info);
 
                 return Ok(Some(CompilerHint::ScopeEnd));
             },
             CommandKind::ExecuteIfEqual => {
-                //self.subscopes.push(SubScopeKind::ExecuteIf);
+                let is_global = self.current_scope == ScopeKind::Global;
+                self.scopes.push(ScopeInfo::new(SubScopeKind::ExecuteIf,
+                                                self.next_var_address, is_global));
                 instructions.push(Instruction::ExecuteIfEqual);
 
                 return Ok(Some(CompilerHint::ScopeStart));
             },
             CommandKind::ExecuteIfNotEqual => {
-                //self.subscopes.push(SubScopeKind::ExecuteIf);
+                let is_global = self.current_scope == ScopeKind::Global;
+                self.scopes.push(ScopeInfo::new(SubScopeKind::ExecuteIf,
+                                                self.next_var_address, is_global));
                 instructions.push(Instruction::ExecuteIfNotEqual);
 
                 return Ok(Some(CompilerHint::ScopeStart));
             },
             CommandKind::ExecuteIfEqualOrGreater => {
-                //self.subscopes.push(SubScopeKind::ExecuteIf);
+                let is_global = self.current_scope == ScopeKind::Global;
+                self.scopes.push(ScopeInfo::new(SubScopeKind::ExecuteIf,
+                                                self.next_var_address, is_global));
                 instructions.push(Instruction::ExecuteIfGreaterOrEqual);
 
                 return Ok(Some(CompilerHint::ScopeStart));
             },
             CommandKind::ExecuteIfGreater => {
-                //self.subscopes.push(SubScopeKind::ExecuteIf);
+                let is_global = self.current_scope == ScopeKind::Global;
+                self.scopes.push(ScopeInfo::new(SubScopeKind::ExecuteIf,
+                                                self.next_var_address, is_global));
                 instructions.push(Instruction::ExecuteIfGreater);
 
                 return Ok(Some(CompilerHint::ScopeStart));
             },
             CommandKind::ExecuteIfEqualOrLess => {
-                //self.subscopes.push(SubScopeKind::ExecuteIf);
+                let is_global = self.current_scope == ScopeKind::Global;
+                self.scopes.push(ScopeInfo::new(SubScopeKind::ExecuteIf,
+                                                self.next_var_address, is_global));
                 instructions.push(Instruction::ExecuteIfLessOrEqual);
 
                 return Ok(Some(CompilerHint::ScopeStart));
             },
             CommandKind::ExecuteIfLess => {
-                //self.subscopes.push(SubScopeKind::ExecuteIf);
+                let is_global = self.current_scope == ScopeKind::Global;
+                self.scopes.push(ScopeInfo::new(SubScopeKind::ExecuteIf,
+                                                self.next_var_address, is_global));
                 instructions.push(Instruction::ExecuteIfLess);
 
                 return Ok(Some(CompilerHint::ScopeStart));
@@ -451,62 +500,43 @@ impl Compiler {
                     _ => return Err(format!("Erro interno : Esperado um nome pra função")),
                 };
 
-                for cf in funcs {
-                    if cf.name == name {
+                let info = match self.functions.get(name.as_str()) {
+                    Some(i) => i,
+                    None => return Err(format!("Não existe função com nome {}", name))
+                };
 
-                        instructions.push(Instruction::MakeNewFrame(cf.id));
+                instructions.push(Instruction::MakeNewFrame(info.address));
 
-                        // Check number of arguments
-
-                        if cf.params.len() != cmd.arguments.len() {
-                            return Err(format!("A função {} espera {} argumentos, mas {} foram passados",
-                                name, cf.params.len(), cmd.arguments.len()));
-                        }
-
-                        // Push arguments and check their type
-
-                        for index in 0..cf.params.len() {
-                            let arg_arg = cmd.arguments.remove(0);
-
-                            let expr = match arg_arg {
-                                CommandArgument::Expression(e) => e,
-                                _ => return Err("Erro interno : Era esperado um valor como argumento \
-                                                    pro comando.".to_owned()),
-                            };
-
-                            let expected_type = cf.params[index].kind;
-                            let arg_name = cf.params[index].name.as_str();
-
-                            let mut arg_address = None;
-
-                            for v in &cf.vars {
-                                if v.name == arg_name {
-                                    arg_address = Some(v.address);
-                                }
-                            }
-
-                            if let None = arg_address {
-                                return Err(format!("Erro interno : O parâmetro {} não está registrado como variável",
-                                                   arg_name));
-                            }
-
-                            match Compiler::compile_expression(&expr, instructions, &func, global) {
-                                Ok(_) => {}
-                                Err(e) => return Err(e)
-                            };
-
-                            instructions.push(Instruction::AssertMainTopTypeCompatible(expected_type));
-
-                            instructions.push(Instruction::WriteToLastFrameVarAtAddress(arg_address.unwrap()));
-                        }
-
-                        instructions.push(Instruction::SetLastFrameReady);
-
-                        return Ok(None);
-                    }
+                if info.arguments.len() != cmd.arguments.len() {
+                    return Err(format!("A função {} espera {} argumentos, mas {} foram passados",
+                                       name, info.arguments.len(), cmd.arguments.len()));
                 }
 
-                return Err(format!("A função {} não foi encontrada", name));
+                for index in 0..info.arguments.len() {
+                    let arg_arg = cmd.arguments.remove(0);
+
+                    let expr = match arg_arg {
+                        CommandArgument::Expression(e) => e,
+                        _ => return Err("Erro interno : Era esperado um valor como argumento \
+                                                    pro comando.".to_owned()),
+                    };
+
+                    let expected_type = info.arguments[index];
+
+                    // The parameter address is, in this case, index + 1 (because the address 0 is reserved to
+                    // the return value)
+
+                    match self.compile_expression(&expr, instructions) {
+                        Ok(_) => {}
+                        Err(e) => return Err(e)
+                    };
+
+                    instructions.push(Instruction::AssertMainTopTypeCompatible(expected_type));
+
+                    instructions.push(Instruction::WriteToLastFrameVarAtAddress(index + 1));
+                }
+
+                instructions.push(Instruction::SetLastFrameReady);
             }
             CommandKind::GetStringInput => {
                 let name_arg = cmd.arguments.remove(0);
@@ -516,19 +546,17 @@ impl Compiler {
                     _ => return Err("Erro interno : Esperado um nome pra GetInput*".to_owned()),
                 };
 
-                let mut is_global = false;
-
-                let address = match Compiler::get_address_and_globalness(name.as_str(), func, global, &mut is_global) {
-                    Some(id) => id,
+                let entry = match self.find_symbol(name.as_str()) {
+                    Some(e) => e,
                     None => return Err(format!("Variável {} não encontrada", name))
                 };
 
                 instructions.push(Instruction::ReadInput);
 
-                if is_global {
-                    instructions.push(Instruction::WriteToGlobalVarAtAddress(address));
+                if entry.global {
+                    instructions.push(Instruction::WriteToGlobalVarAtAddress(entry.address));
                 } else {
-                    instructions.push(Instruction::WriteToVarAtAddress(address));
+                    instructions.push(Instruction::WriteToVarAtAddress(entry.address));
                 }
             }
             CommandKind::GetIntegerInput => {
@@ -539,10 +567,8 @@ impl Compiler {
                     _ => return Err("Erro interno : Esperado um nome pra GetInput*".to_owned()),
                 };
 
-                let mut is_global = false;
-
-                let address = match Compiler::get_address_and_globalness(name.as_str(), func, global, &mut is_global) {
-                    Some(id) => id,
+                let entry = match self.find_symbol(name.as_str()) {
+                    Some(e) => e,
                     None => return Err(format!("Variável {} não encontrada", name))
                 };
 
@@ -550,10 +576,10 @@ impl Compiler {
 
                 instructions.push(Instruction::ConvertToInt);
 
-                if is_global {
-                    instructions.push(Instruction::WriteToGlobalVarAtAddress(address));
+                if entry.global {
+                    instructions.push(Instruction::WriteToGlobalVarAtAddress(entry.address));
                 } else {
-                    instructions.push(Instruction::WriteToVarAtAddress(address));
+                    instructions.push(Instruction::WriteToVarAtAddress(entry.address));
                 }
             }
             CommandKind::GetNumberInput => {
@@ -564,10 +590,8 @@ impl Compiler {
                     _ => return Err("Erro interno : Esperado um nome pra GetInput*".to_owned()),
                 };
 
-                let mut is_global = false;
-
-                let address = match Compiler::get_address_and_globalness(name.as_str(), func, global, &mut is_global) {
-                    Some(id) => id,
+                let entry = match self.find_symbol(name.as_str()) {
+                    Some(e) => e,
                     None => return Err(format!("Variável {} não encontrada", name))
                 };
 
@@ -575,10 +599,10 @@ impl Compiler {
 
                 instructions.push(Instruction::ConvertToNum);
 
-                if is_global {
-                    instructions.push(Instruction::WriteToGlobalVarAtAddress(address));
+                if entry.global {
+                    instructions.push(Instruction::WriteToGlobalVarAtAddress(entry.address));
                 } else {
-                    instructions.push(Instruction::WriteToVarAtAddress(address));
+                    instructions.push(Instruction::WriteToVarAtAddress(entry.address));
                 }
             }
             CommandKind::ConvertToInt => {
@@ -589,25 +613,23 @@ impl Compiler {
                     _ => return Err("Erro interno : Esperado um nome pra GetInput*".to_owned()),
                 };
 
-                let mut is_global = false;
-
-                let address = match Compiler::get_address_and_globalness(name.as_str(), func, global, &mut is_global) {
-                    Some(id) => id,
+                let entry = match self.find_symbol(name.as_str()) {
+                    Some(e) => e,
                     None => return Err(format!("Variável {} não encontrada", name))
                 };
 
-                if is_global {
-                    instructions.push(Instruction::ReadGlobalVarFromAddress(address));
+                if entry.global {
+                    instructions.push(Instruction::ReadGlobalVarFromAddress(entry.address));
                 } else {
-                    instructions.push(Instruction::ReadVarFromAddress(address));
+                    instructions.push(Instruction::ReadVarFromAddress(entry.address));
                 }
 
                 instructions.push(Instruction::ConvertToInt);
 
-                if is_global {
-                    instructions.push(Instruction::WriteToGlobalVarAtAddress(address));
+                if entry.global {
+                    instructions.push(Instruction::WriteToGlobalVarAtAddress(entry.address));
                 } else {
-                    instructions.push(Instruction::WriteToVarAtAddress(address));
+                    instructions.push(Instruction::WriteToVarAtAddress(entry.address));
                 }
             }
             CommandKind::ConvertToNum => {
@@ -618,25 +640,23 @@ impl Compiler {
                     _ => return Err("Erro interno : Esperado um nome pra GetInput*".to_owned()),
                 };
 
-                let mut is_global = false;
-
-                let address = match Compiler::get_address_and_globalness(name.as_str(), func, global, &mut is_global) {
-                    Some(addr) => addr,
+                let entry = match self.find_symbol(name.as_str()) {
+                    Some(e) => e,
                     None => return Err(format!("Variável {} não encontrada", name))
                 };
 
-                if is_global {
-                    instructions.push(Instruction::ReadGlobalVarFromAddress(address));
+                if entry.global {
+                    instructions.push(Instruction::ReadGlobalVarFromAddress(entry.address));
                 } else {
-                    instructions.push(Instruction::ReadVarFromAddress(address));
+                    instructions.push(Instruction::ReadVarFromAddress(entry.address));
                 }
 
                 instructions.push(Instruction::ConvertToInt);
 
-                if is_global {
-                    instructions.push(Instruction::WriteToGlobalVarAtAddress(address));
+                if entry.global {
+                    instructions.push(Instruction::WriteToGlobalVarAtAddress(entry.address));
                 } else {
-                    instructions.push(Instruction::WriteToVarAtAddress(address));
+                    instructions.push(Instruction::WriteToVarAtAddress(entry.address));
                 }
             }
             CommandKind::IntoString => {
@@ -647,29 +667,120 @@ impl Compiler {
                     _ => return Err("Erro interno : Esperado um nome pra GetInput*".to_owned()),
                 };
 
-                let mut is_global = false;
-
-                let address = match Compiler::get_address_and_globalness(name.as_str(), func, global, &mut is_global) {
-                    Some(id) => id,
+                let entry = match self.find_symbol(name.as_str()) {
+                    Some(e) => e,
                     None => return Err(format!("Variável {} não encontrada", name))
                 };
 
-                if is_global {
-                    instructions.push(Instruction::ReadGlobalVarFromAddress(address));
+                if entry.global {
+                    instructions.push(Instruction::ReadGlobalVarFromAddress(entry.address));
                 } else {
-                    instructions.push(Instruction::ReadVarFromAddress(address));
+                    instructions.push(Instruction::ReadVarFromAddress(entry.address));
                 }
 
                 instructions.push(Instruction::ConvertToInt);
 
-                if is_global {
-                    instructions.push(Instruction::WriteToGlobalVarAtAddress(address));
+                if entry.global {
+                    instructions.push(Instruction::WriteToGlobalVarAtAddress(entry.address));
                 } else {
-                    instructions.push(Instruction::WriteToVarAtAddress(address));
+                    instructions.push(Instruction::WriteToVarAtAddress(entry.address));
                 }
             }
         }
 
         Ok(None)
+    }
+
+    pub fn begin_compiling_function(&mut self, address : usize, args : Vec<FunctionParameter>, name : String) -> Result<(), String> {
+        let mut base_scope = ScopeInfo::new(SubScopeKind::Regular,
+                                            self.next_var_address, false);
+
+        self.next_var_address = 1;
+
+        let mut args_kind = vec![];
+
+        for arg in args {
+            args_kind.push(arg.kind);
+
+            base_scope.symbol_table.insert(arg.name, SymbolEntry::from(self.next_var_address, false));
+            self.next_var_address += 1;
+        }
+
+        self.current_scope = ScopeKind::Function;
+        self.functions.insert(name, FunctionInfo::from(address, args_kind));
+        self.scopes.push(base_scope);
+
+        Ok(())
+    }
+
+    pub fn compile_function_call(&self, id : usize, args : Vec<RawValue>, instructions : &mut Vec<Instruction>)
+        -> Result<(), String>
+    {
+        let info = match self.get_function_info(id) {
+            Some(i) => i,
+            None => return Err(format!("Não encontrada função com id {}", id))
+        };
+
+        if info.arguments.len() != args.len() {
+            return Err(format!("CompileFunctionCall : A função com ID {} espera {} argumentos, mas {} foram passados.", id,
+                               info.arguments.len(), args.len()));
+        }
+
+        instructions.push(Instruction::MakeNewFrame(id));
+
+        let mut index = 0usize;
+
+        for arg in args {
+            let expected = info.arguments[index];
+            index += 1;
+
+            match arg {
+                RawValue::Text(t) => {
+                    if expected == TypeKind::Text {
+                        instructions.push(Instruction::PushMainStr(t));
+                    } else {
+                        return Err(format!("A função esperava um {:?} como argumento, mas um Texto foi passado", expected));
+                    }
+                }
+                RawValue::Number(n) => {
+                    if expected == TypeKind::Number {
+                        instructions.push(Instruction::PushMainNum(n));
+                    } else {
+                        return Err(format!("A função esperava um {:?} como argumento, mas um Num foi passado", expected));
+                    }
+                }
+                RawValue::Integer(i) => {
+                    match expected {
+                        TypeKind::Text => return Err("A função esperava um texto, mas um Int foi passado".to_owned()),
+                        TypeKind::Integer => instructions.push(Instruction::PushMainInt(i)),
+                        TypeKind::Number => instructions.push(Instruction::PushMainNum(i as f64)),
+                    }
+                }
+            }
+
+            instructions.push(Instruction::WriteToLastFrameVarAtAddress(index + 1));
+        }
+
+        instructions.push(Instruction::SetLastFrameReady);
+
+        Ok(())
+    }
+
+    pub fn end_compiling_function(&mut self) -> Result<(), String> {
+        match self.scopes.pop() {
+            Some(s) => {
+                match s.scope_kind {
+                    SubScopeKind::Regular => {}
+                    _ => return Err("Fim da função encontrado, mas algum scope foi deixado aberto".to_owned()),
+                }
+
+                self.end_scope(s);
+
+                self.current_scope = ScopeKind::Global;
+
+                Ok(())
+            }
+            None => return Err("".to_owned())
+        }
     }
 }
