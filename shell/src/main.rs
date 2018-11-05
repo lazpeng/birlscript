@@ -5,7 +5,7 @@ use birl::context::Context;
 
 fn start_interactive_console() {
 	/* Print heading info. */
-	eprintln!("O SHELL QUE CONSTRÓI FIBRA. VERSÃO {}", env!("CARGO_PKG_VERSION"));
+	eprintln!("O SHELL QUE CONSTRÓI FIBRA. VERSÃO {}", birl::context::BIRL_VERSION);
 	eprintln!("BIRL  © 2018, RAFAEL RODRIGUES NAKANO.");
 	eprintln!("SHELL © 2018, MATHEUS BRANCO BORELLA.");
 	eprintln!();
@@ -24,6 +24,8 @@ fn start_interactive_console() {
 	 */
 	use birl::context::Context;
 	let mut c = Context::new();
+
+    c.set_interactive_mode();
 
 	use birl::context::BIRL_GLOBAL_FUNCTION_ID;
 	c.call_function_by_id(BIRL_GLOBAL_FUNCTION_ID, vec![])
@@ -64,20 +66,21 @@ fn start_interactive_console() {
 		} else {
 			/* Drives the currently pending instructions to
 			 * completion. */
-			let mut saturate = || loop{
-				let status = c.execute_next_instruction();
 
-				use birl::vm::ExecutionStatus as Es;
-				match status{
-					Ok(Es::Quit) => break Ok(()),
-					Err(what)    => break Err(what),
-					_ => {}
-				}
-			};
-
-			if let Err(what) = saturate(){
-				eprintln!("{}", what);
-			}
+            use birl::vm::ExecutionStatus as Es;
+            loop {
+                match c.execute_next_instruction() {
+                    Ok(Es::Quit) => {
+                        eprintln!("Saindo...");
+                        return;
+                    }
+                    Ok(Es::Halt) => break,
+                    Ok(_) => {}
+                    Err(e) => {
+                        eprintln!("{}", e);
+                    }
+                }
+            }
 		}
 	}
 
