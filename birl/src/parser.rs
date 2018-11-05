@@ -20,7 +20,7 @@ pub enum KeyPhrase {
     Declare,
     Set,
     Compare,
-    EndExecuteIf,
+    EndSubScope,
     ExecuteIfEqual,
     ExecuteIfNotEqual,
     ExecuteIfEqualOrLess,
@@ -60,7 +60,7 @@ impl KeyPhrase {
             "BATATA DOCE" => Some(KeyPhrase::TypeInt),
             "E ELE QUE A GENTE QUER" |
             "É ELE QUE A GENTE QUER" => Some(KeyPhrase::Compare),
-            "FIM" => Some(KeyPhrase::EndExecuteIf),
+            "FIM" => Some(KeyPhrase::EndSubScope),
             "E HORA DO" | "É HORA DO" => Some(KeyPhrase::Call),
             "E ELE MEMO" | "É ELE MEMO" => Some(KeyPhrase::ExecuteIfEqual),
             "NUM E ELE" | "NUM É ELE" => Some(KeyPhrase::ExecuteIfNotEqual),
@@ -446,7 +446,7 @@ pub enum CommandKind {
     Declare,
     Set,
     Compare,
-    EndExecuteIf,
+    EndSubScope,
     ExecuteIfEqual,
     ExecuteIfNotEqual,
     ExecuteIfEqualOrLess,
@@ -473,7 +473,7 @@ impl CommandKind {
             KeyPhrase::Declare => Some(CommandKind::Declare),
             KeyPhrase::Set => Some(CommandKind::Set),
             KeyPhrase::Compare => Some(CommandKind::Compare),
-            KeyPhrase::EndExecuteIf => Some(CommandKind::EndExecuteIf),
+            KeyPhrase::EndSubScope => Some(CommandKind::EndSubScope),
             KeyPhrase::ExecuteIfEqual => Some(CommandKind::ExecuteIfEqual),
             KeyPhrase::ExecuteIfNotEqual => Some(CommandKind::ExecuteIfNotEqual),
             KeyPhrase::ExecuteIfEqualOrGreater => Some(CommandKind::ExecuteIfEqualOrGreater),
@@ -537,7 +537,7 @@ impl CommandInfo {
                 CommandInfo::from(2, 2, vec![CommandArgumentKind::Expression,
                                              CommandArgumentKind::Expression])
             }
-            CommandKind::EndExecuteIf => {
+            CommandKind::EndSubScope => {
                 CommandInfo::from(0, 0, vec![])
             }
             CommandKind::Call => {
