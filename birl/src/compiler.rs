@@ -1,6 +1,6 @@
 use std::collections::HashMap;
-use parser::{ Expression, ExpressionNode, FunctionParameter, Command, TypeKind, CommandArgument, MathOperator, MathValue, CommandKind };
-use vm::Instruction;
+use parser::{ Expression, ExpressionNode, FunctionParameter, Command, TypeKind, CommandArgument, MathOperator, CommandKind };
+use vm::{ Instruction, ComparisionRequest };
 use context::RawValue;
 
 #[derive(Debug)]
@@ -21,11 +21,12 @@ enum ScopeKind {
 struct SymbolEntry {
     address : usize,
     global : bool,
+    writeable : bool,
 }
 
 impl SymbolEntry {
-    fn from(address : usize, global : bool) -> SymbolEntry {
-        SymbolEntry { address, global }
+    fn from(address : usize, global : bool, writeable : bool) -> SymbolEntry {
+        SymbolEntry { address, global, writeable }
     }
 }
 
@@ -39,7 +40,7 @@ struct ScopeInfo {
 impl ScopeInfo {
     fn new(scope_kind : SubScopeKind, previous_next_var_address : usize, is_global : bool) -> ScopeInfo {
         let mut symbol_table = HashMap::new();
-        symbol_table.insert("TREZE".to_owned(), SymbolEntry::from(0, is_global));
+        symbol_table.insert("TREZE".to_owned(), SymbolEntry::from(0, is_global, false));
 
         ScopeInfo {
             symbol_table,
@@ -88,134 +89,65 @@ impl Compiler {
 
     fn get_inst_for_op(op : MathOperator) -> Option<Instruction> {
         match op {
-            MathOperator::Plus => Some(Instruction::MainAdd),
-            MathOperator::Minus => Some(Instruction::MainSub),
-            MathOperator::Division => Some(Instruction::MainDiv),
-            MathOperator::Multiplication => Some(Instruction::MainMul),
+            MathOperator::Plus => Some(Instruction::Add),
+            MathOperator::Minus => Some(Instruction::Sub),
+            MathOperator::Division => Some(Instruction::Div),
+            MathOperator::Multiplication => Some(Instruction::Mul),
             _ => None,
         }
     }
 
-    fn compile_sub_expression(&self, expr : &Expression, offset : &mut usize, inst : &mut Vec<Instruction>)
-            -> Result<(), String> {
-        let mut buffer : Vec<Instruction> = vec![];
+    pub fn compile_expression(&self, expr : Expression, inst : &mut Vec<Instruction>) -> Result<(), String> {
 
-        let mut last_imp_op : Option<MathOperator> = None;
+        let mut is_a = expr.nodes.len() > 1;
 
-        let mut op_stack : Vec<MathOperator> = vec![];
-
-        loop {
-            if *offset >= expr.nodes.len() {
-                break;
-            }
-
-            let ref current = expr.nodes[*offset];
-            *offset += 1;
-
-            match current {
-                &ExpressionNode::Operator(op) => {
-                    match op {
-                        MathOperator::ParenthesisLeft => {
-                            match self.compile_sub_expression(expr, offset, inst) {
-                                Ok(_) => {}
-                                Err(e) => return Err(e),
-                            }
-
-                            if let Some(op) = last_imp_op {
-                                let i = match Compiler::get_inst_for_op(op) {
-                                    Some(i) => i,
-                                    None => return Err("Invalid operator in important operator".to_owned()),
-                                };
-
-                                buffer.push(i);
-
-                                last_imp_op = None;
-                            }
-                        }
-                        MathOperator::ParenthesisRight => break,
-                        MathOperator::Plus | MathOperator::Minus => {
-                            op_stack.push(op);
-                        }
-                        _ => {
-                            if let Some(_) = last_imp_op {
-                                return Err("Two subsequent important operators".to_owned());
-                            }
-
-                            last_imp_op = Some(op);
-                        }
-                    }
-                }
-                &ExpressionNode::Value(ref v) => {
-                    match v {
-                        &MathValue::Integer(i) => {
-                            buffer.push(Instruction::PushMainInt(i))
-                        }
-                        &MathValue::Number(n) => {
-                            buffer.push(Instruction::PushMainNum(n))
-                        }
-                        &MathValue::Text(ref s) => {
-                            buffer.push(Instruction::PushMainStr(s.clone()))
-                        }
-                    }
-
-                    if let Some(op) = last_imp_op {
-                        let i = match Compiler::get_inst_for_op(op) {
-                            Some(i) => i,
-                            None => return Err("Invalid operator in important operator".to_owned()),
-                        };
-
-                        buffer.push(i);
-
-                        last_imp_op = None;
-                    }
-                }
-                &ExpressionNode::Symbol(ref s) => {
-                    let entry = match self.find_symbol(s) {
-                        Some(e) => e,
-                        None => return Err(format!("Variável {} não encontrada", s))
+        for node in expr.nodes {
+            match node {
+                ExpressionNode::Operator(MathOperator::ParenthesisLeft) |
+                ExpressionNode::Operator(MathOperator::ParenthesisRight) => unreachable!(),
+                ExpressionNode::Operator(o) => {
+                    let opi = match Compiler::get_inst_for_op(o) {
+                        Some(i) => i,
+                        None => unreachable!(),
                     };
 
-                    let inst = if entry.global {
-                        Instruction::ReadGlobalVarFromAddress(entry.address)
+                    inst.push(opi);
+
+                    is_a = true;
+                }
+                ExpressionNode::Value(raw) => {
+                    if is_a {
+                        inst.push(Instruction::PushValMathA(raw));
                     } else {
-                        Instruction::ReadVarFromAddress(entry.address)
+                        inst.push(Instruction::PushValMathB(raw));
+                    }
+
+                    is_a = !is_a;
+                }
+                ExpressionNode::Symbol(s) => {
+                    let info = match self.find_symbol(s.as_str()) {
+                        Some(i) => i,
+                        None => return Err(format!("Variável não encontrada : {}", s)),
                     };
 
-                    buffer.push(inst);
-
-                    if let Some(op) = last_imp_op {
-                        let i = match Compiler::get_inst_for_op(op) {
-                            Some(i) => i,
-                            None => return Err("Invalid operator in important operator".to_owned()),
-                        };
-
-                        buffer.push(i);
-
-                        last_imp_op = None;
+                    if info.global {
+                        inst.push(Instruction::ReadGlobalVarFrom(info.address));
+                    } else {
+                        inst.push(Instruction::ReadVarFrom(info.address));
                     }
+
+                    if is_a {
+                        inst.push(Instruction::PushIntermediateToA);
+                    } else {
+                        inst.push(Instruction::PushIntermediateToB);
+                    }
+
+                    is_a = !is_a;
                 }
             }
-        }
-
-        for op in op_stack {
-            let inst = match Compiler::get_inst_for_op(op) {
-                Some(i) => i,
-                None => return Err("Erro: Invalid operator on stack".to_owned()),
-            };
-
-            buffer.push(inst);
-        }
-
-        for i in buffer {
-            inst.push(i);
         }
 
         Ok(())
-    }
-
-    pub fn compile_expression(&self, expr : &Expression, inst : &mut Vec<Instruction>) -> Result<(), String> {
-        let mut offset = 0usize;
-        self.compile_sub_expression(expr, &mut offset, inst)
     }
 
     fn end_scope(&mut self, info : ScopeInfo) {
@@ -256,12 +188,12 @@ impl Compiler {
                 for arg in cmd.arguments {
                     match arg {
                         CommandArgument::Expression(expr) => {
-                            match self.compile_expression(&expr, instructions) {
+                            match self.compile_expression(expr, instructions) {
                                 Ok(_) => {},
                                 Err(e) => return Err(e),
                             };
 
-                            instructions.push(Instruction::MainPrintDebug);
+                            instructions.push(Instruction::PrintMathBDebug);
                         }
                         _ => return Err("Erro : Um argumento diferente de valor foi passado pra print. Erro interno.".to_owned()),
                     }
@@ -271,12 +203,12 @@ impl Compiler {
                 for arg in cmd.arguments {
                     match arg {
                         CommandArgument::Expression(expr) => {
-                            match self.compile_expression(&expr, instructions) {
+                            match self.compile_expression(expr, instructions) {
                                 Ok(_) => {},
                                 Err(e) => return Err(e),
                             };
 
-                            instructions.push(Instruction::MainPrint);
+                            instructions.push(Instruction::PrintMathB);
                         }
                         _ => return Err("Erro : Um argumento diferente de valor foi passado pra print. Erro interno.".to_owned()),
                     }
@@ -288,12 +220,12 @@ impl Compiler {
                 for arg in cmd.arguments {
                     match arg {
                         CommandArgument::Expression(expr) => {
-                            match self.compile_expression(&expr, instructions) {
+                            match self.compile_expression(expr, instructions) {
                                 Ok(_) => {},
                                 Err(e) => return Err(e),
                             };
 
-                            instructions.push(Instruction::MainPrint);
+                            instructions.push(Instruction::PrintMathB);
                         }
                         _ => return Err("Erro : Um argumento diferente de valor foi passado pra print. Erro interno.".to_owned()),
                     }
@@ -319,11 +251,15 @@ impl Compiler {
                     None => return Err(format!("Variável {} não encontrada", name))
                 };
 
+                if ! entry.writeable {
+                    return Err(format!("Erro : A variável {} não pode ser escrita", name));
+                }
+
                 let expr_arg = cmd.arguments.remove(0);
 
                 match expr_arg {
                     CommandArgument::Expression(expr) => {
-                        match self.compile_expression(&expr, instructions) {
+                        match self.compile_expression(expr, instructions) {
                             Ok(_) => {}
                             Err(e) => return Err(e)
                         }
@@ -332,9 +268,9 @@ impl Compiler {
                 }
 
                 let inst = if entry.global {
-                    Instruction::WriteToGlobalVarAtAddress(entry.address)
+                    Instruction::WriteGlobalVarTo(entry.address)
                 } else {
-                    Instruction::WriteToVarAtAddress(entry.address)
+                    Instruction::WriteVarTo(entry.address)
                 };
 
                 instructions.push(inst);
@@ -357,7 +293,7 @@ impl Compiler {
 
                 match expr_arg {
                     CommandArgument::Expression(expr) => {
-                        match self.compile_expression(&expr, instructions) {
+                        match self.compile_expression(expr, instructions) {
                             Ok(_) => {}
                             Err(e) => return Err(e)
                         }
@@ -371,25 +307,25 @@ impl Compiler {
                 self.next_var_address += 1;
 
                 match self.scopes.last_mut() {
-                    Some(s) => s.symbol_table.insert(name, SymbolEntry::from(address, is_global)),
+                    Some(s) => s.symbol_table.insert(name, SymbolEntry::from(address, is_global, true)),
                     None => return Err(format!("Scopes é vazio"))
                 };
 
                 if is_global {
-                    instructions.push(Instruction::WriteToGlobalVarAtAddress(address));
+                    instructions.push(Instruction::WriteGlobalVarTo(address));
                 } else {
-                    instructions.push(Instruction::WriteToVarAtAddress(address));
+                    instructions.push(Instruction::WriteVarTo(address));
                 }
             }
             CommandKind::Return => {
                 if cmd.arguments.is_empty() {
-                    instructions.push(Instruction::PushNull);
+                    instructions.push(Instruction::ClearMath);
                 } else {
                     let expr_arg = cmd.arguments.remove(0);
 
                     match expr_arg {
                         CommandArgument::Expression(expr) => {
-                            match self.compile_expression(&expr, instructions) {
+                            match self.compile_expression(expr, instructions) {
                                 Ok(_) => {}
                                 Err(e) => return Err(e)
                             }
@@ -405,7 +341,7 @@ impl Compiler {
 
                 match left_expr_arg {
                     CommandArgument::Expression(expr) => {
-                        match self.compile_expression(&expr, instructions) {
+                        match self.compile_expression(expr, instructions) {
                             Ok(_) => {}
                             Err(e) => return Err(e)
                         }
@@ -413,11 +349,13 @@ impl Compiler {
                     _ => return Err(format!("Esperado uma expressão como argumento pro comando Return, encontrado {:?}", left_expr_arg)),
                 }
 
+                instructions.push(Instruction::SwapMath);
+
                 let right_expr_arg = cmd.arguments.remove(0);
 
                 match right_expr_arg {
                     CommandArgument::Expression(expr) => {
-                        match self.compile_expression(&expr, instructions) {
+                        match self.compile_expression(expr, instructions) {
                             Ok(_) => {}
                             Err(e) => return Err(e)
                         }
@@ -425,7 +363,7 @@ impl Compiler {
                     _ => return Err(format!("Esperado uma expressão como argumento pro comando Return, encontrado {:?}", right_expr_arg)),
                 }
 
-                instructions.push(Instruction::CompareMainTop);
+                instructions.push(Instruction::Compare);
             }
             CommandKind::EndSubScope => {
                 let scope_info = match self.scopes.pop() {
@@ -446,7 +384,7 @@ impl Compiler {
                 let is_global = self.current_scope == ScopeKind::Global;
                 self.scopes.push(ScopeInfo::new(SubScopeKind::ExecuteIf,
                                                 self.next_var_address, is_global));
-                instructions.push(Instruction::ExecuteIfEqual);
+                instructions.push(Instruction::ExecuteIf(ComparisionRequest::Equal));
 
                 return Ok(Some(CompilerHint::ScopeStart));
             },
@@ -454,7 +392,7 @@ impl Compiler {
                 let is_global = self.current_scope == ScopeKind::Global;
                 self.scopes.push(ScopeInfo::new(SubScopeKind::ExecuteIf,
                                                 self.next_var_address, is_global));
-                instructions.push(Instruction::ExecuteIfNotEqual);
+                instructions.push(Instruction::ExecuteIf(ComparisionRequest::NotEqual));
 
                 return Ok(Some(CompilerHint::ScopeStart));
             },
@@ -462,7 +400,7 @@ impl Compiler {
                 let is_global = self.current_scope == ScopeKind::Global;
                 self.scopes.push(ScopeInfo::new(SubScopeKind::ExecuteIf,
                                                 self.next_var_address, is_global));
-                instructions.push(Instruction::ExecuteIfGreaterOrEqual);
+                instructions.push(Instruction::ExecuteIf(ComparisionRequest::MoreOrEqual));
 
                 return Ok(Some(CompilerHint::ScopeStart));
             },
@@ -470,7 +408,7 @@ impl Compiler {
                 let is_global = self.current_scope == ScopeKind::Global;
                 self.scopes.push(ScopeInfo::new(SubScopeKind::ExecuteIf,
                                                 self.next_var_address, is_global));
-                instructions.push(Instruction::ExecuteIfGreater);
+                instructions.push(Instruction::ExecuteIf(ComparisionRequest::More));
 
                 return Ok(Some(CompilerHint::ScopeStart));
             },
@@ -478,7 +416,7 @@ impl Compiler {
                 let is_global = self.current_scope == ScopeKind::Global;
                 self.scopes.push(ScopeInfo::new(SubScopeKind::ExecuteIf,
                                                 self.next_var_address, is_global));
-                instructions.push(Instruction::ExecuteIfLessOrEqual);
+                instructions.push(Instruction::ExecuteIf(ComparisionRequest::LessOrEqual));
 
                 return Ok(Some(CompilerHint::ScopeStart));
             },
@@ -486,54 +424,65 @@ impl Compiler {
                 let is_global = self.current_scope == ScopeKind::Global;
                 self.scopes.push(ScopeInfo::new(SubScopeKind::ExecuteIf,
                                                 self.next_var_address, is_global));
-                instructions.push(Instruction::ExecuteIfLess);
+                instructions.push(Instruction::ExecuteIf(ComparisionRequest::Less));
 
                 return Ok(Some(CompilerHint::ScopeStart));
             },
             CommandKind::Call => {
                 // First argument is the function name
 
-                let name_arg = cmd.arguments.remove(0);
+                let mut is_first = true;
+                let mut index = 0usize;
+                let mut function_info : Option<&FunctionInfo> = None;
+                let num_args = cmd.arguments.len() - 1;
 
-                let name = match name_arg {
-                    CommandArgument::Name(n) => n,
-                    _ => return Err(format!("Erro interno : Esperado um nome pra função")),
-                };
+                for arg in cmd.arguments {
+                    if is_first {
+                        is_first = false;
 
-                let info = match self.functions.get(name.as_str()) {
-                    Some(i) => i,
-                    None => return Err(format!("Não existe função com nome {}", name))
-                };
+                        let name = match arg {
+                            CommandArgument::Name(n) => n,
+                            _ => return Err(format!("Erro interno : Esperado um nome pra função")),
+                        };
 
-                instructions.push(Instruction::MakeNewFrame(info.address));
+                        let info = match self.functions.get(name.as_str()) {
+                            Some(f) => f,
+                            None => return Err(format!("Nenhuma função declarada com nome {}", name))
+                        };
 
-                if info.arguments.len() != cmd.arguments.len() {
-                    return Err(format!("A função {} espera {} argumentos, mas {} foram passados",
-                                       name, info.arguments.len(), cmd.arguments.len()));
-                }
+                        if info.arguments.len() != num_args {
+                            return Err(format!("A função {} espera {} argumentos, mas {} foram passados", name,
+                                info.arguments.len(), num_args));
+                        }
 
-                for index in 0..info.arguments.len() {
-                    let arg_arg = cmd.arguments.remove(0);
+                        function_info = Some(info);
 
-                    let expr = match arg_arg {
-                        CommandArgument::Expression(e) => e,
-                        _ => return Err("Erro interno : Era esperado um valor como argumento \
+                        instructions.push(Instruction::MakeNewFrame(info.address));
+                    } else {
+                        let info = function_info.unwrap();
+
+                        let expr = match arg {
+                            CommandArgument::Expression(e) => e,
+                            _ => return Err("Erro interno : Era esperado um valor como argumento \
                                                     pro comando.".to_owned()),
-                    };
+                        };
 
-                    let expected_type = info.arguments[index];
+                        let expected_type = info.arguments[index];
 
-                    // The parameter address is, in this case, index + 1 (because the address 0 is reserved to
-                    // the return value)
+                        // The parameter address is, in this case, index + 1 (because the address 0 is reserved to
+                        // the return value)
 
-                    match self.compile_expression(&expr, instructions) {
-                        Ok(_) => {}
-                        Err(e) => return Err(e)
-                    };
+                        match self.compile_expression(expr, instructions) {
+                            Ok(_) => {}
+                            Err(e) => return Err(e)
+                        };
 
-                    instructions.push(Instruction::AssertMainTopTypeCompatible(expected_type));
+                        instructions.push(Instruction::AssertMathBCompatible(expected_type));
 
-                    instructions.push(Instruction::WriteToLastFrameVarAtAddress(index + 1));
+                        instructions.push(Instruction::WriteVarToLast(index + 1));
+
+                        index += 1;
+                    }
                 }
 
                 instructions.push(Instruction::SetLastFrameReady);
@@ -552,11 +501,12 @@ impl Compiler {
                 };
 
                 instructions.push(Instruction::ReadInput);
+                instructions.push(Instruction::PushIntermediateToB);
 
                 if entry.global {
-                    instructions.push(Instruction::WriteToGlobalVarAtAddress(entry.address));
+                    instructions.push(Instruction::WriteGlobalVarTo(entry.address));
                 } else {
-                    instructions.push(Instruction::WriteToVarAtAddress(entry.address));
+                    instructions.push(Instruction::WriteVarTo(entry.address));
                 }
             }
             CommandKind::GetIntegerInput => {
@@ -574,12 +524,14 @@ impl Compiler {
 
                 instructions.push(Instruction::ReadInput);
 
+                instructions.push(Instruction::PushIntermediateToB);
+
                 instructions.push(Instruction::ConvertToInt);
 
                 if entry.global {
-                    instructions.push(Instruction::WriteToGlobalVarAtAddress(entry.address));
+                    instructions.push(Instruction::WriteGlobalVarTo(entry.address));
                 } else {
-                    instructions.push(Instruction::WriteToVarAtAddress(entry.address));
+                    instructions.push(Instruction::WriteVarTo(entry.address));
                 }
             }
             CommandKind::GetNumberInput => {
@@ -597,12 +549,14 @@ impl Compiler {
 
                 instructions.push(Instruction::ReadInput);
 
+                instructions.push(Instruction::PushIntermediateToB);
+
                 instructions.push(Instruction::ConvertToNum);
 
                 if entry.global {
-                    instructions.push(Instruction::WriteToGlobalVarAtAddress(entry.address));
+                    instructions.push(Instruction::WriteGlobalVarTo(entry.address));
                 } else {
-                    instructions.push(Instruction::WriteToVarAtAddress(entry.address));
+                    instructions.push(Instruction::WriteVarTo(entry.address));
                 }
             }
             CommandKind::ConvertToInt => {
@@ -619,17 +573,19 @@ impl Compiler {
                 };
 
                 if entry.global {
-                    instructions.push(Instruction::ReadGlobalVarFromAddress(entry.address));
+                    instructions.push(Instruction::ReadGlobalVarFrom(entry.address));
                 } else {
-                    instructions.push(Instruction::ReadVarFromAddress(entry.address));
+                    instructions.push(Instruction::ReadVarFrom(entry.address));
                 }
+
+                instructions.push(Instruction::PushIntermediateToB);
 
                 instructions.push(Instruction::ConvertToInt);
 
                 if entry.global {
-                    instructions.push(Instruction::WriteToGlobalVarAtAddress(entry.address));
+                    instructions.push(Instruction::WriteGlobalVarTo(entry.address));
                 } else {
-                    instructions.push(Instruction::WriteToVarAtAddress(entry.address));
+                    instructions.push(Instruction::WriteVarTo(entry.address));
                 }
             }
             CommandKind::ConvertToNum => {
@@ -646,17 +602,19 @@ impl Compiler {
                 };
 
                 if entry.global {
-                    instructions.push(Instruction::ReadGlobalVarFromAddress(entry.address));
+                    instructions.push(Instruction::ReadGlobalVarFrom(entry.address));
                 } else {
-                    instructions.push(Instruction::ReadVarFromAddress(entry.address));
+                    instructions.push(Instruction::ReadVarFrom(entry.address));
                 }
 
-                instructions.push(Instruction::ConvertToInt);
+                instructions.push(Instruction::PushIntermediateToB);
+
+                instructions.push(Instruction::ConvertToNum);
 
                 if entry.global {
-                    instructions.push(Instruction::WriteToGlobalVarAtAddress(entry.address));
+                    instructions.push(Instruction::WriteGlobalVarTo(entry.address));
                 } else {
-                    instructions.push(Instruction::WriteToVarAtAddress(entry.address));
+                    instructions.push(Instruction::WriteVarTo(entry.address));
                 }
             }
             CommandKind::IntoString => {
@@ -673,17 +631,19 @@ impl Compiler {
                 };
 
                 if entry.global {
-                    instructions.push(Instruction::ReadGlobalVarFromAddress(entry.address));
+                    instructions.push(Instruction::ReadGlobalVarFrom(entry.address));
                 } else {
-                    instructions.push(Instruction::ReadVarFromAddress(entry.address));
+                    instructions.push(Instruction::ReadVarFrom(entry.address));
                 }
 
-                instructions.push(Instruction::ConvertToInt);
+                instructions.push(Instruction::PushIntermediateToB);
+
+                instructions.push(Instruction::ConvertToString);
 
                 if entry.global {
-                    instructions.push(Instruction::WriteToGlobalVarAtAddress(entry.address));
+                    instructions.push(Instruction::WriteGlobalVarTo(entry.address));
                 } else {
-                    instructions.push(Instruction::WriteToVarAtAddress(entry.address));
+                    instructions.push(Instruction::WriteVarTo(entry.address));
                 }
             }
         }
@@ -702,7 +662,7 @@ impl Compiler {
         for arg in args {
             args_kind.push(arg.kind);
 
-            base_scope.symbol_table.insert(arg.name, SymbolEntry::from(self.next_var_address, false));
+            base_scope.symbol_table.insert(arg.name, SymbolEntry::from(self.next_var_address, false, true));
             self.next_var_address += 1;
         }
 
@@ -732,33 +692,11 @@ impl Compiler {
 
         for arg in args {
             let expected = info.arguments[index];
+            // TODO: Check expected with passed arg
             index += 1;
 
-            match arg {
-                RawValue::Text(t) => {
-                    if expected == TypeKind::Text {
-                        instructions.push(Instruction::PushMainStr(t));
-                    } else {
-                        return Err(format!("A função esperava um {:?} como argumento, mas um Texto foi passado", expected));
-                    }
-                }
-                RawValue::Number(n) => {
-                    if expected == TypeKind::Number {
-                        instructions.push(Instruction::PushMainNum(n));
-                    } else {
-                        return Err(format!("A função esperava um {:?} como argumento, mas um Num foi passado", expected));
-                    }
-                }
-                RawValue::Integer(i) => {
-                    match expected {
-                        TypeKind::Text => return Err("A função esperava um texto, mas um Int foi passado".to_owned()),
-                        TypeKind::Integer => instructions.push(Instruction::PushMainInt(i)),
-                        TypeKind::Number => instructions.push(Instruction::PushMainNum(i as f64)),
-                    }
-                }
-            }
-
-            instructions.push(Instruction::WriteToLastFrameVarAtAddress(index + 1));
+            instructions.push(Instruction::PushValMathB(arg));
+            Instruction::WriteVarToLast(index + 1);
         }
 
         instructions.push(Instruction::SetLastFrameReady);
@@ -782,5 +720,23 @@ impl Compiler {
             }
             None => return Err("".to_owned())
         }
+    }
+
+    pub fn add_dynamic_var(&mut self, name : String, value : RawValue, writeable : bool, buffer : &mut Vec<Instruction>)
+        -> Result<(), String> {
+        let address = self.next_var_address;
+        let is_global = self.current_scope == ScopeKind::Global;
+
+        match self.scopes.last_mut() {
+            Some(s) => s.symbol_table.insert(name, SymbolEntry::from(address, is_global, writeable)),
+            None => return Err("Nenhum scope aberto".to_owned())
+        };
+
+        self.next_var_address += 1;
+
+        buffer.push(Instruction::PushValMathB(value));
+        buffer.push(Instruction::WriteVarTo(address));
+
+        Ok(())
     }
 }

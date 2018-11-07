@@ -3,7 +3,7 @@
 // BIG TODO : Add default variables
 
 use vm::{ VirtualMachine, ExecutionStatus };
-use parser::{ parse_line, ParserResult, IntegerType, FunctionDeclaration };
+use parser::{ parse_line, TypeKind, ParserResult, IntegerType, FunctionDeclaration };
 use compiler::{ Compiler, CompilerHint };
 
 use std::io::{ BufRead, BufReader, Write };
@@ -20,10 +20,21 @@ pub const BIRL_MAIN_FUNCTION_ID     : usize = 1;
 pub const BIRL_GLOBAL_FUNCTION_ID   : usize = 0;
 pub const BIRL_RET_VAL_VAR_ADDRESS  : usize = 0;
 
+#[derive(Debug, Clone, PartialEq)]
 pub enum RawValue {
     Text(String),
     Integer(IntegerType),
     Number(f64)
+}
+
+impl RawValue {
+    pub fn get_kind(&self) -> TypeKind {
+        match &self {
+            &RawValue::Integer(_) => TypeKind::Integer,
+            &RawValue::Number(_) => TypeKind::Number,
+            &RawValue::Text(_) => TypeKind::Text,
+        }
+    }
 }
 
 pub struct Context {
@@ -202,7 +213,7 @@ impl Context {
                 Ok(ExecutionStatus::Normal) => {}
                 Ok(ExecutionStatus::Returned) => {}
                 Ok(ExecutionStatus::Halt) => break,
-                Ok(ExecutionStatus::Quit) => return Ok(()),
+                Ok(ExecutionStatus::Quit) => break,
                 Err(e) => return Err(e)
             }
         }

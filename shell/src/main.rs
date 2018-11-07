@@ -152,6 +152,7 @@ fn main() {
 	let mut interactive = false;
 
 	let mut ctx = Context::new();
+    ctx.add_file("fibonacci.birl");
 
 	if args.len() > 0 {
 		for arg in args {
@@ -180,7 +181,7 @@ fn main() {
 			}
 		}
 	} else {
-		interactive = true;
+		//interactive = true;
 	}
 
 	if interactive {

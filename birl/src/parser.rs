@@ -1,5 +1,5 @@
-//! The parser for BirlScript
-//!
+use context::RawValue;
+
 #[cfg(target_pointer_width = "64")]
 pub type IntegerType = i64;
 
@@ -408,15 +408,8 @@ impl FunctionDeclaration {
 }
 
 #[derive(Debug, PartialEq)]
-pub enum MathValue {
-    Integer(IntegerType),
-    Number(f64),
-    Text(String),
-}
-
-#[derive(Debug, PartialEq)]
 pub enum ExpressionNode {
-    Value(MathValue),
+    Value(RawValue),
     Symbol(String),
     Operator(MathOperator),
 }
@@ -672,22 +665,66 @@ fn parse_sub_expression(src : &[char], offset : &mut usize, expr : &mut Expressi
         Err(e) => return Err(e),
     };
 
+    let mut nodes = vec![];
+
+    let mut values : Vec<ExpressionNode> = vec![];
+    let mut operations : Vec<MathOperator> = vec![];
+    let mut last_was_important = false;
+
     match first {
         Token::Comment | Token::None => return Ok(()),
         Token::Integer(i) => {
             last_was_value = true;
 
-            expr.nodes.push(ExpressionNode::Value(MathValue::Integer(i)));
+            if last_was_important {
+                last_was_important = false;
+
+                let left = match values.pop() {
+                    Some(v) => v,
+                    None => return Err("Impossível. Values tá vazio".to_owned())
+                };
+
+                let op = match operations.pop() {
+                    Some(v) => v,
+                    None => return Err("Operations tá vazio".to_owned()),
+                };
+
+                nodes.push(left);
+                nodes.push(ExpressionNode::Value(RawValue::Integer(i)));
+                nodes.push(ExpressionNode::Operator(op));
+            } else {
+                values.push(ExpressionNode::Value(RawValue::Integer(i)));
+            }
         }
         Token::Number(n) => {
             last_was_value = true;
 
-            expr.nodes.push(ExpressionNode::Value(MathValue::Number(n)));
+            if last_was_important {
+                last_was_important = false;
+
+                let left = match values.pop() {
+                    Some(v) => v,
+                    None => return Err("Impossível. Values tá vazio".to_owned())
+                };
+
+                let op = match operations.pop() {
+                    Some(v) => v,
+                    None => return Err("Operations tá vazio".to_owned()),
+                };
+
+                nodes.push(left);
+                nodes.push(ExpressionNode::Value(RawValue::Number(n)));
+                nodes.push(ExpressionNode::Operator(op));
+            } else {
+                values.push(ExpressionNode::Value(RawValue::Number(n)));
+            }
         }
         Token::Text(t) => {
             last_was_value = true;
 
-            expr.nodes.push(ExpressionNode::Value(MathValue::Text(t)));
+            // TODO: Operators n stuff
+
+            nodes.push(ExpressionNode::Value(RawValue::Text(t)));
         }
         Token::NewLine => return Ok(()),
         Token::Symbol(s) => {
@@ -697,12 +734,28 @@ fn parse_sub_expression(src : &[char], offset : &mut usize, expr : &mut Expressi
                 expr.has_symbols = true;
             }
 
-            expr.nodes.push(ExpressionNode::Symbol(s));
+            if last_was_important {
+                last_was_important = false;
+
+                let left = match values.pop() {
+                    Some(v) => v,
+                    None => return Err("Impossível. Values tá vazio".to_owned())
+                };
+
+                let op = match operations.pop() {
+                    Some(v) => v,
+                    None => return Err("Operations tá vazio".to_owned()),
+                };
+
+                nodes.push(left);
+                nodes.push(ExpressionNode::Symbol(s));
+                nodes.push(ExpressionNode::Operator(op));
+            } else {
+                values.push(ExpressionNode::Symbol(s));
+            }
         }
         Token::Operator(MathOperator::ParenthesisLeft) => {
             last_was_value = true;
-
-            expr.nodes.push(ExpressionNode::Operator(MathOperator::ParenthesisLeft));
 
             match parse_sub_expression(src, &mut dummy_offset, expr, false) {
                 Ok(_) => {}
@@ -712,16 +765,14 @@ fn parse_sub_expression(src : &[char], offset : &mut usize, expr : &mut Expressi
         Token::Operator(MathOperator::ParenthesisRight) => {
             *offset = dummy_offset;
 
-            expr.nodes.push(ExpressionNode::Operator(MathOperator::ParenthesisRight));
-
-            return Ok(())
+            return Ok(());
         },
         Token::Operator(o) => {
             match o {
                 MathOperator::Plus | MathOperator::Minus => {
                     // Add a zero before this
-                    expr.nodes.push(ExpressionNode::Value(MathValue::Integer(0)));
-                    expr.nodes.push(ExpressionNode::Operator(o));
+                    values.push(ExpressionNode::Value(RawValue::Integer(0)));
+                    operations.push(o);
                 },
                 _ => return Err(format!("Scope ou expressão começa com o operator unário inválido {:?}", o)),
             }
@@ -762,7 +813,25 @@ fn parse_sub_expression(src : &[char], offset : &mut usize, expr : &mut Expressi
 
                 last_was_value = true;
 
-                expr.nodes.push(ExpressionNode::Value(MathValue::Integer(i)));
+                if last_was_important {
+                    last_was_important = false;
+
+                    let left = match values.pop() {
+                        Some(v) => v,
+                        None => return Err("Impossível. Values tá vazio".to_owned())
+                    };
+
+                    let op = match operations.pop() {
+                        Some(v) => v,
+                        None => return Err("Operations tá vazio".to_owned()),
+                    };
+
+                    nodes.push(left);
+                    nodes.push(ExpressionNode::Value(RawValue::Integer(i)));
+                    nodes.push(ExpressionNode::Operator(op));
+                } else {
+                    values.push(ExpressionNode::Value(RawValue::Integer(i)));
+                }
             }
             Token::Number(n) => {
                 if last_was_value {
@@ -771,7 +840,25 @@ fn parse_sub_expression(src : &[char], offset : &mut usize, expr : &mut Expressi
 
                 last_was_value = true;
 
-                expr.nodes.push(ExpressionNode::Value(MathValue::Number(n)));
+                if last_was_important {
+                    last_was_important = false;
+
+                    let left = match values.pop() {
+                        Some(v) => v,
+                        None => return Err("Impossível. Values tá vazio".to_owned())
+                    };
+
+                    let op = match operations.pop() {
+                        Some(v) => v,
+                        None => return Err("Operations tá vazio".to_owned()),
+                    };
+
+                    nodes.push(left);
+                    nodes.push(ExpressionNode::Value(RawValue::Number(n)));
+                    nodes.push(ExpressionNode::Operator(op));
+                } else {
+                    values.push(ExpressionNode::Value(RawValue::Number(n)));
+                }
             }
             Token::Text(t) => {
                 if last_was_value {
@@ -780,7 +867,7 @@ fn parse_sub_expression(src : &[char], offset : &mut usize, expr : &mut Expressi
 
                 last_was_value = true;
 
-                expr.nodes.push(ExpressionNode::Value(MathValue::Text(t)));
+                nodes.push(ExpressionNode::Value(RawValue::Text(t)));
             }
             Token::Symbol(s) => {
                 if last_was_value {
@@ -793,12 +880,28 @@ fn parse_sub_expression(src : &[char], offset : &mut usize, expr : &mut Expressi
                     expr.has_symbols = true;
                 }
 
-                expr.nodes.push(ExpressionNode::Symbol(s));
+                if last_was_important {
+                    last_was_important = false;
+
+                    let left = match values.pop() {
+                        Some(v) => v,
+                        None => return Err("Impossível. Values tá vazio".to_owned())
+                    };
+
+                    let op = match operations.pop() {
+                        Some(v) => v,
+                        None => return Err("Operations tá vazio".to_owned()),
+                    };
+
+                    nodes.push(left);
+                    nodes.push(ExpressionNode::Symbol(s));
+                    nodes.push(ExpressionNode::Operator(op));
+                } else {
+                    values.push(ExpressionNode::Symbol(s));
+                }
             }
             Token::Operator(MathOperator::ParenthesisLeft) => {
                 last_was_value = true;
-
-                expr.nodes.push(ExpressionNode::Operator(MathOperator::ParenthesisLeft));
 
                 match parse_sub_expression(src, &mut dummy_offset, expr, false) {
                     Ok(_) => {}
@@ -807,8 +910,6 @@ fn parse_sub_expression(src : &[char], offset : &mut usize, expr : &mut Expressi
             }
             Token::Operator(MathOperator::ParenthesisRight) => {
                 *offset = dummy_offset;
-
-                expr.nodes.push(ExpressionNode::Operator(MathOperator::ParenthesisRight));
 
                 break
             },
@@ -819,7 +920,12 @@ fn parse_sub_expression(src : &[char], offset : &mut usize, expr : &mut Expressi
 
                 last_was_value = false;
 
-                expr.nodes.push(ExpressionNode::Operator(o));
+                last_was_important = match o {
+                    MathOperator::Plus | MathOperator::Minus => false,
+                    _ => true,
+                };
+
+                operations.push(o);
             }
             Token::Ponctuation(p) => {
                 match p {
@@ -842,6 +948,27 @@ fn parse_sub_expression(src : &[char], offset : &mut usize, expr : &mut Expressi
         return Err("Expressão termina com um operador".to_owned());
     }
 
+    for node in nodes {
+        expr.nodes.push(node);
+    }
+
+    if values.len() == operations.len() {
+        // Ok
+    } else if operations.len() == values.len() - 1 {
+        let first = values.remove(0);
+
+        expr.nodes.push(first);
+    } else {
+        return Err(format!("Formatação inválida da expressão resultado. Lenv : {}. lenO: {}", values.len(), operations.len()));
+    }
+
+    for _ in 0..values.len() {
+        let val = values.remove(0);
+        let op = operations.remove(0);
+        expr.nodes.push(val);
+        expr.nodes.push(ExpressionNode::Operator(op));
+    }
+
     Ok(())
 }
 
@@ -849,11 +976,9 @@ fn parse_expression(src : &[char], offset : &mut usize) -> Result<Expression, St
     let mut expr = Expression::new();
 
     match parse_sub_expression(src, offset, &mut expr, true) {
-        Ok(_) => {},
-        Err(e) => return Err(e),
-    };
-
-    Ok(expr)
+        Ok(_) => Ok(expr),
+        Err(e) => Err(e),
+    }
 }
 
 fn parse_command(src : &[char], offset : &mut usize, kp : KeyPhrase) -> Result<ParserResult, String> {
