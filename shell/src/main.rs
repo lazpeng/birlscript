@@ -2,6 +2,7 @@ extern crate birl;
 
 use std::env::args;
 use birl::context::Context;
+use birl::compiler::CompilerHint;
 
 fn start_interactive_console() {
 	/* Print heading info. */
@@ -42,11 +43,28 @@ fn start_interactive_console() {
 		Some(Box::new(io::stdout()))
 	});
 
+    match c.add_standard_definitions() {
+        Ok(_) => {}
+        Err(e) => {
+            eprintln!("Erro fatal : Não foi possível adicionar variáveis padrão : {}", e);
+            return;
+        }
+    }
+
 	/* Enter interactive loop */
 	use std::io::{stdin, BufReader, BufRead};
 	let mut prompt = BufReader::new(stdin());
+    let mut scope_level = 0usize;
 	loop{
-		eprint!("> ");
+        if scope_level == 0 {
+            eprint!("> ");
+        } else {
+            eprint!(">>");
+
+            for _ in 0..scope_level {
+                eprint!("\t");
+            }
+        }
 
 		let mut line = String::new();
 		match prompt.read_line(&mut line){
@@ -60,13 +78,18 @@ fn start_interactive_console() {
 			}
 		}
 
-		/* Parse and evaluate */
-		if let Err(what) = c.process_line(&line){
-			eprintln!("{}", what);
-		} else {
-			/* Drives the currently pending instructions to
-			 * completion. */
+        match c.process_line(&line) {
+            Ok(None) => {}
+            Ok(Some(hint)) => {
+                match hint {
+                    CompilerHint::ScopeStart => scope_level += 1,
+                    CompilerHint::ScopeEnd => scope_level -= 1,
+                }
+            }
+            Err(e) => eprintln!("{}", e)
+        };
 
+        if scope_level == 0 {
             use birl::vm::ExecutionStatus as Es;
             loop {
                 match c.execute_next_instruction() {
@@ -81,7 +104,7 @@ fn start_interactive_console() {
                     }
                 }
             }
-		}
+        }
 	}
 
 	/* Make sure the output is flushed */

@@ -5,19 +5,18 @@ use context::RawValue;
 
 #[derive(Debug)]
 enum SubScopeKind {
-    ForLoop,
-    WhileLoop,
+    Loop,
     ExecuteIf,
     Regular,
 }
 
-#[derive(PartialEq)]
-enum ScopeKind {
+#[derive(Clone, Copy, PartialEq)]
+pub enum ScopeKind {
     Function,
     Global
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct SymbolEntry {
     address : usize,
     global : bool,
@@ -165,6 +164,35 @@ impl Compiler {
         None
     }
 
+    fn add_symbol(&mut self, name : String, writeable : bool) -> Option<SymbolEntry> {
+        let is_global = self.current_scope == ScopeKind::Global;
+        let entry = SymbolEntry::from(self.next_var_address, is_global, writeable);
+
+        match self.scopes.last_mut() {
+            Some(s) => {
+                s.symbol_table.insert(name, entry.clone());
+                Some(entry)
+            }
+            None => None,
+        }
+    }
+
+    fn find_or_add_symbol(&mut self, name : &str, writeable : bool) -> Option<SymbolEntry> {
+        if self.scopes.is_empty() {
+            None
+        } else {
+            match self.find_symbol(name) {
+                Some(s) => return Some(s.clone()),
+                None => {},
+            }
+
+            match self.add_symbol(name.to_owned(), writeable) {
+                Some(s) => Some(s),
+                None => None,
+            }
+        }
+    }
+
     fn get_function_info(&self, id : usize) -> Option<&FunctionInfo> {
         for (_, f) in &self.functions {
             if f.address == id {
@@ -173,6 +201,29 @@ impl Compiler {
         }
 
         None
+    }
+
+    fn add_execute_while_boilerplate(&self, mut cmd : Command, instructions : &mut Vec<Instruction>) -> Result<(), String> {
+        instructions.push(Instruction::AddLoopLabel);
+
+        if let CommandArgument::Expression(expr) = cmd.arguments.remove(0) {
+            self.compile_expression(expr, instructions)?;
+        } else {
+            return Err("Argumento 1 não é expressão".to_owned());
+        }
+
+        // Move result to A
+        instructions.push(Instruction::SwapMath);
+
+        if let CommandArgument::Expression(expr) = cmd.arguments.remove(0) {
+            self.compile_expression(expr, instructions)?;
+        } else {
+            return Err("Argumento 2 não é expressão".to_owned());
+        }
+
+        instructions.push(Instruction::Compare);
+
+        Ok(())
     }
 
     pub fn compile_command(&mut self, mut cmd : Command, instructions : &mut Vec<Instruction>)
@@ -276,10 +327,6 @@ impl Compiler {
                 instructions.push(inst);
             }
             CommandKind::Declare => {
-                if cmd.arguments.len() != 2 {
-                    return Err(format!("O comando BORA espera 2 argumentos, mas {} foram passados (Erro interno)", cmd.arguments.len()));
-                }
-
                 let name_arg = cmd.arguments.remove(0);
 
                 let name = match name_arg {
@@ -289,16 +336,23 @@ impl Compiler {
 
                 let is_global = self.current_scope == ScopeKind::Global;
 
-                let expr_arg = cmd.arguments.remove(0);
+                if cmd.arguments.is_empty() {
+                    // Set value to Null
+                    // To achieve this, we set both Maths to null, then copy B to the var address
 
-                match expr_arg {
-                    CommandArgument::Expression(expr) => {
-                        match self.compile_expression(expr, instructions) {
-                            Ok(_) => {}
-                            Err(e) => return Err(e)
+                    instructions.push(Instruction::ClearMath);
+                } else {
+                    let expr_arg = cmd.arguments.remove(0);
+
+                    match expr_arg {
+                        CommandArgument::Expression(expr) => {
+                            match self.compile_expression(expr, instructions) {
+                                Ok(_) => {}
+                                Err(e) => return Err(e)
+                            }
                         }
+                        _ => return Err(format!("Erro interno : Esperado uma expressão depois do nome, encontrado {:?}", expr_arg)),
                     }
-                    _ => return Err(format!("Erro interno : Esperado uma expressão depois do nome, encontrado {:?}", expr_arg)),
                 }
 
                 // Add the variable after the expression is parsed, so we can't use the variable before a value is set
@@ -372,8 +426,13 @@ impl Compiler {
                 };
 
                 match scope_info.scope_kind {
-                    SubScopeKind::ExecuteIf => instructions.push(Instruction::EndExecuteIf),
-                    _ => {}
+                    SubScopeKind::ExecuteIf => instructions.push(Instruction::EndConditionalBlock),
+                    SubScopeKind::Loop => {
+                        instructions.push(Instruction::RestoreLoopLabel);
+                        instructions.push(Instruction::EndConditionalBlock);
+                        instructions.push(Instruction::PopLoopLabel);
+                    }
+                    SubScopeKind::Regular => {}
                 }
 
                 self.end_scope(scope_info);
@@ -495,7 +554,7 @@ impl Compiler {
                     _ => return Err("Erro interno : Esperado um nome pra GetInput*".to_owned()),
                 };
 
-                let entry = match self.find_symbol(name.as_str()) {
+                let entry = match self.find_or_add_symbol(name.as_str(), true) {
                     Some(e) => e,
                     None => return Err(format!("Variável {} não encontrada", name))
                 };
@@ -517,7 +576,7 @@ impl Compiler {
                     _ => return Err("Erro interno : Esperado um nome pra GetInput*".to_owned()),
                 };
 
-                let entry = match self.find_symbol(name.as_str()) {
+                let entry = match self.find_or_add_symbol(name.as_str(), true) {
                     Some(e) => e,
                     None => return Err(format!("Variável {} não encontrada", name))
                 };
@@ -542,7 +601,7 @@ impl Compiler {
                     _ => return Err("Erro interno : Esperado um nome pra GetInput*".to_owned()),
                 };
 
-                let entry = match self.find_symbol(name.as_str()) {
+                let entry = match self.find_or_add_symbol(name.as_str(), true) {
                     Some(e) => e,
                     None => return Err(format!("Variável {} não encontrada", name))
                 };
@@ -646,6 +705,131 @@ impl Compiler {
                     instructions.push(Instruction::WriteVarTo(entry.address));
                 }
             }
+            CommandKind::ExecuteWhileEqual => {
+                let is_global = self.current_scope == ScopeKind::Global;
+                self.scopes.push(ScopeInfo::new(SubScopeKind::Loop, self.next_var_address, is_global));
+
+                self.add_execute_while_boilerplate(cmd, instructions)?;
+
+                instructions.push(Instruction::ExecuteIf(ComparisionRequest::Equal));
+                return Ok(Some(CompilerHint::ScopeStart));
+            }
+            CommandKind::ExecuteWhileNotEqual => {
+                let is_global = self.current_scope == ScopeKind::Global;
+                self.scopes.push(ScopeInfo::new(SubScopeKind::Loop, self.next_var_address, is_global));
+
+                self.add_execute_while_boilerplate(cmd, instructions)?;
+
+                instructions.push(Instruction::ExecuteIf(ComparisionRequest::NotEqual));
+                return Ok(Some(CompilerHint::ScopeStart));
+            }
+            CommandKind::ExecuteWhileGreater => {
+                let is_global = self.current_scope == ScopeKind::Global;
+                self.scopes.push(ScopeInfo::new(SubScopeKind::Loop, self.next_var_address, is_global));
+
+                self.add_execute_while_boilerplate(cmd, instructions)?;
+
+                instructions.push(Instruction::ExecuteIf(ComparisionRequest::More));
+                return Ok(Some(CompilerHint::ScopeStart));
+            }
+            CommandKind::ExecuteWhileEqualOrGreater => {
+                let is_global = self.current_scope == ScopeKind::Global;
+                self.scopes.push(ScopeInfo::new(SubScopeKind::Loop, self.next_var_address, is_global));
+
+                self.add_execute_while_boilerplate(cmd, instructions)?;
+
+                instructions.push(Instruction::ExecuteIf(ComparisionRequest::MoreOrEqual));
+                return Ok(Some(CompilerHint::ScopeStart));
+            }
+            CommandKind::ExecuteWhileLess => {
+                let is_global = self.current_scope == ScopeKind::Global;
+                self.scopes.push(ScopeInfo::new(SubScopeKind::Loop, self.next_var_address, is_global));
+
+                self.add_execute_while_boilerplate(cmd, instructions)?;
+
+                instructions.push(Instruction::ExecuteIf(ComparisionRequest::Less));
+                return Ok(Some(CompilerHint::ScopeStart));
+            }
+            CommandKind::ExecuteWhileEqualOrLess => {
+                let is_global = self.current_scope == ScopeKind::Global;
+                self.scopes.push(ScopeInfo::new(SubScopeKind::Loop, self.next_var_address, is_global));
+
+                self.add_execute_while_boilerplate(cmd, instructions)?;
+
+                instructions.push(Instruction::ExecuteIf(ComparisionRequest::LessOrEqual));
+                return Ok(Some(CompilerHint::ScopeStart));
+            }
+            CommandKind::RangeLoop => {
+                let is_global = self.current_scope == ScopeKind::Global;
+                self.scopes.push(ScopeInfo::new(SubScopeKind::Loop, self.next_var_address, is_global));
+
+                let name = if let CommandArgument::Name(n) = cmd.arguments.remove(0) {
+                    n
+                } else {
+                    return Err("Esperado uma variável pro primeiro argumento do loop".to_owned());
+                };
+
+                let entry = match self.find_or_add_symbol(name.as_str(), true) {
+                    Some(e) => e,
+                    None => return Err(format!("Não foi possível adicionar nem encontrar a variável {}", name)),
+                };
+
+                // Initialize counter
+
+                if let CommandArgument::Expression(expr) = cmd.arguments.remove(0) {
+                    self.compile_expression(expr, instructions)?;
+
+                    if entry.global {
+                        instructions.push(Instruction::WriteGlobalVarTo(entry.address));
+                    } else {
+                        instructions.push(Instruction::WriteVarTo(entry.address));
+                    }
+                } else {
+                    return Err("Era esperado uma expressão pro segundo argumento de RangedLoop".to_owned());
+                }
+
+                let final_expr = if let CommandArgument::Expression(expr) = cmd.arguments.remove(0) {
+                    expr
+                } else {
+                    return Err("Esperado um valor final".to_owned());
+                };
+
+                // Register increment procedure
+
+                if cmd.arguments.is_empty() {
+                    instructions.push(Instruction::PushValMathB(RawValue::Integer(1)));
+                } else {
+                    if let CommandArgument::Expression(step_expr) = cmd.arguments.remove(0) {
+                        self.compile_expression(step_expr, instructions)?;
+                    } else {
+                        instructions.push(Instruction::PushValMathB(RawValue::Integer(1)));
+                    }
+                }
+
+                // Loop starts here
+
+                instructions.push(Instruction::AddLoopLabel);
+
+                instructions.push(Instruction::RegisterIncrementOnRestore(entry.address));
+
+                // Check if should continue
+
+                self.compile_expression(final_expr, instructions)?;
+
+                if entry.global {
+                    instructions.push(Instruction::ReadGlobalVarFrom(entry.address));
+                } else {
+                    instructions.push(Instruction::ReadVarFrom(entry.address));
+                }
+
+                instructions.push(Instruction::PushIntermediateToA);
+
+                instructions.push(Instruction::Compare);
+
+                instructions.push(Instruction::ExecuteIf(ComparisionRequest::NotEqual));
+
+                return Ok(Some(CompilerHint::ScopeStart));
+            }
         }
 
         Ok(None)
@@ -669,6 +853,22 @@ impl Compiler {
         self.current_scope = ScopeKind::Function;
         self.functions.insert(name, FunctionInfo::from(address, args_kind));
         self.scopes.push(base_scope);
+
+        Ok(())
+    }
+
+    pub fn compile_global_variable(&mut self, name : String, value : RawValue, writeable : bool, instructions : &mut Vec<Instruction>) -> Result<(), String> {
+        if self.current_scope != ScopeKind::Global {
+            return Err("Scope atual não é o global".to_owned());
+        }
+
+        let entry = match self.add_symbol(name, writeable) {
+            Some(e) => e,
+            None => return Err("Não foi possível adicionar o símbolo".to_owned())
+        };
+
+        instructions.push(Instruction::PushValMathB(value));
+        instructions.push(Instruction::WriteGlobalVarTo(entry.address));
 
         Ok(())
     }
@@ -720,23 +920,5 @@ impl Compiler {
             }
             None => return Err("".to_owned())
         }
-    }
-
-    pub fn add_dynamic_var(&mut self, name : String, value : RawValue, writeable : bool, buffer : &mut Vec<Instruction>)
-        -> Result<(), String> {
-        let address = self.next_var_address;
-        let is_global = self.current_scope == ScopeKind::Global;
-
-        match self.scopes.last_mut() {
-            Some(s) => s.symbol_table.insert(name, SymbolEntry::from(address, is_global, writeable)),
-            None => return Err("Nenhum scope aberto".to_owned())
-        };
-
-        self.next_var_address += 1;
-
-        buffer.push(Instruction::PushValMathB(value));
-        buffer.push(Instruction::WriteVarTo(address));
-
-        Ok(())
     }
 }

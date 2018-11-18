@@ -1,13 +1,12 @@
 //! Hosts the runtime for the birlscript language
 
-// BIG TODO : Add default variables
-
 use vm::{ VirtualMachine, ExecutionStatus };
 use parser::{ parse_line, TypeKind, ParserResult, IntegerType, FunctionDeclaration };
 use compiler::{ Compiler, CompilerHint };
 
 use std::io::{ BufRead, BufReader, Write };
 use std::fs::File;
+use std::env;
 
 pub const BIRL_COPYRIGHT : &'static str 
     = "© 2016 - 2018 Rafael Rodrigues Nakano <lazpeng@gmail.com>";
@@ -38,7 +37,7 @@ impl RawValue {
 }
 
 pub struct Context {
-    pub vm : VirtualMachine,
+    vm : VirtualMachine,
     has_main : bool,
     compiler : Compiler,
     current_code_id : usize,
@@ -174,6 +173,31 @@ impl Context {
                     }
                 }
                 Err(e) => return Err(format!("(Linha {}) : {:?}", line_num, e))
+            }
+        }
+
+        Ok(())
+    }
+
+    pub fn add_standard_definitions(&mut self) -> Result<(), String> {
+        // TODO: Add a better (and dynamic) way to add definitions and functions
+
+        let vars = vec!
+        [
+            ("UM".to_owned(), RawValue::Integer(1)),
+            ("CUMPADE".to_owned(), RawValue::Text(env::var("USER").unwrap_or("CUMPADE".to_owned())))
+        ];
+
+        for (name, value) in vars {
+            let mut code = vec![];
+
+            match self.compiler.compile_global_variable(name, value, false, &mut code) {
+                Ok(_) => {}
+                Err(e) => return Err(e)
+            }
+
+            for c in code {
+                self.vm.run(c)?;
             }
         }
 

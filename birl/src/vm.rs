@@ -5,6 +5,7 @@ use context::RawValue;
 
 use std::io::{ Write, BufRead };
 use std::fmt::{ Display, self };
+use std::collections::HashMap;
 
 type StringStorageID = u64;
 
@@ -45,7 +46,7 @@ enum DynamicValue {
     Null,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct StringEntry {
     id : u64,
     content : String,
@@ -53,22 +54,30 @@ struct StringEntry {
 
 #[derive(Debug)]
 struct StringStorage {
-    entries : Vec<StringEntry>,
+    entries : HashMap<u64, Vec<StringEntry>>,
     last_id : u64,
+    next_parent_id : u64,
 }
 
 impl StringStorage {
     fn new() -> StringStorage {
         StringStorage {
-            entries: vec![],
+            entries: HashMap::new(),
             last_id : 0,
+            next_parent_id : 0,
         }
     }
 
+    fn add_parent_storage(&mut self, id : u64) {
+        self.entries.insert(id, vec![]);
+    }
+
     fn get_ref(&self, id : u64) -> Option<&str> {
-        for e in &self.entries {
-            if e.id == id {
-                return Some(e.content.as_str());
+        for (_, par) in &self.entries {
+            for e in par {
+                if e.id == id {
+                    return Some(e.content.as_str());
+                }
             }
         }
 
@@ -76,9 +85,11 @@ impl StringStorage {
     }
 
     fn get_mut(&mut self, id : u64) -> Option<&mut String> {
-        for e in &mut self.entries {
-            if e.id == id {
-                return Some(&mut e.content);
+        for (_, par) in &mut self.entries {
+            for e in par {
+                if e.id == id {
+                    return Some(&mut e.content);
+                }
             }
         }
 
@@ -86,36 +97,65 @@ impl StringStorage {
     }
 
     fn get(&mut self, id : u64) -> Option<String> {
-        for i in 0..self.entries.len() {
-            let cid = self.entries[i].id;
-
-            if cid == id {
-                let entry = self.entries.remove(i);
-
-                return Some(entry.content);
+        for (_, entries) in &mut self.entries {
+            for i in 0..entries.len() {
+                if entries[i].id == id {
+                    let entry = entries.remove(i);
+                    return Some(entry.content);
+                }
             }
         }
 
         None
     }
 
-    fn add(&mut self, content : &str) -> u64 {
-        self.add_string(content.to_owned())
+    fn add(&mut self, content : &str, parent_id : u64) -> u64 {
+        self.add_string(content.to_owned(), parent_id)
     }
 
-    fn add_string(&mut self, content : String) -> u64 {
+    fn add_string(&mut self, content : String, parent_id : u64) -> u64 {
         let id = self.last_id + 1;
+        self.last_id += 1;
 
         let entry = StringEntry {
             content,
             id,
         };
 
-        self.entries.push(entry);
+        let mut i_am_fucking_dead_in_the_inside_and_i_hate_rust_so_much = false;
 
-        self.last_id = id;
+        if let Some(ref mut scope) = self.entries.get_mut(&parent_id) {
+            scope.push(entry.clone());
+        } else {
+            i_am_fucking_dead_in_the_inside_and_i_hate_rust_so_much = true;
+        }
+
+        if i_am_fucking_dead_in_the_inside_and_i_hate_rust_so_much {
+            self.entries.insert(parent_id, vec![entry]);
+        }
 
         id
+    }
+
+    fn delete_for_parent(&mut self, id : u64) {
+        // stub
+    }
+}
+
+#[derive(Debug)]
+struct LoopLabel {
+    start_pc : usize,
+    index_address : Option<usize>,
+    stepping : DynamicValue,
+}
+
+impl LoopLabel {
+    fn new(start_pc : usize) -> LoopLabel {
+        LoopLabel {
+            start_pc,
+            index_address : None,
+            stepping : DynamicValue::Null,
+        }
     }
 }
 
@@ -126,24 +166,26 @@ pub struct FunctionFrame {
     program_counter : usize,
     last_comparision : Option<Comparision>,
     next_address : usize,
-    string_storage : StringStorage,
     ready : bool,
     skip_level : u32,
     stack_size : usize,
+    parent_id : u64,
+    label_stack : Vec<LoopLabel>,
 }
 
 impl FunctionFrame {
-    pub fn new(id : usize, stack_size : usize) -> FunctionFrame {
+    pub fn new(id : usize, stack_size : usize, parent_id : u64) -> FunctionFrame {
         FunctionFrame {
             id,
             stack : vec![DynamicValue::Null; stack_size],
             program_counter : 0,
             last_comparision : None,
             next_address : 0usize,
-            string_storage : StringStorage::new(),
             ready : false,
             skip_level : 0,
             stack_size,
+            label_stack : vec![],
+            parent_id,
         }
     }
 }
@@ -214,7 +256,16 @@ impl VirtualMachine {
 
     fn raw_to_dynamic(&mut self, val : RawValue) -> Result<DynamicValue, String> {
         match val {
-            RawValue::Text(_) => unimplemented!(),
+            RawValue::Text(t) => {
+                let parent_id = match self.get_last_ready_ref() {
+                    Some(s) => s.parent_id,
+                    None => 0,
+                };
+
+                let id = self.main_storage.add_string(t, parent_id);
+
+                Ok(DynamicValue::Text(id))
+            },
             RawValue::Number(n) => Ok(DynamicValue::Number(n)),
             RawValue::Integer(i) => Ok(DynamicValue::Integer(i)),
         }
@@ -617,19 +668,7 @@ impl VirtualMachine {
             return Err("Endereço inválido pra stack".to_owned());
         }
 
-        match val {
-            DynamicValue::Text(t) => {
-                let raw = match self.main_storage.get_ref(t) {
-                    Some(t) => t,
-                    None => return Err(format!("TextID {} é inválida.", t))
-                };
-
-                let id = frame.string_storage.add(raw);
-
-                frame.stack[address] = DynamicValue::Text(id);
-            }
-            _ => frame.stack[address] = val,
-        }
+        frame.stack[address] = val;
 
         Ok(())
     }
@@ -708,8 +747,8 @@ impl VirtualMachine {
     fn conv_to_string(&mut self, val : DynamicValue) -> Result<String, String> {
         match val {
             DynamicValue::Text(t) => {
-                let s = match self.main_storage.get(t) {
-                    Some(s) => s,
+                let s = match self.main_storage.get_ref(t) {
+                    Some(s) => s.to_owned(),
                     None => return Err("Invalid string ID".to_owned()),
                 };
 
@@ -724,7 +763,7 @@ impl VirtualMachine {
     fn conv_to_int(&mut self, val : DynamicValue) -> Result<IntegerType, String> {
         match val {
             DynamicValue::Text(t) => {
-                let text = match self.main_storage.get(t) {
+                let text = match self.main_storage.get_ref(t) {
                     Some(v) => v,
                     None => return Err("Invalid text id".to_owned())
                 };
@@ -745,7 +784,7 @@ impl VirtualMachine {
     fn conv_to_num(&mut self, val : DynamicValue) -> Result<f64, String> {
         match val {
             DynamicValue::Text(t) => {
-                let text = match self.main_storage.get(t) {
+                let text = match self.main_storage.get_ref(t) {
                     Some(v) => v,
                     None => return Err("Invalid text id".to_owned())
                 };
@@ -783,9 +822,19 @@ impl VirtualMachine {
         self.stack_size = size;
     }
 
+    fn set_current_pc(&mut self, pc : usize) -> Result<(), String> {
+        match self.get_last_ready_mut() {
+            Some(f) => f.program_counter = pc,
+            None => return Err("Nenhuma função em execução".to_owned())
+        };
+
+        Ok(())
+    }
+
     pub fn run(&mut self, inst : Instruction) -> Result<ExecutionStatus, String> {
+        //println!("{:?}", inst);
         if self.get_current_skip_level() > 0 {
-            if let Instruction::EndExecuteIf = inst {
+            if let Instruction::EndConditionalBlock = inst {
                 self.decrease_skip_level()?;
             }
 
@@ -793,7 +842,7 @@ impl VirtualMachine {
         }
 
         match inst {
-            Instruction::EndExecuteIf => {},
+            Instruction::EndConditionalBlock => {},
             Instruction::PrintMathBDebug => {
                 match self.registers.math_b {
                     DynamicValue::Integer(i) => vm_write!(self.stdout, "(Integer) {}\n", i)?,
@@ -855,14 +904,17 @@ impl VirtualMachine {
                     return Ok(ExecutionStatus::Quit);
                 }
 
-                let len = self.callstack.len();
+                match self.callstack.pop() {
+                    Some(frame) => self.main_storage.delete_for_parent(frame.parent_id),
+                    None => return Err("Erro no return : Nenhuma função em execução".to_owned())
+                }
+
+                let index = self.callstack.len() - 1;
                 let val = self.registers.math_b;
-                match self.write_to(val, len - 2, 0) {
+                match self.write_to(val, index, 0) {
                     Ok(_) => {}
                     Err(e) => return Err(e)
                 }
-
-                let _ = self.callstack.pop();
 
                 return Ok(ExecutionStatus::Returned);
             }
@@ -878,7 +930,12 @@ impl VirtualMachine {
             Instruction::MakeNewFrame(id) => {
                 // Add a new, not ready frame to the callstack
 
-                let frame = FunctionFrame::new(id, self.stack_size);
+                let parent_id = self.main_storage.next_parent_id;
+                self.main_storage.next_parent_id += 1;
+
+                self.main_storage.add_parent_storage(parent_id);
+
+                let frame = FunctionFrame::new(id, self.stack_size, parent_id);
 
                 self.callstack.push(frame);
             }
@@ -933,8 +990,13 @@ impl VirtualMachine {
                     Some(line)
                 } else { None };
 
+                let parent_id = match self.get_last_ready_ref() {
+                    Some(s) => s.parent_id,
+                    None => return Err("Nenhuma função em execução".to_owned())
+                };
+
                 if let Some(line) = line{
-                    let id = self.main_storage.add_string(line);
+                    let id = self.main_storage.add_string(line, parent_id);
                     self.registers.intermediate = DynamicValue::Text(id);
                 }
             }
@@ -966,7 +1028,12 @@ impl VirtualMachine {
                     Err(e) => return Err(e)
                 };
 
-                let id = self.main_storage.add_string(v);
+                let parent_id = match self.get_last_ready_ref() {
+                    Some(s) => s.parent_id,
+                    None => return Err("Nenhuma função em execução".to_owned())
+                };
+
+                let id = self.main_storage.add_string(v, parent_id);
 
                 self.registers.math_b = DynamicValue::Text(id);
             }
@@ -1090,6 +1157,85 @@ impl VirtualMachine {
                 self.registers.math_b = DynamicValue::Null;
                 self.registers.intermediate = DynamicValue::Null;
             }
+            Instruction::AddLoopLabel => {
+                let next_pc = match self.get_current_pc() {
+                    Some(p) => p,
+                    None => return Err("Nenhuma função em execução".to_owned())
+                };
+
+                match self.get_last_ready_mut() {
+                    Some(f) => f.label_stack.push(LoopLabel::new(next_pc)),
+                    None => return Err("Nenhuma função em execução".to_owned())
+                }
+            }
+            Instruction::RestoreLoopLabel => {
+                let (mut address, mut step) = (None, DynamicValue::Null);
+
+                let pc = match self.get_last_ready_ref() {
+                    Some(f) => {
+                        let label = match f.label_stack.last() {
+                            Some(l) => l,
+                            None => return Err("Restore : Nenhuma label disponível".to_owned())
+                        };
+
+                        if let Some(addr) = label.index_address {
+                            address = Some(addr);
+                            step = label.stepping;
+                        }
+
+                        label.start_pc
+                    }
+                    None => return Err("Nenhuma função em execução".to_owned())
+                };
+
+                self.set_current_pc(pc)?;
+
+                if let Some(address) = address {
+                    let index = match self.get_last_ready_index() {
+                        Some(i) => i,
+                        None => return Err("Nenhuma função pronta em execução".to_owned()),
+                    };
+
+                    let current = self.read_from_id(index, address)?;
+
+                    let result = self.add_values(current, step)?;
+
+                    match self.write_to(result, index, address) {
+                        Ok(_) => {}
+                        Err(e) => return Err(e)
+                    }
+                }
+            }
+            Instruction::PopLoopLabel => {
+                match self.get_last_ready_mut() {
+                    Some(f) => {
+                        match f.label_stack.pop() {
+                            Some(_) => {}
+                            None => return Err("Não havia nenhuma label pra remover".to_owned())
+                        }
+                    }
+                    None => return Err("Nenhuma função em execução".to_owned())
+                }
+            }
+            Instruction::RegisterIncrementOnRestore(address) => {
+                // Since this instruction is right after AddLabel, this is going to be executed each iteration
+                // and since we don't want that, we'll also increment the PC on the label
+
+                let stepping = self.registers.math_b;
+
+                match self.get_last_ready_mut() {
+                    Some(s) => match s.label_stack.last_mut() {
+                        Some(l) => {
+                            l.stepping = stepping;
+                            l.index_address = Some(address);
+                            // As explained above
+                            l.start_pc += 1;
+                        }
+                        None => return Err("Função atual não tem nenhuma label".to_owned()),
+                    }
+                    None => return Err("Nenhuma função em execução".to_owned())
+                };
+            }
         }
 
         Ok(ExecutionStatus::Normal)
@@ -1105,7 +1251,7 @@ pub enum Instruction {
     Quit,
     Compare,
     Return,
-    EndExecuteIf,
+    EndConditionalBlock,
     ExecuteIf(ComparisionRequest),
     MakeNewFrame(usize),
     SetLastFrameReady,
@@ -1137,4 +1283,12 @@ pub enum Instruction {
     Mul,
     Div,
     Sub,
+    /// Saves the current PC so when the loop ends it can return to it's beginning
+    AddLoopLabel,
+    /// Return to a previous saved loop label
+    RestoreLoopLabel,
+    /// Remove a previously saved label
+    PopLoopLabel,
+    /// Retrieve the increment value from MathB and write it on every Restore to the specified address
+    RegisterIncrementOnRestore(usize),
 }

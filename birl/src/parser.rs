@@ -27,13 +27,20 @@ pub enum KeyPhrase {
     ExecuteIfLess,
     ExecuteIfEqualOrGreater,
     ExecuteIfGreater,
+    ExecuteWhileEqual,
+    ExecuteWhileNotEqual,
+    ExecuteWhileEqualOrLess,
+    ExecuteWhileLess,
+    ExecuteWhileGreater,
+    ExecuteWhileEqualOrGreater,
+    RangeLoop,
     Call,
     GetStringInput,
     GetNumberInput,
     GetIntegerInput,
     IntoString,
     ConvertToInt,
-    ConverToNum,
+    ConvertToNum,
     TypeInt,
     TypeNum,
     TypeStr,
@@ -70,10 +77,17 @@ impl KeyPhrase {
             "MAIOR OU E MEMO" | "MAIOR OU É MEMO" => Some(KeyPhrase::ExecuteIfEqualOrGreater),
             "FALA AI" | "FALA AÍ" => Some(KeyPhrase::GetStringInput),
             "FALA UM NÚMERO" | "FALA UM NUMERO" => Some(KeyPhrase::GetNumberInput),
-            "FALA AI UM INTEIRO" | "FALA AÍ UM INTEIRO" => Some(KeyPhrase::GetIntegerInput),
+            "FALA UM INTEIRO" => Some(KeyPhrase::GetIntegerInput),
             "MUDA PRA TEXTO" => Some(KeyPhrase::IntoString),
-            "MUDA PRA NUMERO" | "MUDA PRA NÚMERO" => Some(KeyPhrase::ConverToNum),
+            "MUDA PRA NUMERO" | "MUDA PRA NÚMERO" => Some(KeyPhrase::ConvertToNum),
             "MUDA PRA INTEIRO" => Some(KeyPhrase::ConvertToInt),
+            "ENQUANTO É MEMO" | "ENQUANTO E MEMO" => Some(KeyPhrase::ExecuteWhileEqual),
+            "ENQUANTO NUM E ELE" | "ENQUANTO NUM É ELE" => Some(KeyPhrase::ExecuteWhileNotEqual),
+            "ENQUANTO E MENOR" | "ENQUANTO É MENOR" => Some(KeyPhrase::ExecuteWhileLess),
+            "ENQUANTO MENOR OU E MEMO" | "ENQUANTO MENOR OU É MEMO" => Some(KeyPhrase::ExecuteWhileEqualOrLess),
+            "ENQUANTO E MAIOR" | "ENQUANTO É MAIOR" => Some(KeyPhrase::ExecuteWhileGreater),
+            "ENQUANTO MAIOR OU E MEMO" | "ENQUANTO MAIOR OU É MEMO" => Some(KeyPhrase::ExecuteWhileEqualOrGreater),
+            "REPETE" => Some(KeyPhrase::RangeLoop),
             _ => None,
         }
     }
@@ -90,7 +104,7 @@ pub enum MathOperator {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub enum PonctuationKind {
+pub enum PunctuationKind {
     Colon,
     Comma,
 }
@@ -103,7 +117,7 @@ pub enum Token {
     Number(f64),
     Integer(IntegerType),
     Operator(MathOperator),
-    Ponctuation(PonctuationKind),
+    Punctuation(PunctuationKind),
     Comment,
     NewLine,
     None
@@ -121,10 +135,10 @@ fn get_op(c : char) -> Option<MathOperator> {
     }
 }
 
-fn get_ponct(c : char) -> Option<PonctuationKind> {
+fn get_ponct(c : char) -> Option<PunctuationKind> {
     match c {
-        ':' => Some(PonctuationKind::Colon),
-        ',' => Some(PonctuationKind::Comma),
+        ':' => Some(PunctuationKind::Colon),
+        ',' => Some(PunctuationKind::Comma),
         _ => None,
     }
 }
@@ -341,7 +355,7 @@ pub fn next_token(input : &[char], offset : &mut usize) -> Result<Token, String>
     }
 
     if let Some(p) = get_ponct(first_char) {
-        return Ok(Token::Ponctuation(p));
+        return Ok(Token::Punctuation(p));
     }
 
     if let Some(_) = get_digit(first_char) {
@@ -453,6 +467,13 @@ pub enum CommandKind {
     ConvertToNum,
     ConvertToInt,
     IntoString,
+    ExecuteWhileEqual,
+    ExecuteWhileNotEqual,
+    ExecuteWhileEqualOrLess,
+    ExecuteWhileLess,
+    ExecuteWhileGreater,
+    ExecuteWhileEqualOrGreater,
+    RangeLoop,
 }
 
 impl CommandKind {
@@ -478,8 +499,15 @@ impl CommandKind {
             KeyPhrase::GetNumberInput => Some(CommandKind::GetNumberInput),
             KeyPhrase::IntoString => Some(CommandKind::IntoString),
             KeyPhrase::ConvertToInt => Some(CommandKind::ConvertToInt),
-            KeyPhrase::ConverToNum => Some(CommandKind::ConvertToNum),
+            KeyPhrase::ConvertToNum => Some(CommandKind::ConvertToNum),
             KeyPhrase::GetIntegerInput => Some(CommandKind::GetIntegerInput),
+            KeyPhrase::ExecuteWhileEqual => Some(CommandKind::ExecuteWhileEqual),
+            KeyPhrase::ExecuteWhileNotEqual => Some(CommandKind::ExecuteWhileNotEqual),
+            KeyPhrase::ExecuteWhileEqualOrLess => Some(CommandKind::ExecuteWhileEqualOrLess),
+            KeyPhrase::ExecuteWhileLess => Some(CommandKind::ExecuteWhileLess),
+            KeyPhrase::ExecuteWhileGreater => Some(CommandKind::ExecuteWhileGreater),
+            KeyPhrase::ExecuteWhileEqualOrGreater => Some(CommandKind::ExecuteWhileEqualOrGreater),
+            KeyPhrase::RangeLoop => Some(CommandKind::RangeLoop),
             _ => None,
         }
     }
@@ -519,7 +547,7 @@ impl CommandInfo {
             CommandKind::PrintDebug => CommandInfo::from(1, 1,
                                                          vec![CommandArgumentKind::Expression]),
             CommandKind::Declare => {
-                CommandInfo::from(2, 2, vec![CommandArgumentKind::Name,
+                CommandInfo::from(1, 2, vec![CommandArgumentKind::Name,
                                              CommandArgumentKind::Expression])
             }
             CommandKind::Set => {
@@ -545,9 +573,24 @@ impl CommandInfo {
             CommandKind::ExecuteIfEqualOrGreater => {
                 CommandInfo::from(0, 0, vec![])
             }
+            CommandKind::ExecuteWhileEqual |
+            CommandKind::ExecuteWhileNotEqual |
+            CommandKind::ExecuteWhileLess |
+            CommandKind::ExecuteWhileGreater |
+            CommandKind::ExecuteWhileEqualOrLess |
+            CommandKind::ExecuteWhileEqualOrGreater => {
+                CommandInfo::from(2, 2, vec![CommandArgumentKind::Expression,
+                                             CommandArgumentKind::Expression])
+            }
             CommandKind::GetStringInput | CommandKind::GetNumberInput | CommandKind::IntoString |
             CommandKind::ConvertToNum | CommandKind::ConvertToInt | CommandKind::GetIntegerInput => {
                 CommandInfo::from(1, 1, vec![CommandArgumentKind::Name])
+            }
+            CommandKind::RangeLoop => {
+                // First is the variable, second is the start, third is the end, fourth (optional) is the skipping
+                CommandInfo::from(3, 4, vec![CommandArgumentKind::Name,
+                                             CommandArgumentKind::Expression, CommandArgumentKind::Expression,
+                                                CommandArgumentKind::Expression])
             }
         }
     }
@@ -581,7 +624,7 @@ fn parse_parameter(src : &[char], offset : &mut usize) -> Result<FunctionParamet
     };
 
     match next_token(src, offset) {
-        Ok(Token::Ponctuation(PonctuationKind::Colon)) => {} // OK,
+        Ok(Token::Punctuation(PunctuationKind::Colon)) => {} // OK,
         Ok(t) => return Err(format!("Esperado um : depois do nome, encontrado {:?}", t)),
         Err(e) => return Err(e)
     };
@@ -638,7 +681,7 @@ fn parse_function(src : &[char], offset : &mut usize) -> Result<ParserResult, St
                        // Check next token
 
                        match next_token(src, offset) {
-                           Ok(Token::Ponctuation(PonctuationKind::Comma)) => {} // Ok
+                           Ok(Token::Punctuation(PunctuationKind::Comma)) => {} // Ok
                            Ok(Token::Operator(MathOperator::ParenthesisRight)) => break, // End
                            Ok(t) => return Err(format!("Esperado uma vírgula ou o fim da lista de parâmetros, encontrado {:?}", t)),
                            Err(e) => return Err(e),
@@ -722,9 +765,7 @@ fn parse_sub_expression(src : &[char], offset : &mut usize, expr : &mut Expressi
         Token::Text(t) => {
             last_was_value = true;
 
-            // TODO: Operators n stuff
-
-            nodes.push(ExpressionNode::Value(RawValue::Text(t)));
+            values.push(ExpressionNode::Value(RawValue::Text(t)));
         }
         Token::NewLine => return Ok(()),
         Token::Symbol(s) => {
@@ -779,9 +820,9 @@ fn parse_sub_expression(src : &[char], offset : &mut usize, expr : &mut Expressi
 
             last_was_value = false;
         }
-        Token::Ponctuation(p) => {
+        Token::Punctuation(p) => {
             match p {
-                PonctuationKind::Comma if root => {
+                PunctuationKind::Comma if root => {
                     // Ok
 
                     return Ok(());
@@ -867,7 +908,7 @@ fn parse_sub_expression(src : &[char], offset : &mut usize, expr : &mut Expressi
 
                 last_was_value = true;
 
-                nodes.push(ExpressionNode::Value(RawValue::Text(t)));
+                values.push(ExpressionNode::Value(RawValue::Text(t)));
             }
             Token::Symbol(s) => {
                 if last_was_value {
@@ -927,9 +968,9 @@ fn parse_sub_expression(src : &[char], offset : &mut usize, expr : &mut Expressi
 
                 operations.push(o);
             }
-            Token::Ponctuation(p) => {
+            Token::Punctuation(p) => {
                 match p {
-                    PonctuationKind::Comma if root => {
+                    PunctuationKind::Comma if root => {
                         // Ok. Do not set offset to dummy_offset, since we want the lower calls and the parser to see the comma
 
                         break;
@@ -1002,7 +1043,7 @@ fn parse_command(src : &[char], offset : &mut usize, kp : KeyPhrase) -> Result<P
             Ok(t) => {
                 match t {
                     Token::NewLine | Token::None => false,
-                    Token::Ponctuation(PonctuationKind::Colon) => true,
+                    Token::Punctuation(PunctuationKind::Colon) => true,
                     _ => false,
                 }
             }
@@ -1067,9 +1108,9 @@ fn parse_command(src : &[char], offset : &mut usize, kp : KeyPhrase) -> Result<P
                 Ok(t) => {
                     match t {
                         Token::None | Token::NewLine => break,
-                        Token::Ponctuation(p) => {
+                        Token::Punctuation(p) => {
                             match p {
-                                PonctuationKind::Comma => {
+                                PunctuationKind::Comma => {
                                     *offset = peek_offset;
                                 } // OK
                                 _ => return Err(format!("Esperado uma vírgula ou o fim dos argumentos, mas foi encontrado {:?}", p)),
