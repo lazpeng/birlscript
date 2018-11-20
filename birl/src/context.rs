@@ -1,18 +1,17 @@
 //! Hosts the runtime for the birlscript language
 
-// BIG TODO : Add default variables
-
 use vm::{ VirtualMachine, ExecutionStatus };
-use parser::{ parse_line, ParserResult, IntegerType, FunctionDeclaration };
+use parser::{ parse_line, TypeKind, ParserResult, IntegerType, FunctionDeclaration };
 use compiler::{ Compiler, CompilerHint };
 
 use std::io::{ BufRead, BufReader, Write };
 use std::fs::File;
+use std::env;
 
 pub const BIRL_COPYRIGHT : &'static str 
     = "© 2016 - 2018 Rafael Rodrigues Nakano <lazpeng@gmail.com>";
 pub const BIRL_VERSION : &'static str 
-    = "BirlScript v2.0.0-alpha";
+    = "BirlScript v2.0.0-beta";
 pub const BIRL_MAIN_FUNCTION : &str 
     = "SHOW";
 
@@ -20,14 +19,27 @@ pub const BIRL_MAIN_FUNCTION_ID     : usize = 1;
 pub const BIRL_GLOBAL_FUNCTION_ID   : usize = 0;
 pub const BIRL_RET_VAL_VAR_ADDRESS  : usize = 0;
 
+#[derive(Debug, Clone, PartialEq)]
 pub enum RawValue {
     Text(String),
     Integer(IntegerType),
-    Number(f64)
+    Number(f64),
+    Null,
+}
+
+impl RawValue {
+    pub fn get_kind(&self) -> TypeKind {
+        match &self {
+            &RawValue::Integer(_) => TypeKind::Integer,
+            &RawValue::Number(_) => TypeKind::Number,
+            &RawValue::Text(_) => TypeKind::Text,
+            &RawValue::Null => TypeKind::Null,
+        }
+    }
 }
 
 pub struct Context {
-    pub vm : VirtualMachine,
+    vm : VirtualMachine,
     has_main : bool,
     compiler : Compiler,
     current_code_id : usize,
@@ -115,14 +127,20 @@ impl Context {
                     }
                 };
 
-                return Ok(hint);
+                Ok(hint)
             }
-            ParserResult::FunctionEnd => self.end_function()?,
-            ParserResult::FunctionStart(func) => self.add_function(func)?,
-            ParserResult::Nothing => return Ok(None)
-        }
+            ParserResult::FunctionEnd => {
+                self.end_function()?;
 
-        Ok(None)
+                Ok(Some(CompilerHint::ScopeEnd))
+            },
+            ParserResult::FunctionStart(func) => {
+                self.add_function(func)?;
+
+                Ok(Some(CompilerHint::ScopeStart))
+            },
+            ParserResult::Nothing => Ok(None)
+        }
     }
 
     pub fn add_source_string(&mut self, string : String) -> Result<(), String> {
@@ -169,6 +187,32 @@ impl Context {
         Ok(())
     }
 
+    pub fn add_standard_definitions(&mut self) -> Result<(), String> {
+        // TODO: Add a better (and dynamic) way to add definitions and functions
+
+        let vars = vec!
+        [
+            ("UM".to_owned(), RawValue::Integer(1)),
+            ("CUMPADE".to_owned(), RawValue::Text(env::var("USER").unwrap_or("CUMPADE".to_owned()))),
+            ("FRANGO".to_owned(), RawValue::Null),
+        ];
+
+        for (name, value) in vars {
+            let mut code = vec![];
+
+            match self.compiler.compile_global_variable(name, value, false, &mut code) {
+                Ok(_) => {}
+                Err(e) => return Err(e)
+            }
+
+            for c in code {
+                self.vm.run(c)?;
+            }
+        }
+
+        Ok(())
+    }
+
     pub fn call_function_by_id(&mut self, id : usize, args : Vec<RawValue>) -> Result<(), String> {
         let mut instructions = vec![];
 
@@ -202,7 +246,7 @@ impl Context {
                 Ok(ExecutionStatus::Normal) => {}
                 Ok(ExecutionStatus::Returned) => {}
                 Ok(ExecutionStatus::Halt) => break,
-                Ok(ExecutionStatus::Quit) => return Ok(()),
+                Ok(ExecutionStatus::Quit) => break,
                 Err(e) => return Err(e)
             }
         }

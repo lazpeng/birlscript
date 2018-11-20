@@ -1,5 +1,5 @@
-//! The parser for BirlScript
-//!
+use context::RawValue;
+
 #[cfg(target_pointer_width = "64")]
 pub type IntegerType = i64;
 
@@ -27,16 +27,29 @@ pub enum KeyPhrase {
     ExecuteIfLess,
     ExecuteIfEqualOrGreater,
     ExecuteIfGreater,
+    ExecuteWhileEqual,
+    ExecuteWhileNotEqual,
+    ExecuteWhileEqualOrLess,
+    ExecuteWhileLess,
+    ExecuteWhileGreater,
+    ExecuteWhileEqualOrGreater,
+    RangeLoop,
     Call,
     GetStringInput,
     GetNumberInput,
     GetIntegerInput,
     IntoString,
     ConvertToInt,
-    ConverToNum,
+    ConvertToNum,
     TypeInt,
     TypeNum,
     TypeStr,
+    TypeList,
+    MakeNewList,
+    QueryListSize,
+    AddListElement,
+    RemoveListElement,
+    IndexList
 }
 
 impl KeyPhrase {
@@ -58,6 +71,7 @@ impl KeyPhrase {
             "TRAPÉZIO DESCENDENTE" | "TRAPEZIO DESCENDENTE" => Some(KeyPhrase::TypeNum),
             "FIBRA" => Some(KeyPhrase::TypeStr),
             "BATATA DOCE" => Some(KeyPhrase::TypeInt),
+            "LISTA" => Some(KeyPhrase::TypeList),
             "E ELE QUE A GENTE QUER" |
             "É ELE QUE A GENTE QUER" => Some(KeyPhrase::Compare),
             "FIM" => Some(KeyPhrase::EndSubScope),
@@ -70,10 +84,22 @@ impl KeyPhrase {
             "MAIOR OU E MEMO" | "MAIOR OU É MEMO" => Some(KeyPhrase::ExecuteIfEqualOrGreater),
             "FALA AI" | "FALA AÍ" => Some(KeyPhrase::GetStringInput),
             "FALA UM NÚMERO" | "FALA UM NUMERO" => Some(KeyPhrase::GetNumberInput),
-            "FALA AI UM INTEIRO" | "FALA AÍ UM INTEIRO" => Some(KeyPhrase::GetIntegerInput),
+            "FALA UM INTEIRO" => Some(KeyPhrase::GetIntegerInput),
             "MUDA PRA TEXTO" => Some(KeyPhrase::IntoString),
-            "MUDA PRA NUMERO" | "MUDA PRA NÚMERO" => Some(KeyPhrase::ConverToNum),
+            "MUDA PRA NUMERO" | "MUDA PRA NÚMERO" => Some(KeyPhrase::ConvertToNum),
             "MUDA PRA INTEIRO" => Some(KeyPhrase::ConvertToInt),
+            "ENQUANTO É MEMO" | "ENQUANTO E MEMO" => Some(KeyPhrase::ExecuteWhileEqual),
+            "ENQUANTO NUM E ELE" | "ENQUANTO NUM É ELE" => Some(KeyPhrase::ExecuteWhileNotEqual),
+            "ENQUANTO E MENOR" | "ENQUANTO É MENOR" => Some(KeyPhrase::ExecuteWhileLess),
+            "ENQUANTO MENOR OU E MEMO" | "ENQUANTO MENOR OU É MEMO" => Some(KeyPhrase::ExecuteWhileEqualOrLess),
+            "ENQUANTO E MAIOR" | "ENQUANTO É MAIOR" => Some(KeyPhrase::ExecuteWhileGreater),
+            "ENQUANTO MAIOR OU E MEMO" | "ENQUANTO MAIOR OU É MEMO" => Some(KeyPhrase::ExecuteWhileEqualOrGreater),
+            "REPETE" => Some(KeyPhrase::RangeLoop),
+            "FAZ UMA LISTA" => Some(KeyPhrase::MakeNewList),
+            "FALA O TAMANHO" => Some(KeyPhrase::QueryListSize),
+            "POE ISSO AQUI" | "PÕE ISSO AQUI" => Some(KeyPhrase::AddListElement),
+            "TIRA ESSE" => Some(KeyPhrase::RemoveListElement),
+            "ME DA ESSE" | "ME DÁ ESSE" => Some(KeyPhrase::IndexList),
             _ => None,
         }
     }
@@ -90,7 +116,7 @@ pub enum MathOperator {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub enum PonctuationKind {
+pub enum PunctuationKind {
     Colon,
     Comma,
 }
@@ -103,7 +129,7 @@ pub enum Token {
     Number(f64),
     Integer(IntegerType),
     Operator(MathOperator),
-    Ponctuation(PonctuationKind),
+    Punctuation(PunctuationKind),
     Comment,
     NewLine,
     None
@@ -121,10 +147,10 @@ fn get_op(c : char) -> Option<MathOperator> {
     }
 }
 
-fn get_ponct(c : char) -> Option<PonctuationKind> {
+fn get_ponct(c : char) -> Option<PunctuationKind> {
     match c {
-        ':' => Some(PonctuationKind::Colon),
-        ',' => Some(PonctuationKind::Comma),
+        ':' => Some(PunctuationKind::Colon),
+        ',' => Some(PunctuationKind::Comma),
         _ => None,
     }
 }
@@ -341,7 +367,7 @@ pub fn next_token(input : &[char], offset : &mut usize) -> Result<Token, String>
     }
 
     if let Some(p) = get_ponct(first_char) {
-        return Ok(Token::Ponctuation(p));
+        return Ok(Token::Punctuation(p));
     }
 
     if let Some(_) = get_digit(first_char) {
@@ -364,6 +390,8 @@ pub enum TypeKind {
     Integer,
     Number,
     Text,
+    List,
+    Null,
 }
 
 impl TypeKind {
@@ -372,6 +400,7 @@ impl TypeKind {
             KeyPhrase::TypeInt => Some(TypeKind::Integer),
             KeyPhrase::TypeNum => Some(TypeKind::Number),
             KeyPhrase::TypeStr => Some(TypeKind::Text),
+            KeyPhrase::TypeList => Some(TypeKind::List),
             _ => None,
         }
     }
@@ -408,15 +437,8 @@ impl FunctionDeclaration {
 }
 
 #[derive(Debug, PartialEq)]
-pub enum MathValue {
-    Integer(IntegerType),
-    Number(f64),
-    Text(String),
-}
-
-#[derive(Debug, PartialEq)]
 pub enum ExpressionNode {
-    Value(MathValue),
+    Value(RawValue),
     Symbol(String),
     Operator(MathOperator),
 }
@@ -460,6 +482,18 @@ pub enum CommandKind {
     ConvertToNum,
     ConvertToInt,
     IntoString,
+    ExecuteWhileEqual,
+    ExecuteWhileNotEqual,
+    ExecuteWhileEqualOrLess,
+    ExecuteWhileLess,
+    ExecuteWhileGreater,
+    ExecuteWhileEqualOrGreater,
+    RangeLoop,
+    MakeNewList,
+    QueryListSize,
+    AddListElement,
+    RemoveListElement,
+    IndexList
 }
 
 impl CommandKind {
@@ -485,8 +519,20 @@ impl CommandKind {
             KeyPhrase::GetNumberInput => Some(CommandKind::GetNumberInput),
             KeyPhrase::IntoString => Some(CommandKind::IntoString),
             KeyPhrase::ConvertToInt => Some(CommandKind::ConvertToInt),
-            KeyPhrase::ConverToNum => Some(CommandKind::ConvertToNum),
+            KeyPhrase::ConvertToNum => Some(CommandKind::ConvertToNum),
             KeyPhrase::GetIntegerInput => Some(CommandKind::GetIntegerInput),
+            KeyPhrase::ExecuteWhileEqual => Some(CommandKind::ExecuteWhileEqual),
+            KeyPhrase::ExecuteWhileNotEqual => Some(CommandKind::ExecuteWhileNotEqual),
+            KeyPhrase::ExecuteWhileEqualOrLess => Some(CommandKind::ExecuteWhileEqualOrLess),
+            KeyPhrase::ExecuteWhileLess => Some(CommandKind::ExecuteWhileLess),
+            KeyPhrase::ExecuteWhileGreater => Some(CommandKind::ExecuteWhileGreater),
+            KeyPhrase::ExecuteWhileEqualOrGreater => Some(CommandKind::ExecuteWhileEqualOrGreater),
+            KeyPhrase::RangeLoop => Some(CommandKind::RangeLoop),
+            KeyPhrase::MakeNewList => Some(CommandKind::MakeNewList),
+            KeyPhrase::QueryListSize => Some(CommandKind::QueryListSize),
+            KeyPhrase::AddListElement => Some(CommandKind::AddListElement),
+            KeyPhrase::RemoveListElement => Some(CommandKind::RemoveListElement),
+            KeyPhrase::IndexList => Some(CommandKind::IndexList),
             _ => None,
         }
     }
@@ -526,7 +572,7 @@ impl CommandInfo {
             CommandKind::PrintDebug => CommandInfo::from(1, 1,
                                                          vec![CommandArgumentKind::Expression]),
             CommandKind::Declare => {
-                CommandInfo::from(2, 2, vec![CommandArgumentKind::Name,
+                CommandInfo::from(1, 2, vec![CommandArgumentKind::Name,
                                              CommandArgumentKind::Expression])
             }
             CommandKind::Set => {
@@ -552,9 +598,41 @@ impl CommandInfo {
             CommandKind::ExecuteIfEqualOrGreater => {
                 CommandInfo::from(0, 0, vec![])
             }
+            CommandKind::ExecuteWhileEqual |
+            CommandKind::ExecuteWhileNotEqual |
+            CommandKind::ExecuteWhileLess |
+            CommandKind::ExecuteWhileGreater |
+            CommandKind::ExecuteWhileEqualOrLess |
+            CommandKind::ExecuteWhileEqualOrGreater => {
+                CommandInfo::from(2, 2, vec![CommandArgumentKind::Expression,
+                                             CommandArgumentKind::Expression])
+            }
             CommandKind::GetStringInput | CommandKind::GetNumberInput | CommandKind::IntoString |
             CommandKind::ConvertToNum | CommandKind::ConvertToInt | CommandKind::GetIntegerInput => {
                 CommandInfo::from(1, 1, vec![CommandArgumentKind::Name])
+            }
+            CommandKind::RangeLoop => {
+                // First is the variable, second is the start, third is the end, fourth (optional) is the skipping
+                CommandInfo::from(3, 4, vec![CommandArgumentKind::Name,
+                                             CommandArgumentKind::Expression, CommandArgumentKind::Expression,
+                                                CommandArgumentKind::Expression])
+            }
+            CommandKind::MakeNewList => {
+                CommandInfo::from(1, 1, vec![CommandArgumentKind::Name])
+            }
+            CommandKind::QueryListSize => {
+                CommandInfo::from(2, 2, vec![CommandArgumentKind::Name, CommandArgumentKind::Name])
+            }
+            CommandKind::AddListElement => {
+                CommandInfo::from(2, 3, vec![CommandArgumentKind::Name, CommandArgumentKind::Expression,
+                    CommandArgumentKind::Expression])
+            }
+            CommandKind::RemoveListElement => {
+                CommandInfo::from(2, 2, vec![CommandArgumentKind::Name, CommandArgumentKind::Expression])
+            }
+            CommandKind::IndexList => {
+                CommandInfo::from(3, 3, vec![CommandArgumentKind::Name, CommandArgumentKind::Expression,
+                    CommandArgumentKind::Name])
             }
         }
     }
@@ -580,15 +658,16 @@ pub enum ParserResult {
     Nothing,
 }
 
-fn parse_parameter(src : &[char], offset : &mut usize) -> Result<FunctionParameter, String> {
+fn parse_parameter(src : &[char], offset : &mut usize) -> Result<Option<FunctionParameter>, String> {
     let name = match next_token(src, offset) {
         Ok(Token::Symbol(s)) => s,
+        Ok(Token::Operator(MathOperator::ParenthesisRight)) => return Ok(None),
         Ok(t) => return Err(format!("Esperado um nome pro parâmetro, encontrado {:?}", t)),
         Err(e) => return Err(e)
     };
 
     match next_token(src, offset) {
-        Ok(Token::Ponctuation(PonctuationKind::Colon)) => {} // OK,
+        Ok(Token::Punctuation(PunctuationKind::Colon)) => {} // OK,
         Ok(t) => return Err(format!("Esperado um : depois do nome, encontrado {:?}", t)),
         Err(e) => return Err(e)
     };
@@ -604,7 +683,7 @@ fn parse_parameter(src : &[char], offset : &mut usize) -> Result<FunctionParamet
         Err(e) => return Err(e)
     };
 
-    Ok(FunctionParameter::from(name, kind))
+    Ok(Some(FunctionParameter::from(name, kind)))
 }
 
 fn parse_function(src : &[char], offset : &mut usize) -> Result<ParserResult, String> {
@@ -636,7 +715,8 @@ fn parse_function(src : &[char], offset : &mut usize) -> Result<ParserResult, St
                        }
 
                        let param = match parse_parameter(src, offset) {
-                           Ok(p) => p,
+                           Ok(Some(p)) => p,
+                           Ok(None) => break,
                            Err(e) => return Err(e)
                        };
 
@@ -645,7 +725,7 @@ fn parse_function(src : &[char], offset : &mut usize) -> Result<ParserResult, St
                        // Check next token
 
                        match next_token(src, offset) {
-                           Ok(Token::Ponctuation(PonctuationKind::Comma)) => {} // Ok
+                           Ok(Token::Punctuation(PunctuationKind::Comma)) => {} // Ok
                            Ok(Token::Operator(MathOperator::ParenthesisRight)) => break, // End
                            Ok(t) => return Err(format!("Esperado uma vírgula ou o fim da lista de parâmetros, encontrado {:?}", t)),
                            Err(e) => return Err(e),
@@ -672,22 +752,62 @@ fn parse_sub_expression(src : &[char], offset : &mut usize, expr : &mut Expressi
         Err(e) => return Err(e),
     };
 
+    let mut nodes = vec![];
+
+    let mut values : Vec<ExpressionNode> = vec![];
+    let mut operations : Vec<MathOperator> = vec![];
+    let mut last_was_important = false;
+
     match first {
         Token::Comment | Token::None => return Ok(()),
         Token::Integer(i) => {
             last_was_value = true;
 
-            expr.nodes.push(ExpressionNode::Value(MathValue::Integer(i)));
+            if last_was_important {
+                last_was_important = false;
+
+                match values.pop() {
+                    Some(v) => nodes.push(v),
+                    None => {}
+                }
+
+                let op = match operations.pop() {
+                    Some(v) => v,
+                    None => return Err("Operations tá vazio".to_owned()),
+                };
+
+                nodes.push(ExpressionNode::Value(RawValue::Integer(i)));
+                nodes.push(ExpressionNode::Operator(op));
+            } else {
+                values.push(ExpressionNode::Value(RawValue::Integer(i)));
+            }
         }
         Token::Number(n) => {
             last_was_value = true;
 
-            expr.nodes.push(ExpressionNode::Value(MathValue::Number(n)));
+            if last_was_important {
+                last_was_important = false;
+
+                match values.pop() {
+                    Some(v) => nodes.push(v),
+                    None => {}
+                }
+
+                let op = match operations.pop() {
+                    Some(v) => v,
+                    None => return Err("Operations tá vazio".to_owned()),
+                };
+
+                nodes.push(ExpressionNode::Value(RawValue::Number(n)));
+                nodes.push(ExpressionNode::Operator(op));
+            } else {
+                values.push(ExpressionNode::Value(RawValue::Number(n)));
+            }
         }
         Token::Text(t) => {
             last_was_value = true;
 
-            expr.nodes.push(ExpressionNode::Value(MathValue::Text(t)));
+            values.push(ExpressionNode::Value(RawValue::Text(t)));
         }
         Token::NewLine => return Ok(()),
         Token::Symbol(s) => {
@@ -697,12 +817,27 @@ fn parse_sub_expression(src : &[char], offset : &mut usize, expr : &mut Expressi
                 expr.has_symbols = true;
             }
 
-            expr.nodes.push(ExpressionNode::Symbol(s));
+            if last_was_important {
+                last_was_important = false;
+
+                match values.pop() {
+                    Some(v) => nodes.push(v),
+                    None => {}
+                }
+
+                let op = match operations.pop() {
+                    Some(v) => v,
+                    None => return Err("Operations tá vazio".to_owned()),
+                };
+
+                nodes.push(ExpressionNode::Symbol(s));
+                nodes.push(ExpressionNode::Operator(op));
+            } else {
+                values.push(ExpressionNode::Symbol(s));
+            }
         }
         Token::Operator(MathOperator::ParenthesisLeft) => {
             last_was_value = true;
-
-            expr.nodes.push(ExpressionNode::Operator(MathOperator::ParenthesisLeft));
 
             match parse_sub_expression(src, &mut dummy_offset, expr, false) {
                 Ok(_) => {}
@@ -712,25 +847,23 @@ fn parse_sub_expression(src : &[char], offset : &mut usize, expr : &mut Expressi
         Token::Operator(MathOperator::ParenthesisRight) => {
             *offset = dummy_offset;
 
-            expr.nodes.push(ExpressionNode::Operator(MathOperator::ParenthesisRight));
-
-            return Ok(())
+            return Ok(());
         },
         Token::Operator(o) => {
             match o {
                 MathOperator::Plus | MathOperator::Minus => {
                     // Add a zero before this
-                    expr.nodes.push(ExpressionNode::Value(MathValue::Integer(0)));
-                    expr.nodes.push(ExpressionNode::Operator(o));
+                    values.push(ExpressionNode::Value(RawValue::Integer(0)));
+                    operations.push(o);
                 },
                 _ => return Err(format!("Scope ou expressão começa com o operator unário inválido {:?}", o)),
             }
 
             last_was_value = false;
         }
-        Token::Ponctuation(p) => {
+        Token::Punctuation(p) => {
             match p {
-                PonctuationKind::Comma if root => {
+                PunctuationKind::Comma if root => {
                     // Ok
 
                     return Ok(());
@@ -762,7 +895,24 @@ fn parse_sub_expression(src : &[char], offset : &mut usize, expr : &mut Expressi
 
                 last_was_value = true;
 
-                expr.nodes.push(ExpressionNode::Value(MathValue::Integer(i)));
+                if last_was_important {
+                    last_was_important = false;
+
+                    match values.pop() {
+                        Some(v) => nodes.push(v),
+                        None => {}
+                    }
+
+                    let op = match operations.pop() {
+                        Some(v) => v,
+                        None => return Err("Operations tá vazio".to_owned()),
+                    };
+
+                    nodes.push(ExpressionNode::Value(RawValue::Integer(i)));
+                    nodes.push(ExpressionNode::Operator(op));
+                } else {
+                    values.push(ExpressionNode::Value(RawValue::Integer(i)));
+                }
             }
             Token::Number(n) => {
                 if last_was_value {
@@ -771,7 +921,24 @@ fn parse_sub_expression(src : &[char], offset : &mut usize, expr : &mut Expressi
 
                 last_was_value = true;
 
-                expr.nodes.push(ExpressionNode::Value(MathValue::Number(n)));
+                if last_was_important {
+                    last_was_important = false;
+
+                    match values.pop() {
+                        Some(v) => nodes.push(v),
+                        None => {}
+                    }
+
+                    let op = match operations.pop() {
+                        Some(v) => v,
+                        None => return Err("Operations tá vazio".to_owned()),
+                    };
+
+                    nodes.push(ExpressionNode::Value(RawValue::Number(n)));
+                    nodes.push(ExpressionNode::Operator(op));
+                } else {
+                    values.push(ExpressionNode::Value(RawValue::Number(n)));
+                }
             }
             Token::Text(t) => {
                 if last_was_value {
@@ -780,7 +947,7 @@ fn parse_sub_expression(src : &[char], offset : &mut usize, expr : &mut Expressi
 
                 last_was_value = true;
 
-                expr.nodes.push(ExpressionNode::Value(MathValue::Text(t)));
+                values.push(ExpressionNode::Value(RawValue::Text(t)));
             }
             Token::Symbol(s) => {
                 if last_was_value {
@@ -793,12 +960,27 @@ fn parse_sub_expression(src : &[char], offset : &mut usize, expr : &mut Expressi
                     expr.has_symbols = true;
                 }
 
-                expr.nodes.push(ExpressionNode::Symbol(s));
+                if last_was_important {
+                    last_was_important = false;
+
+                    match values.pop() {
+                        Some(v) => nodes.push(v),
+                        None => {}
+                    }
+
+                    let op = match operations.pop() {
+                        Some(v) => v,
+                        None => return Err("Operations tá vazio".to_owned()),
+                    };
+
+                    nodes.push(ExpressionNode::Symbol(s));
+                    nodes.push(ExpressionNode::Operator(op));
+                } else {
+                    values.push(ExpressionNode::Symbol(s));
+                }
             }
             Token::Operator(MathOperator::ParenthesisLeft) => {
                 last_was_value = true;
-
-                expr.nodes.push(ExpressionNode::Operator(MathOperator::ParenthesisLeft));
 
                 match parse_sub_expression(src, &mut dummy_offset, expr, false) {
                     Ok(_) => {}
@@ -807,8 +989,6 @@ fn parse_sub_expression(src : &[char], offset : &mut usize, expr : &mut Expressi
             }
             Token::Operator(MathOperator::ParenthesisRight) => {
                 *offset = dummy_offset;
-
-                expr.nodes.push(ExpressionNode::Operator(MathOperator::ParenthesisRight));
 
                 break
             },
@@ -819,16 +999,21 @@ fn parse_sub_expression(src : &[char], offset : &mut usize, expr : &mut Expressi
 
                 last_was_value = false;
 
-                expr.nodes.push(ExpressionNode::Operator(o));
+                last_was_important = match o {
+                    MathOperator::Plus | MathOperator::Minus => false,
+                    _ => true,
+                };
+
+                operations.push(o);
             }
-            Token::Ponctuation(p) => {
+            Token::Punctuation(p) => {
                 match p {
-                    PonctuationKind::Comma if root => {
+                    PunctuationKind::Comma if root => {
                         // Ok. Do not set offset to dummy_offset, since we want the lower calls and the parser to see the comma
 
                         break;
                     }
-                    _ => return Err(format!("Erro: A expressão deveria começar com um valor ou operador unário, mas começa com {:?}", p)),
+                    _ => return Err(format!("Erro: {:?} no meio da expressão", p)),
                 }
             }
             Token::NewLine => break,
@@ -842,6 +1027,27 @@ fn parse_sub_expression(src : &[char], offset : &mut usize, expr : &mut Expressi
         return Err("Expressão termina com um operador".to_owned());
     }
 
+    for node in nodes {
+        expr.nodes.push(node);
+    }
+
+    if values.len() == operations.len() {
+        // Ok
+    } else if operations.len() == values.len() - 1 {
+        let first = values.remove(0);
+
+        expr.nodes.push(first);
+    } else {
+        return Err(format!("Formatação inválida da expressão resultado. Lenv : {}. lenO: {}", values.len(), operations.len()));
+    }
+
+    for _ in 0..values.len() {
+        let val = values.remove(0);
+        let op = operations.remove(0);
+        expr.nodes.push(val);
+        expr.nodes.push(ExpressionNode::Operator(op));
+    }
+
     Ok(())
 }
 
@@ -849,11 +1055,9 @@ fn parse_expression(src : &[char], offset : &mut usize) -> Result<Expression, St
     let mut expr = Expression::new();
 
     match parse_sub_expression(src, offset, &mut expr, true) {
-        Ok(_) => {},
-        Err(e) => return Err(e),
-    };
-
-    Ok(expr)
+        Ok(_) => Ok(expr),
+        Err(e) => Err(e),
+    }
 }
 
 fn parse_command(src : &[char], offset : &mut usize, kp : KeyPhrase) -> Result<ParserResult, String> {
@@ -877,7 +1081,7 @@ fn parse_command(src : &[char], offset : &mut usize, kp : KeyPhrase) -> Result<P
             Ok(t) => {
                 match t {
                     Token::NewLine | Token::None => false,
-                    Token::Ponctuation(PonctuationKind::Colon) => true,
+                    Token::Punctuation(PunctuationKind::Colon) => true,
                     _ => false,
                 }
             }
@@ -942,9 +1146,9 @@ fn parse_command(src : &[char], offset : &mut usize, kp : KeyPhrase) -> Result<P
                 Ok(t) => {
                     match t {
                         Token::None | Token::NewLine => break,
-                        Token::Ponctuation(p) => {
+                        Token::Punctuation(p) => {
                             match p {
-                                PonctuationKind::Comma => {
+                                PunctuationKind::Comma => {
                                     *offset = peek_offset;
                                 } // OK
                                 _ => return Err(format!("Esperado uma vírgula ou o fim dos argumentos, mas foi encontrado {:?}", p)),
@@ -993,9 +1197,21 @@ pub fn parse_line(src : &str) -> Result<ParserResult, String> {
                 _ => parse_command(&chars, &mut offset, kp),
             }
         }
-        Token::Text(_) | Token::Number(_) | Token::Integer(_) | Token::Symbol(_) => {
+        Token::Text(_) | Token::Number(_) | Token::Integer(_) | Token::Operator(MathOperator::ParenthesisLeft) => {
             offset = 0;
             parse_command(&chars, &mut offset, KeyPhrase::PrintDebug)
+        }
+        Token::Symbol(sym) => {
+            match next_token(&chars, &mut offset) {
+                Ok(Token::Punctuation(PunctuationKind::Colon)) => {
+                    return Err(format!("O comando \"{}\" não existe.", sym));
+                }
+                Ok(_) => {
+                    offset = 0;
+                    parse_command(&chars, &mut offset, KeyPhrase::PrintDebug)
+                }
+                Err(e) => return Err(e)
+            }
         }
         _ => Err("Linha começa com um token inválido".to_owned()),
     }

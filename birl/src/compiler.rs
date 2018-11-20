@@ -1,31 +1,31 @@
 use std::collections::HashMap;
-use parser::{ Expression, ExpressionNode, FunctionParameter, Command, TypeKind, CommandArgument, MathOperator, MathValue, CommandKind };
-use vm::Instruction;
+use parser::{ Expression, ExpressionNode, FunctionParameter, Command, TypeKind, CommandArgument, MathOperator, CommandKind };
+use vm::{ Instruction, ComparisionRequest };
 use context::RawValue;
 
 #[derive(Debug)]
 enum SubScopeKind {
-    ForLoop,
-    WhileLoop,
+    Loop,
     ExecuteIf,
     Regular,
 }
 
-#[derive(PartialEq)]
-enum ScopeKind {
+#[derive(Clone, Copy, PartialEq)]
+pub enum ScopeKind {
     Function,
     Global
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct SymbolEntry {
     address : usize,
     global : bool,
+    writeable : bool,
 }
 
 impl SymbolEntry {
-    fn from(address : usize, global : bool) -> SymbolEntry {
-        SymbolEntry { address, global }
+    fn from(address : usize, global : bool, writeable : bool) -> SymbolEntry {
+        SymbolEntry { address, global, writeable }
     }
 }
 
@@ -39,7 +39,7 @@ struct ScopeInfo {
 impl ScopeInfo {
     fn new(scope_kind : SubScopeKind, previous_next_var_address : usize, is_global : bool) -> ScopeInfo {
         let mut symbol_table = HashMap::new();
-        symbol_table.insert("TREZE".to_owned(), SymbolEntry::from(0, is_global));
+        symbol_table.insert("TREZE".to_owned(), SymbolEntry::from(0, is_global, false));
 
         ScopeInfo {
             symbol_table,
@@ -88,134 +88,67 @@ impl Compiler {
 
     fn get_inst_for_op(op : MathOperator) -> Option<Instruction> {
         match op {
-            MathOperator::Plus => Some(Instruction::MainAdd),
-            MathOperator::Minus => Some(Instruction::MainSub),
-            MathOperator::Division => Some(Instruction::MainDiv),
-            MathOperator::Multiplication => Some(Instruction::MainMul),
+            MathOperator::Plus => Some(Instruction::Add),
+            MathOperator::Minus => Some(Instruction::Sub),
+            MathOperator::Division => Some(Instruction::Div),
+            MathOperator::Multiplication => Some(Instruction::Mul),
             _ => None,
         }
     }
 
-    fn compile_sub_expression(&self, expr : &Expression, offset : &mut usize, inst : &mut Vec<Instruction>)
-            -> Result<(), String> {
-        let mut buffer : Vec<Instruction> = vec![];
+    pub fn compile_expression(&self, expr : Expression, inst : &mut Vec<Instruction>) -> Result<(), String> {
 
-        let mut last_imp_op : Option<MathOperator> = None;
+        inst.push(Instruction::SetFirstExpressionOperation);
 
-        let mut op_stack : Vec<MathOperator> = vec![];
+        let mut is_a = expr.nodes.len() > 1;
 
-        loop {
-            if *offset >= expr.nodes.len() {
-                break;
-            }
-
-            let ref current = expr.nodes[*offset];
-            *offset += 1;
-
-            match current {
-                &ExpressionNode::Operator(op) => {
-                    match op {
-                        MathOperator::ParenthesisLeft => {
-                            match self.compile_sub_expression(expr, offset, inst) {
-                                Ok(_) => {}
-                                Err(e) => return Err(e),
-                            }
-
-                            if let Some(op) = last_imp_op {
-                                let i = match Compiler::get_inst_for_op(op) {
-                                    Some(i) => i,
-                                    None => return Err("Invalid operator in important operator".to_owned()),
-                                };
-
-                                buffer.push(i);
-
-                                last_imp_op = None;
-                            }
-                        }
-                        MathOperator::ParenthesisRight => break,
-                        MathOperator::Plus | MathOperator::Minus => {
-                            op_stack.push(op);
-                        }
-                        _ => {
-                            if let Some(_) = last_imp_op {
-                                return Err("Two subsequent important operators".to_owned());
-                            }
-
-                            last_imp_op = Some(op);
-                        }
-                    }
-                }
-                &ExpressionNode::Value(ref v) => {
-                    match v {
-                        &MathValue::Integer(i) => {
-                            buffer.push(Instruction::PushMainInt(i))
-                        }
-                        &MathValue::Number(n) => {
-                            buffer.push(Instruction::PushMainNum(n))
-                        }
-                        &MathValue::Text(ref s) => {
-                            buffer.push(Instruction::PushMainStr(s.clone()))
-                        }
-                    }
-
-                    if let Some(op) = last_imp_op {
-                        let i = match Compiler::get_inst_for_op(op) {
-                            Some(i) => i,
-                            None => return Err("Invalid operator in important operator".to_owned()),
-                        };
-
-                        buffer.push(i);
-
-                        last_imp_op = None;
-                    }
-                }
-                &ExpressionNode::Symbol(ref s) => {
-                    let entry = match self.find_symbol(s) {
-                        Some(e) => e,
-                        None => return Err(format!("Variável {} não encontrada", s))
+        for node in expr.nodes {
+            match node {
+                ExpressionNode::Operator(MathOperator::ParenthesisLeft) |
+                ExpressionNode::Operator(MathOperator::ParenthesisRight) => unreachable!(),
+                ExpressionNode::Operator(o) => {
+                    let opi = match Compiler::get_inst_for_op(o) {
+                        Some(i) => i,
+                        None => unreachable!(),
                     };
 
-                    let inst = if entry.global {
-                        Instruction::ReadGlobalVarFromAddress(entry.address)
+                    inst.push(opi);
+
+                    is_a = true;
+                }
+                ExpressionNode::Value(raw) => {
+                    if is_a {
+                        inst.push(Instruction::PushValMathA(raw));
                     } else {
-                        Instruction::ReadVarFromAddress(entry.address)
+                        inst.push(Instruction::PushValMathB(raw));
+                    }
+
+                    is_a = !is_a;
+                }
+                ExpressionNode::Symbol(s) => {
+                    let info = match self.find_symbol(s.as_str()) {
+                        Some(i) => i,
+                        None => return Err(format!("Variável não encontrada : {}", s)),
                     };
 
-                    buffer.push(inst);
-
-                    if let Some(op) = last_imp_op {
-                        let i = match Compiler::get_inst_for_op(op) {
-                            Some(i) => i,
-                            None => return Err("Invalid operator in important operator".to_owned()),
-                        };
-
-                        buffer.push(i);
-
-                        last_imp_op = None;
+                    if info.global {
+                        inst.push(Instruction::ReadGlobalVarFrom(info.address));
+                    } else {
+                        inst.push(Instruction::ReadVarFrom(info.address));
                     }
+
+                    if is_a {
+                        inst.push(Instruction::PushIntermediateToA);
+                    } else {
+                        inst.push(Instruction::PushIntermediateToB);
+                    }
+
+                    is_a = !is_a;
                 }
             }
-        }
-
-        for op in op_stack {
-            let inst = match Compiler::get_inst_for_op(op) {
-                Some(i) => i,
-                None => return Err("Erro: Invalid operator on stack".to_owned()),
-            };
-
-            buffer.push(inst);
-        }
-
-        for i in buffer {
-            inst.push(i);
         }
 
         Ok(())
-    }
-
-    pub fn compile_expression(&self, expr : &Expression, inst : &mut Vec<Instruction>) -> Result<(), String> {
-        let mut offset = 0usize;
-        self.compile_sub_expression(expr, &mut offset, inst)
     }
 
     fn end_scope(&mut self, info : ScopeInfo) {
@@ -233,6 +166,36 @@ impl Compiler {
         None
     }
 
+    fn add_symbol(&mut self, name : String, writeable : bool) -> Option<SymbolEntry> {
+        let is_global = self.current_scope == ScopeKind::Global;
+        let entry = SymbolEntry::from(self.next_var_address, is_global, writeable);
+        self.next_var_address += 1;
+
+        match self.scopes.last_mut() {
+            Some(s) => {
+                s.symbol_table.insert(name, entry.clone());
+                Some(entry)
+            }
+            None => None,
+        }
+    }
+
+    fn find_or_add_symbol(&mut self, name : &str, writeable : bool) -> Option<SymbolEntry> {
+        if self.scopes.is_empty() {
+            None
+        } else {
+            match self.find_symbol(name) {
+                Some(s) => return Some(s.clone()),
+                None => {},
+            }
+
+            match self.add_symbol(name.to_owned(), writeable) {
+                Some(s) => Some(s),
+                None => None,
+            }
+        }
+    }
+
     fn get_function_info(&self, id : usize) -> Option<&FunctionInfo> {
         for (_, f) in &self.functions {
             if f.address == id {
@@ -241,6 +204,29 @@ impl Compiler {
         }
 
         None
+    }
+
+    fn add_execute_while_boilerplate(&self, mut cmd : Command, instructions : &mut Vec<Instruction>) -> Result<(), String> {
+        instructions.push(Instruction::AddLoopLabel);
+
+        if let CommandArgument::Expression(expr) = cmd.arguments.remove(0) {
+            self.compile_expression(expr, instructions)?;
+        } else {
+            return Err("Argumento 1 não é expressão".to_owned());
+        }
+
+        // Move result to A
+        instructions.push(Instruction::SwapMath);
+
+        if let CommandArgument::Expression(expr) = cmd.arguments.remove(0) {
+            self.compile_expression(expr, instructions)?;
+        } else {
+            return Err("Argumento 2 não é expressão".to_owned());
+        }
+
+        instructions.push(Instruction::Compare);
+
+        Ok(())
     }
 
     pub fn compile_command(&mut self, mut cmd : Command, instructions : &mut Vec<Instruction>)
@@ -256,12 +242,12 @@ impl Compiler {
                 for arg in cmd.arguments {
                     match arg {
                         CommandArgument::Expression(expr) => {
-                            match self.compile_expression(&expr, instructions) {
+                            match self.compile_expression(expr, instructions) {
                                 Ok(_) => {},
                                 Err(e) => return Err(e),
                             };
 
-                            instructions.push(Instruction::MainPrintDebug);
+                            instructions.push(Instruction::PrintMathBDebug);
                         }
                         _ => return Err("Erro : Um argumento diferente de valor foi passado pra print. Erro interno.".to_owned()),
                     }
@@ -271,12 +257,12 @@ impl Compiler {
                 for arg in cmd.arguments {
                     match arg {
                         CommandArgument::Expression(expr) => {
-                            match self.compile_expression(&expr, instructions) {
+                            match self.compile_expression(expr, instructions) {
                                 Ok(_) => {},
                                 Err(e) => return Err(e),
                             };
 
-                            instructions.push(Instruction::MainPrint);
+                            instructions.push(Instruction::PrintMathB);
                         }
                         _ => return Err("Erro : Um argumento diferente de valor foi passado pra print. Erro interno.".to_owned()),
                     }
@@ -288,12 +274,12 @@ impl Compiler {
                 for arg in cmd.arguments {
                     match arg {
                         CommandArgument::Expression(expr) => {
-                            match self.compile_expression(&expr, instructions) {
+                            match self.compile_expression(expr, instructions) {
                                 Ok(_) => {},
                                 Err(e) => return Err(e),
                             };
 
-                            instructions.push(Instruction::MainPrint);
+                            instructions.push(Instruction::PrintMathB);
                         }
                         _ => return Err("Erro : Um argumento diferente de valor foi passado pra print. Erro interno.".to_owned()),
                     }
@@ -319,11 +305,15 @@ impl Compiler {
                     None => return Err(format!("Variável {} não encontrada", name))
                 };
 
+                if ! entry.writeable {
+                    return Err(format!("Erro : A variável {} não pode ser escrita", name));
+                }
+
                 let expr_arg = cmd.arguments.remove(0);
 
                 match expr_arg {
                     CommandArgument::Expression(expr) => {
-                        match self.compile_expression(&expr, instructions) {
+                        match self.compile_expression(expr, instructions) {
                             Ok(_) => {}
                             Err(e) => return Err(e)
                         }
@@ -332,18 +322,14 @@ impl Compiler {
                 }
 
                 let inst = if entry.global {
-                    Instruction::WriteToGlobalVarAtAddress(entry.address)
+                    Instruction::WriteGlobalVarTo(entry.address)
                 } else {
-                    Instruction::WriteToVarAtAddress(entry.address)
+                    Instruction::WriteVarTo(entry.address)
                 };
 
                 instructions.push(inst);
             }
             CommandKind::Declare => {
-                if cmd.arguments.len() != 2 {
-                    return Err(format!("O comando BORA espera 2 argumentos, mas {} foram passados (Erro interno)", cmd.arguments.len()));
-                }
-
                 let name_arg = cmd.arguments.remove(0);
 
                 let name = match name_arg {
@@ -353,16 +339,23 @@ impl Compiler {
 
                 let is_global = self.current_scope == ScopeKind::Global;
 
-                let expr_arg = cmd.arguments.remove(0);
+                if cmd.arguments.is_empty() {
+                    // Set value to Null
+                    // To achieve this, we set both Maths to null, then copy B to the var address
 
-                match expr_arg {
-                    CommandArgument::Expression(expr) => {
-                        match self.compile_expression(&expr, instructions) {
-                            Ok(_) => {}
-                            Err(e) => return Err(e)
+                    instructions.push(Instruction::ClearMath);
+                } else {
+                    let expr_arg = cmd.arguments.remove(0);
+
+                    match expr_arg {
+                        CommandArgument::Expression(expr) => {
+                            match self.compile_expression(expr, instructions) {
+                                Ok(_) => {}
+                                Err(e) => return Err(e)
+                            }
                         }
+                        _ => return Err(format!("Erro interno : Esperado uma expressão depois do nome, encontrado {:?}", expr_arg)),
                     }
-                    _ => return Err(format!("Erro interno : Esperado uma expressão depois do nome, encontrado {:?}", expr_arg)),
                 }
 
                 // Add the variable after the expression is parsed, so we can't use the variable before a value is set
@@ -371,25 +364,25 @@ impl Compiler {
                 self.next_var_address += 1;
 
                 match self.scopes.last_mut() {
-                    Some(s) => s.symbol_table.insert(name, SymbolEntry::from(address, is_global)),
+                    Some(s) => s.symbol_table.insert(name, SymbolEntry::from(address, is_global, true)),
                     None => return Err(format!("Scopes é vazio"))
                 };
 
                 if is_global {
-                    instructions.push(Instruction::WriteToGlobalVarAtAddress(address));
+                    instructions.push(Instruction::WriteGlobalVarTo(address));
                 } else {
-                    instructions.push(Instruction::WriteToVarAtAddress(address));
+                    instructions.push(Instruction::WriteVarTo(address));
                 }
             }
             CommandKind::Return => {
                 if cmd.arguments.is_empty() {
-                    instructions.push(Instruction::PushNull);
+                    instructions.push(Instruction::ClearMath);
                 } else {
                     let expr_arg = cmd.arguments.remove(0);
 
                     match expr_arg {
                         CommandArgument::Expression(expr) => {
-                            match self.compile_expression(&expr, instructions) {
+                            match self.compile_expression(expr, instructions) {
                                 Ok(_) => {}
                                 Err(e) => return Err(e)
                             }
@@ -405,7 +398,7 @@ impl Compiler {
 
                 match left_expr_arg {
                     CommandArgument::Expression(expr) => {
-                        match self.compile_expression(&expr, instructions) {
+                        match self.compile_expression(expr, instructions) {
                             Ok(_) => {}
                             Err(e) => return Err(e)
                         }
@@ -413,11 +406,13 @@ impl Compiler {
                     _ => return Err(format!("Esperado uma expressão como argumento pro comando Return, encontrado {:?}", left_expr_arg)),
                 }
 
+                instructions.push(Instruction::SwapMath);
+
                 let right_expr_arg = cmd.arguments.remove(0);
 
                 match right_expr_arg {
                     CommandArgument::Expression(expr) => {
-                        match self.compile_expression(&expr, instructions) {
+                        match self.compile_expression(expr, instructions) {
                             Ok(_) => {}
                             Err(e) => return Err(e)
                         }
@@ -425,7 +420,7 @@ impl Compiler {
                     _ => return Err(format!("Esperado uma expressão como argumento pro comando Return, encontrado {:?}", right_expr_arg)),
                 }
 
-                instructions.push(Instruction::CompareMainTop);
+                instructions.push(Instruction::Compare);
             }
             CommandKind::EndSubScope => {
                 let scope_info = match self.scopes.pop() {
@@ -434,8 +429,17 @@ impl Compiler {
                 };
 
                 match scope_info.scope_kind {
-                    SubScopeKind::ExecuteIf => instructions.push(Instruction::EndExecuteIf),
-                    _ => {}
+                    SubScopeKind::ExecuteIf => instructions.push(Instruction::EndConditionalBlock),
+                    SubScopeKind::Loop => {
+                        instructions.push(Instruction::RestoreLoopLabel);
+                        instructions.push(Instruction::EndConditionalBlock);
+                        instructions.push(Instruction::PopLoopLabel);
+                    }
+                    SubScopeKind::Regular => {
+                        self.scopes.push(scope_info);
+
+                        return Err("Erro : Usando FIM pra finalizar uma função".to_owned());
+                    }
                 }
 
                 self.end_scope(scope_info);
@@ -446,7 +450,7 @@ impl Compiler {
                 let is_global = self.current_scope == ScopeKind::Global;
                 self.scopes.push(ScopeInfo::new(SubScopeKind::ExecuteIf,
                                                 self.next_var_address, is_global));
-                instructions.push(Instruction::ExecuteIfEqual);
+                instructions.push(Instruction::ExecuteIf(ComparisionRequest::Equal));
 
                 return Ok(Some(CompilerHint::ScopeStart));
             },
@@ -454,7 +458,7 @@ impl Compiler {
                 let is_global = self.current_scope == ScopeKind::Global;
                 self.scopes.push(ScopeInfo::new(SubScopeKind::ExecuteIf,
                                                 self.next_var_address, is_global));
-                instructions.push(Instruction::ExecuteIfNotEqual);
+                instructions.push(Instruction::ExecuteIf(ComparisionRequest::NotEqual));
 
                 return Ok(Some(CompilerHint::ScopeStart));
             },
@@ -462,7 +466,7 @@ impl Compiler {
                 let is_global = self.current_scope == ScopeKind::Global;
                 self.scopes.push(ScopeInfo::new(SubScopeKind::ExecuteIf,
                                                 self.next_var_address, is_global));
-                instructions.push(Instruction::ExecuteIfGreaterOrEqual);
+                instructions.push(Instruction::ExecuteIf(ComparisionRequest::MoreOrEqual));
 
                 return Ok(Some(CompilerHint::ScopeStart));
             },
@@ -470,7 +474,7 @@ impl Compiler {
                 let is_global = self.current_scope == ScopeKind::Global;
                 self.scopes.push(ScopeInfo::new(SubScopeKind::ExecuteIf,
                                                 self.next_var_address, is_global));
-                instructions.push(Instruction::ExecuteIfGreater);
+                instructions.push(Instruction::ExecuteIf(ComparisionRequest::More));
 
                 return Ok(Some(CompilerHint::ScopeStart));
             },
@@ -478,7 +482,7 @@ impl Compiler {
                 let is_global = self.current_scope == ScopeKind::Global;
                 self.scopes.push(ScopeInfo::new(SubScopeKind::ExecuteIf,
                                                 self.next_var_address, is_global));
-                instructions.push(Instruction::ExecuteIfLessOrEqual);
+                instructions.push(Instruction::ExecuteIf(ComparisionRequest::LessOrEqual));
 
                 return Ok(Some(CompilerHint::ScopeStart));
             },
@@ -486,54 +490,65 @@ impl Compiler {
                 let is_global = self.current_scope == ScopeKind::Global;
                 self.scopes.push(ScopeInfo::new(SubScopeKind::ExecuteIf,
                                                 self.next_var_address, is_global));
-                instructions.push(Instruction::ExecuteIfLess);
+                instructions.push(Instruction::ExecuteIf(ComparisionRequest::Less));
 
                 return Ok(Some(CompilerHint::ScopeStart));
             },
             CommandKind::Call => {
                 // First argument is the function name
 
-                let name_arg = cmd.arguments.remove(0);
+                let mut is_first = true;
+                let mut index = 0usize;
+                let mut function_info : Option<&FunctionInfo> = None;
+                let num_args = cmd.arguments.len() - 1;
 
-                let name = match name_arg {
-                    CommandArgument::Name(n) => n,
-                    _ => return Err(format!("Erro interno : Esperado um nome pra função")),
-                };
+                for arg in cmd.arguments {
+                    if is_first {
+                        is_first = false;
 
-                let info = match self.functions.get(name.as_str()) {
-                    Some(i) => i,
-                    None => return Err(format!("Não existe função com nome {}", name))
-                };
+                        let name = match arg {
+                            CommandArgument::Name(n) => n,
+                            _ => return Err(format!("Erro interno : Esperado um nome pra função")),
+                        };
 
-                instructions.push(Instruction::MakeNewFrame(info.address));
+                        let info = match self.functions.get(name.as_str()) {
+                            Some(f) => f,
+                            None => return Err(format!("Nenhuma função declarada com nome {}", name))
+                        };
 
-                if info.arguments.len() != cmd.arguments.len() {
-                    return Err(format!("A função {} espera {} argumentos, mas {} foram passados",
-                                       name, info.arguments.len(), cmd.arguments.len()));
-                }
+                        if info.arguments.len() != num_args {
+                            return Err(format!("A função {} espera {} argumentos, mas {} foram passados", name,
+                                info.arguments.len(), num_args));
+                        }
 
-                for index in 0..info.arguments.len() {
-                    let arg_arg = cmd.arguments.remove(0);
+                        function_info = Some(info);
 
-                    let expr = match arg_arg {
-                        CommandArgument::Expression(e) => e,
-                        _ => return Err("Erro interno : Era esperado um valor como argumento \
+                        instructions.push(Instruction::MakeNewFrame(info.address));
+                    } else {
+                        let info = function_info.unwrap();
+
+                        let expr = match arg {
+                            CommandArgument::Expression(e) => e,
+                            _ => return Err("Erro interno : Era esperado um valor como argumento \
                                                     pro comando.".to_owned()),
-                    };
+                        };
 
-                    let expected_type = info.arguments[index];
+                        let expected_type = info.arguments[index];
 
-                    // The parameter address is, in this case, index + 1 (because the address 0 is reserved to
-                    // the return value)
+                        // The parameter address is, in this case, index + 1 (because the address 0 is reserved to
+                        // the return value)
 
-                    match self.compile_expression(&expr, instructions) {
-                        Ok(_) => {}
-                        Err(e) => return Err(e)
-                    };
+                        match self.compile_expression(expr, instructions) {
+                            Ok(_) => {}
+                            Err(e) => return Err(e)
+                        };
 
-                    instructions.push(Instruction::AssertMainTopTypeCompatible(expected_type));
+                        instructions.push(Instruction::AssertMathBCompatible(expected_type));
 
-                    instructions.push(Instruction::WriteToLastFrameVarAtAddress(index + 1));
+                        instructions.push(Instruction::WriteVarToLast(index + 1));
+
+                        index += 1;
+                    }
                 }
 
                 instructions.push(Instruction::SetLastFrameReady);
@@ -546,17 +561,18 @@ impl Compiler {
                     _ => return Err("Erro interno : Esperado um nome pra GetInput*".to_owned()),
                 };
 
-                let entry = match self.find_symbol(name.as_str()) {
+                let entry = match self.find_or_add_symbol(name.as_str(), true) {
                     Some(e) => e,
                     None => return Err(format!("Variável {} não encontrada", name))
                 };
 
                 instructions.push(Instruction::ReadInput);
+                instructions.push(Instruction::PushIntermediateToB);
 
                 if entry.global {
-                    instructions.push(Instruction::WriteToGlobalVarAtAddress(entry.address));
+                    instructions.push(Instruction::WriteGlobalVarTo(entry.address));
                 } else {
-                    instructions.push(Instruction::WriteToVarAtAddress(entry.address));
+                    instructions.push(Instruction::WriteVarTo(entry.address));
                 }
             }
             CommandKind::GetIntegerInput => {
@@ -567,19 +583,21 @@ impl Compiler {
                     _ => return Err("Erro interno : Esperado um nome pra GetInput*".to_owned()),
                 };
 
-                let entry = match self.find_symbol(name.as_str()) {
+                let entry = match self.find_or_add_symbol(name.as_str(), true) {
                     Some(e) => e,
                     None => return Err(format!("Variável {} não encontrada", name))
                 };
 
                 instructions.push(Instruction::ReadInput);
 
+                instructions.push(Instruction::PushIntermediateToB);
+
                 instructions.push(Instruction::ConvertToInt);
 
                 if entry.global {
-                    instructions.push(Instruction::WriteToGlobalVarAtAddress(entry.address));
+                    instructions.push(Instruction::WriteGlobalVarTo(entry.address));
                 } else {
-                    instructions.push(Instruction::WriteToVarAtAddress(entry.address));
+                    instructions.push(Instruction::WriteVarTo(entry.address));
                 }
             }
             CommandKind::GetNumberInput => {
@@ -590,19 +608,21 @@ impl Compiler {
                     _ => return Err("Erro interno : Esperado um nome pra GetInput*".to_owned()),
                 };
 
-                let entry = match self.find_symbol(name.as_str()) {
+                let entry = match self.find_or_add_symbol(name.as_str(), true) {
                     Some(e) => e,
                     None => return Err(format!("Variável {} não encontrada", name))
                 };
 
                 instructions.push(Instruction::ReadInput);
 
+                instructions.push(Instruction::PushIntermediateToB);
+
                 instructions.push(Instruction::ConvertToNum);
 
                 if entry.global {
-                    instructions.push(Instruction::WriteToGlobalVarAtAddress(entry.address));
+                    instructions.push(Instruction::WriteGlobalVarTo(entry.address));
                 } else {
-                    instructions.push(Instruction::WriteToVarAtAddress(entry.address));
+                    instructions.push(Instruction::WriteVarTo(entry.address));
                 }
             }
             CommandKind::ConvertToInt => {
@@ -619,17 +639,19 @@ impl Compiler {
                 };
 
                 if entry.global {
-                    instructions.push(Instruction::ReadGlobalVarFromAddress(entry.address));
+                    instructions.push(Instruction::ReadGlobalVarFrom(entry.address));
                 } else {
-                    instructions.push(Instruction::ReadVarFromAddress(entry.address));
+                    instructions.push(Instruction::ReadVarFrom(entry.address));
                 }
+
+                instructions.push(Instruction::PushIntermediateToB);
 
                 instructions.push(Instruction::ConvertToInt);
 
                 if entry.global {
-                    instructions.push(Instruction::WriteToGlobalVarAtAddress(entry.address));
+                    instructions.push(Instruction::WriteGlobalVarTo(entry.address));
                 } else {
-                    instructions.push(Instruction::WriteToVarAtAddress(entry.address));
+                    instructions.push(Instruction::WriteVarTo(entry.address));
                 }
             }
             CommandKind::ConvertToNum => {
@@ -646,17 +668,19 @@ impl Compiler {
                 };
 
                 if entry.global {
-                    instructions.push(Instruction::ReadGlobalVarFromAddress(entry.address));
+                    instructions.push(Instruction::ReadGlobalVarFrom(entry.address));
                 } else {
-                    instructions.push(Instruction::ReadVarFromAddress(entry.address));
+                    instructions.push(Instruction::ReadVarFrom(entry.address));
                 }
 
-                instructions.push(Instruction::ConvertToInt);
+                instructions.push(Instruction::PushIntermediateToB);
+
+                instructions.push(Instruction::ConvertToNum);
 
                 if entry.global {
-                    instructions.push(Instruction::WriteToGlobalVarAtAddress(entry.address));
+                    instructions.push(Instruction::WriteGlobalVarTo(entry.address));
                 } else {
-                    instructions.push(Instruction::WriteToVarAtAddress(entry.address));
+                    instructions.push(Instruction::WriteVarTo(entry.address));
                 }
             }
             CommandKind::IntoString => {
@@ -673,17 +697,320 @@ impl Compiler {
                 };
 
                 if entry.global {
-                    instructions.push(Instruction::ReadGlobalVarFromAddress(entry.address));
+                    instructions.push(Instruction::ReadGlobalVarFrom(entry.address));
                 } else {
-                    instructions.push(Instruction::ReadVarFromAddress(entry.address));
+                    instructions.push(Instruction::ReadVarFrom(entry.address));
                 }
 
-                instructions.push(Instruction::ConvertToInt);
+                instructions.push(Instruction::PushIntermediateToB);
+
+                instructions.push(Instruction::ConvertToString);
 
                 if entry.global {
-                    instructions.push(Instruction::WriteToGlobalVarAtAddress(entry.address));
+                    instructions.push(Instruction::WriteGlobalVarTo(entry.address));
                 } else {
-                    instructions.push(Instruction::WriteToVarAtAddress(entry.address));
+                    instructions.push(Instruction::WriteVarTo(entry.address));
+                }
+            }
+            CommandKind::ExecuteWhileEqual => {
+                let is_global = self.current_scope == ScopeKind::Global;
+                self.scopes.push(ScopeInfo::new(SubScopeKind::Loop, self.next_var_address, is_global));
+
+                self.add_execute_while_boilerplate(cmd, instructions)?;
+
+                instructions.push(Instruction::ExecuteIf(ComparisionRequest::Equal));
+                return Ok(Some(CompilerHint::ScopeStart));
+            }
+            CommandKind::ExecuteWhileNotEqual => {
+                let is_global = self.current_scope == ScopeKind::Global;
+                self.scopes.push(ScopeInfo::new(SubScopeKind::Loop, self.next_var_address, is_global));
+
+                self.add_execute_while_boilerplate(cmd, instructions)?;
+
+                instructions.push(Instruction::ExecuteIf(ComparisionRequest::NotEqual));
+                return Ok(Some(CompilerHint::ScopeStart));
+            }
+            CommandKind::ExecuteWhileGreater => {
+                let is_global = self.current_scope == ScopeKind::Global;
+                self.scopes.push(ScopeInfo::new(SubScopeKind::Loop, self.next_var_address, is_global));
+
+                self.add_execute_while_boilerplate(cmd, instructions)?;
+
+                instructions.push(Instruction::ExecuteIf(ComparisionRequest::More));
+                return Ok(Some(CompilerHint::ScopeStart));
+            }
+            CommandKind::ExecuteWhileEqualOrGreater => {
+                let is_global = self.current_scope == ScopeKind::Global;
+                self.scopes.push(ScopeInfo::new(SubScopeKind::Loop, self.next_var_address, is_global));
+
+                self.add_execute_while_boilerplate(cmd, instructions)?;
+
+                instructions.push(Instruction::ExecuteIf(ComparisionRequest::MoreOrEqual));
+                return Ok(Some(CompilerHint::ScopeStart));
+            }
+            CommandKind::ExecuteWhileLess => {
+                let is_global = self.current_scope == ScopeKind::Global;
+                self.scopes.push(ScopeInfo::new(SubScopeKind::Loop, self.next_var_address, is_global));
+
+                self.add_execute_while_boilerplate(cmd, instructions)?;
+
+                instructions.push(Instruction::ExecuteIf(ComparisionRequest::Less));
+                return Ok(Some(CompilerHint::ScopeStart));
+            }
+            CommandKind::ExecuteWhileEqualOrLess => {
+                let is_global = self.current_scope == ScopeKind::Global;
+                self.scopes.push(ScopeInfo::new(SubScopeKind::Loop, self.next_var_address, is_global));
+
+                self.add_execute_while_boilerplate(cmd, instructions)?;
+
+                instructions.push(Instruction::ExecuteIf(ComparisionRequest::LessOrEqual));
+                return Ok(Some(CompilerHint::ScopeStart));
+            }
+            CommandKind::RangeLoop => {
+                let is_global = self.current_scope == ScopeKind::Global;
+                self.scopes.push(ScopeInfo::new(SubScopeKind::Loop, self.next_var_address, is_global));
+
+                let name = if let CommandArgument::Name(n) = cmd.arguments.remove(0) {
+                    n
+                } else {
+                    return Err("Esperado uma variável pro primeiro argumento do loop".to_owned());
+                };
+
+                let entry = match self.find_or_add_symbol(name.as_str(), true) {
+                    Some(e) => e,
+                    None => return Err(format!("Não foi possível adicionar nem encontrar a variável {}", name)),
+                };
+
+                // Initialize counter
+
+                if let CommandArgument::Expression(expr) = cmd.arguments.remove(0) {
+                    self.compile_expression(expr, instructions)?;
+
+                    if entry.global {
+                        instructions.push(Instruction::WriteGlobalVarTo(entry.address));
+                    } else {
+                        instructions.push(Instruction::WriteVarTo(entry.address));
+                    }
+                } else {
+                    return Err("Era esperado uma expressão pro segundo argumento de RangedLoop".to_owned());
+                }
+
+                let final_expr = if let CommandArgument::Expression(expr) = cmd.arguments.remove(0) {
+                    expr
+                } else {
+                    return Err("Esperado um valor final".to_owned());
+                };
+
+                // Register increment procedure
+
+                if cmd.arguments.is_empty() {
+                    instructions.push(Instruction::PushValMathB(RawValue::Integer(1)));
+                } else {
+                    if let CommandArgument::Expression(step_expr) = cmd.arguments.remove(0) {
+                        self.compile_expression(step_expr, instructions)?;
+                    } else {
+                        instructions.push(Instruction::PushValMathB(RawValue::Integer(1)));
+                    }
+                }
+
+                // Loop starts here
+
+                instructions.push(Instruction::AddLoopLabel);
+
+                instructions.push(Instruction::RegisterIncrementOnRestore(entry.address));
+
+                // Check if should continue
+
+                self.compile_expression(final_expr, instructions)?;
+
+                if entry.global {
+                    instructions.push(Instruction::ReadGlobalVarFrom(entry.address));
+                } else {
+                    instructions.push(Instruction::ReadVarFrom(entry.address));
+                }
+
+                instructions.push(Instruction::PushIntermediateToA);
+
+                instructions.push(Instruction::Compare);
+
+                instructions.push(Instruction::ExecuteIf(ComparisionRequest::NotEqual));
+
+                return Ok(Some(CompilerHint::ScopeStart));
+            }
+            CommandKind::MakeNewList => {
+                let name = if let CommandArgument::Name(name) = cmd.arguments.remove(0) {
+                    name
+                } else {
+                    return Err("MakeNewList : Esperado um nome".to_owned());
+                };
+
+                let entry = match self.find_or_add_symbol(name.as_str(), true) {
+                    Some(a) => a,
+                    None => return Err(format!("Não foi possível declarar a variável pra lista {}", name))
+                };
+
+                instructions.push(Instruction::MakeNewList);
+
+                if entry.global {
+                    instructions.push(Instruction::WriteGlobalVarTo(entry.address));
+                } else {
+                    instructions.push(Instruction::WriteVarTo(entry.address));
+                }
+            }
+            CommandKind::QueryListSize => {
+                let list_name = if let CommandArgument::Name(name) = cmd.arguments.remove(0) {
+                    name
+                } else {
+                    return Err("MakeNewList : Esperado um nome".to_owned());
+                };
+
+                let dest_name = if let CommandArgument::Name(name) = cmd.arguments.remove(0) {
+                    name
+                } else {
+                    return Err("MakeNewList : Esperado um nome".to_owned());
+                };
+
+                let dest = match self.find_or_add_symbol(dest_name.as_str(), true) {
+                    Some(d) => d,
+                    None => return Err(format!("Não foi possível declarar a variável pra lista {}", dest_name))
+                };
+
+                let list = match self.find_symbol(list_name.as_str()) {
+                    Some(a) => a,
+                    None => return Err(format!("Não foi possível encontrar a lista {}", list_name))
+                };
+
+                if list.global {
+                    instructions.push(Instruction::ReadGlobalVarFrom(list.address));
+                } else {
+                    instructions.push(Instruction::ReadVarFrom(list.address));
+                }
+
+                instructions.push(Instruction::QueryListSize);
+
+                if dest.global {
+                    instructions.push(Instruction::WriteGlobalVarTo(dest.address));
+                } else {
+                    instructions.push(Instruction::WriteVarTo(dest.address));
+                }
+            }
+            CommandKind::AddListElement => {
+                let list_name = if let CommandArgument::Name(name) = cmd.arguments.remove(0) {
+                    name
+                } else {
+                    return Err("AddListElement : Esperado um nome".to_owned())
+                };
+
+                let element = if let CommandArgument::Expression(expr) = cmd.arguments.remove(0) {
+                    expr
+                } else {
+                    return Err("AddListElement : Esperado um elemento".to_owned())
+                };
+
+                let index = if cmd.arguments.is_empty() {
+                    None
+                } else {
+                    if let CommandArgument::Expression(expr) = cmd.arguments.remove(0) {
+                        Some(expr)
+                    } else {
+                        return Err("AddListElement : Era esperado uma expressão como um index".to_owned());
+                    }
+                };
+
+                let list = match self.find_symbol(list_name.as_str()) {
+                    Some(l) => l,
+                    None => return Err(format!("Não foi possível encontrar a lista {}", list_name))
+                };
+
+                if list.global {
+                    instructions.push(Instruction::ReadGlobalVarFrom(list.address));
+                } else {
+                    instructions.push(Instruction::ReadVarFrom(list.address));
+                }
+
+                if let Some(expr) = index {
+                    self.compile_expression(expr, instructions)?;
+
+                    instructions.push(Instruction::PushMathBToSeconday);
+                } else {
+                    instructions.push(Instruction::ClearSecondary);
+                }
+
+                self.compile_expression(element, instructions)?;
+
+                instructions.push(Instruction::AddToListAtIndex);
+            }
+            CommandKind::RemoveListElement => {
+                let name = if let CommandArgument::Name(name) = cmd.arguments.remove(0) {
+                    name
+                } else {
+                    return Err("RemoveListElement : Esperado um nome".to_owned())
+                };
+
+                let index = if let CommandArgument::Expression(expr) = cmd.arguments.remove(0) {
+                    expr
+                } else {
+                    return Err("RemoveListElement : Esperado uma expressão".to_owned())
+                };
+
+                let list = match self.find_symbol(name.as_str()) {
+                    Some(e) => e,
+                    None => return Err(format!("Variável {} não encontrada", name))
+                };
+
+                if list.global {
+                    instructions.push(Instruction::ReadGlobalVarFrom(list.address));
+                } else {
+                    instructions.push(Instruction::ReadVarFrom(list.address));
+                }
+
+                self.compile_expression(index, instructions)?;
+
+                instructions.push(Instruction::RemoveFromListAtIndex);
+            }
+            CommandKind::IndexList => {
+                let name = if let CommandArgument::Name(name) = cmd.arguments.remove(0) {
+                    name
+                } else {
+                    return Err("IndexList : Esperado um nome".to_owned())
+                };
+
+                let index = if let CommandArgument::Expression(expr) = cmd.arguments.remove(0) {
+                    expr
+                } else {
+                    return Err("IndexList : Esperado uma expressão".to_owned())
+                };
+
+                let dest_name = if let CommandArgument::Name(name) = cmd.arguments.remove(0) {
+                    name
+                } else {
+                    return Err("IndexList : Esperado um nome".to_owned())
+                };
+
+                let dest = match self.find_or_add_symbol(dest_name.as_str(), true) {
+                    Some(e) => e,
+                    None => return Err(format!("Não foi possível encontrar ou declarar a variável {}", dest_name))
+                };
+
+                let list = match self.find_symbol(name.as_str()) {
+                    Some(e) => e,
+                    None => return Err(format!("Variável {} não encontrada", name))
+                };
+
+                if list.global {
+                    instructions.push(Instruction::ReadGlobalVarFrom(list.address));
+                } else {
+                    instructions.push(Instruction::ReadVarFrom(list.address));
+                }
+
+                self.compile_expression(index, instructions)?;
+
+                instructions.push(Instruction::IndexList);
+
+                if dest.global {
+                    instructions.push(Instruction::WriteGlobalVarTo(dest.address));
+                } else {
+                    instructions.push(Instruction::WriteVarTo(dest.address));
                 }
             }
         }
@@ -702,13 +1029,29 @@ impl Compiler {
         for arg in args {
             args_kind.push(arg.kind);
 
-            base_scope.symbol_table.insert(arg.name, SymbolEntry::from(self.next_var_address, false));
+            base_scope.symbol_table.insert(arg.name, SymbolEntry::from(self.next_var_address, false, true));
             self.next_var_address += 1;
         }
 
         self.current_scope = ScopeKind::Function;
         self.functions.insert(name, FunctionInfo::from(address, args_kind));
         self.scopes.push(base_scope);
+
+        Ok(())
+    }
+
+    pub fn compile_global_variable(&mut self, name : String, value : RawValue, writeable : bool, instructions : &mut Vec<Instruction>) -> Result<(), String> {
+        if self.current_scope != ScopeKind::Global {
+            return Err("Scope atual não é o global".to_owned());
+        }
+
+        let entry = match self.add_symbol(name, writeable) {
+            Some(e) => e,
+            None => return Err("Não foi possível adicionar o símbolo".to_owned())
+        };
+
+        instructions.push(Instruction::PushValMathB(value));
+        instructions.push(Instruction::WriteGlobalVarTo(entry.address));
 
         Ok(())
     }
@@ -732,33 +1075,32 @@ impl Compiler {
 
         for arg in args {
             let expected = info.arguments[index];
-            index += 1;
 
-            match arg {
-                RawValue::Text(t) => {
-                    if expected == TypeKind::Text {
-                        instructions.push(Instruction::PushMainStr(t));
-                    } else {
-                        return Err(format!("A função esperava um {:?} como argumento, mas um Texto foi passado", expected));
+            match &arg {
+                &RawValue::Integer(_) => {
+                    if expected != TypeKind::Integer && expected != TypeKind::Number {
+                        return Err(format!("Tipo incompatível : Função espera {:?}, foi passado Inteiro", expected))
                     }
                 }
-                RawValue::Number(n) => {
-                    if expected == TypeKind::Number {
-                        instructions.push(Instruction::PushMainNum(n));
-                    } else {
-                        return Err(format!("A função esperava um {:?} como argumento, mas um Num foi passado", expected));
+                &RawValue::Number(_) => {
+                    if expected != TypeKind::Number {
+                        return Err(format!("Tipo incompatível : Função espera {:?}, foi passado Número", expected))
                     }
                 }
-                RawValue::Integer(i) => {
-                    match expected {
-                        TypeKind::Text => return Err("A função esperava um texto, mas um Int foi passado".to_owned()),
-                        TypeKind::Integer => instructions.push(Instruction::PushMainInt(i)),
-                        TypeKind::Number => instructions.push(Instruction::PushMainNum(i as f64)),
+                &RawValue::Text(_) => {
+                    if expected != TypeKind::Text {
+                        return Err(format!("Tipo incompatível : Função espera {:?}, foi passado Texto", expected))
                     }
+                }
+                &RawValue::Null => {
+                    return Err(format!("Tipo incompatível : Passado Nulo como argumento"))
                 }
             }
 
-            instructions.push(Instruction::WriteToLastFrameVarAtAddress(index + 1));
+            index += 1;
+
+            instructions.push(Instruction::PushValMathB(arg));
+            Instruction::WriteVarToLast(index + 1);
         }
 
         instructions.push(Instruction::SetLastFrameReady);

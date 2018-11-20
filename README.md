@@ -1,15 +1,4 @@
-# BIRLSCRIPT/MBR
-
-## Vá com cuidado, amigo.
-Esse fork quebra compatibilidade com a API do interpretador original,
-por fazer parte do esforço de expôr uma interface em núvem.
-Vá ao [Repositório Oficial](https://github.com/birlscript/birlscript)
-do BirlScript se quiser a real, o oficial, o inigualável. Se quiser
-ficar, é melhor que tenha em mente que esse aqui vai estar em descompasso
-com a língua por enquanto ou pode ser que seja reincorporado ao projeto
-original.
-
-## Agora pro que importa.
+# BIRLSCRIPT
 
 É a linguagem de scripting dos programadores codebuilders! Dos que não saem de casa
 sem codar pra caralho! Se você ta achando que é moleza, ta enganado, aqui não é
@@ -23,26 +12,26 @@ de opções que podem ser passadas.
 
 [Editor Online](https://birlscript.github.io/), pra rodar código na web
 
-## Versão 2.0.0 alpha
+## Versão 2.0.0 beta
 
 *© 2016-2018 Rafael Rodrigues Nakano. Contato: lazpeng@gmail.com*
 
-***Removido brief sobre a linguagem por conta do novo backend (que, diferente do atual, não é uma bagunça mal-feita) que deve
-mudar bastante coisa na própria língua. Exemplos podem sofrer mudanças também***
+## [Documentação disponível aqui](birl/DOC.md)
 
 # Exemplos
 
 ## Fatorial
 ```python
-JAULA FATORIAL (NUMERO: BATATA DOCE, ATUAL : BATATA DOCE)
-    E ELE QUE A GENTE QUER: NUMERO, 1
-    MENOR OU E MEMO:
-        BIRL: ATUAL
+JAULA FATORIAL (NUMERO: BATATA DOCE)
+    É ELE QUE A GENTE QUER: NUMERO, 1
+    MENOR OU É MEMO:
+        BIRL: 1
     FIM
-    BORA: NUMERO, NUMERO - 1
-    BORA: ATUAL, ATUAL * NUMERO
-    E HORA DO: FATORIAL, NUMERO, ATUAL
-    BIRL: TREZE
+    VEM: TOTAL, NUMERO
+    REPETE: ATUAL, NUMERO - 1, 1, (-1)
+        BORA: TOTAL, TOTAL * ATUAL
+    FIM
+    BIRL: TOTAL
 SAINDO DA JAULA
 
 JAULA SHOW
@@ -110,6 +99,3 @@ JAULA SHOW
     FIM
 SAINDO DA JAULA
 ```
-
-##Documentação
-***Em breve***
