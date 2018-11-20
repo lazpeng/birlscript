@@ -709,7 +709,7 @@ impl VirtualMachine {
                         } else {
 
                             for i in 0..left_list.len() {
-                                match self.compare(*left_list[i].clone(), *right_list[i].clone()) {
+                                match self.compare(*left_list[i], *right_list[i]) {
                                     Ok(Comparision::Equal) => {},
                                     Ok(_) => return Ok(Comparision::NotEqual),
                                     Err(e) => return Err(e)
@@ -884,7 +884,7 @@ impl VirtualMachine {
                         first = false;
                     }
 
-                    let s = self.conv_to_string(*item.clone())?;
+                    let s = self.conv_to_string(*item)?;
 
                     result.push_str(s.as_str());
                 }
