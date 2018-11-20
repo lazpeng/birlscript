@@ -98,6 +98,8 @@ impl Compiler {
 
     pub fn compile_expression(&self, expr : Expression, inst : &mut Vec<Instruction>) -> Result<(), String> {
 
+        inst.push(Instruction::SetFirstExpressionOperation);
+
         let mut is_a = expr.nodes.len() > 1;
 
         for node in expr.nodes {
@@ -432,7 +434,11 @@ impl Compiler {
                         instructions.push(Instruction::EndConditionalBlock);
                         instructions.push(Instruction::PopLoopLabel);
                     }
-                    SubScopeKind::Regular => {}
+                    SubScopeKind::Regular => {
+                        self.scopes.push(scope_info);
+
+                        return Err("Erro : Usando FIM pra finalizar uma função".to_owned());
+                    }
                 }
 
                 self.end_scope(scope_info);
@@ -830,6 +836,182 @@ impl Compiler {
 
                 return Ok(Some(CompilerHint::ScopeStart));
             }
+            CommandKind::MakeNewList => {
+                let name = if let CommandArgument::Name(name) = cmd.arguments.remove(0) {
+                    name
+                } else {
+                    return Err("MakeNewList : Esperado um nome".to_owned());
+                };
+
+                let entry = match self.find_or_add_symbol(name.as_str(), true) {
+                    Some(a) => a,
+                    None => return Err(format!("Não foi possível declarar a variável pra lista {}", name))
+                };
+
+                instructions.push(Instruction::MakeNewList);
+
+                if entry.global {
+                    instructions.push(Instruction::WriteGlobalVarTo(entry.address));
+                } else {
+                    instructions.push(Instruction::WriteVarTo(entry.address));
+                }
+            }
+            CommandKind::QueryListSize => {
+                let list_name = if let CommandArgument::Name(name) = cmd.arguments.remove(0) {
+                    name
+                } else {
+                    return Err("MakeNewList : Esperado um nome".to_owned());
+                };
+
+                let dest_name = if let CommandArgument::Name(name) = cmd.arguments.remove(0) {
+                    name
+                } else {
+                    return Err("MakeNewList : Esperado um nome".to_owned());
+                };
+
+                let dest = match self.find_or_add_symbol(dest_name.as_str(), true) {
+                    Some(d) => d,
+                    None => return Err(format!("Não foi possível declarar a variável pra lista {}", dest_name))
+                };
+
+                let list = match self.find_symbol(list_name.as_str()) {
+                    Some(a) => a,
+                    None => return Err(format!("Não foi possível encontrar a lista {}", list_name))
+                };
+
+                if list.global {
+                    instructions.push(Instruction::ReadGlobalVarFrom(list.address));
+                } else {
+                    instructions.push(Instruction::ReadVarFrom(list.address));
+                }
+
+                instructions.push(Instruction::QueryListSize);
+
+                if dest.global {
+                    instructions.push(Instruction::WriteGlobalVarTo(dest.address));
+                } else {
+                    instructions.push(Instruction::WriteVarTo(dest.address));
+                }
+            }
+            CommandKind::AddListElement => {
+                let list_name = if let CommandArgument::Name(name) = cmd.arguments.remove(0) {
+                    name
+                } else {
+                    return Err("AddListElement : Esperado um nome".to_owned())
+                };
+
+                let element = if let CommandArgument::Expression(expr) = cmd.arguments.remove(0) {
+                    expr
+                } else {
+                    return Err("AddListElement : Esperado um elemento".to_owned())
+                };
+
+                let index = if cmd.arguments.is_empty() {
+                    None
+                } else {
+                    if let CommandArgument::Expression(expr) = cmd.arguments.remove(0) {
+                        Some(expr)
+                    } else {
+                        return Err("AddListElement : Era esperado uma expressão como um index".to_owned());
+                    }
+                };
+
+                let list = match self.find_symbol(list_name.as_str()) {
+                    Some(l) => l,
+                    None => return Err(format!("Não foi possível encontrar a lista {}", list_name))
+                };
+
+                if list.global {
+                    instructions.push(Instruction::ReadGlobalVarFrom(list.address));
+                } else {
+                    instructions.push(Instruction::ReadVarFrom(list.address));
+                }
+
+                if let Some(expr) = index {
+                    self.compile_expression(expr, instructions)?;
+
+                    instructions.push(Instruction::PushMathBToSeconday);
+                } else {
+                    instructions.push(Instruction::ClearSecondary);
+                }
+
+                self.compile_expression(element, instructions)?;
+
+                instructions.push(Instruction::AddToListAtIndex);
+            }
+            CommandKind::RemoveListElement => {
+                let name = if let CommandArgument::Name(name) = cmd.arguments.remove(0) {
+                    name
+                } else {
+                    return Err("RemoveListElement : Esperado um nome".to_owned())
+                };
+
+                let index = if let CommandArgument::Expression(expr) = cmd.arguments.remove(0) {
+                    expr
+                } else {
+                    return Err("RemoveListElement : Esperado uma expressão".to_owned())
+                };
+
+                let list = match self.find_symbol(name.as_str()) {
+                    Some(e) => e,
+                    None => return Err(format!("Variável {} não encontrada", name))
+                };
+
+                if list.global {
+                    instructions.push(Instruction::ReadGlobalVarFrom(list.address));
+                } else {
+                    instructions.push(Instruction::ReadVarFrom(list.address));
+                }
+
+                self.compile_expression(index, instructions)?;
+
+                instructions.push(Instruction::RemoveFromListAtIndex);
+            }
+            CommandKind::IndexList => {
+                let name = if let CommandArgument::Name(name) = cmd.arguments.remove(0) {
+                    name
+                } else {
+                    return Err("IndexList : Esperado um nome".to_owned())
+                };
+
+                let index = if let CommandArgument::Expression(expr) = cmd.arguments.remove(0) {
+                    expr
+                } else {
+                    return Err("IndexList : Esperado uma expressão".to_owned())
+                };
+
+                let dest_name = if let CommandArgument::Name(name) = cmd.arguments.remove(0) {
+                    name
+                } else {
+                    return Err("IndexList : Esperado um nome".to_owned())
+                };
+
+                let dest = match self.find_or_add_symbol(dest_name.as_str(), true) {
+                    Some(e) => e,
+                    None => return Err(format!("Não foi possível encontrar ou declarar a variável {}", dest_name))
+                };
+
+                let list = match self.find_symbol(name.as_str()) {
+                    Some(e) => e,
+                    None => return Err(format!("Variável {} não encontrada", name))
+                };
+
+                if list.global {
+                    instructions.push(Instruction::ReadGlobalVarFrom(list.address));
+                } else {
+                    instructions.push(Instruction::ReadVarFrom(list.address));
+                }
+
+                self.compile_expression(index, instructions)?;
+
+                instructions.push(Instruction::IndexList);
+
+                if dest.global {
+                    instructions.push(Instruction::WriteGlobalVarTo(dest.address));
+                } else {
+                    instructions.push(Instruction::WriteVarTo(dest.address));
+                }
+            }
         }
 
         Ok(None)
@@ -892,7 +1074,25 @@ impl Compiler {
 
         for arg in args {
             let expected = info.arguments[index];
-            // TODO: Check expected with passed arg
+
+            match &arg {
+                &RawValue::Integer(_) => {
+                    if expected != TypeKind::Integer && expected != TypeKind::Number {
+                        return Err(format!("Tipo incompatível : Função espera {:?}, foi passado Inteiro", expected))
+                    }
+                }
+                &RawValue::Number(_) => {
+                    if expected != TypeKind::Number {
+                        return Err(format!("Tipo incompatível : Função espera {:?}, foi passado Número", expected))
+                    }
+                }
+                &RawValue::Text(_) => {
+                    if expected != TypeKind::Text {
+                        return Err(format!("Tipo incompatível : Função espera {:?}, foi passado Texto", expected))
+                    }
+                }
+            }
+
             index += 1;
 
             instructions.push(Instruction::PushValMathB(arg));

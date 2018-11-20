@@ -5,9 +5,6 @@ use context::RawValue;
 
 use std::io::{ Write, BufRead };
 use std::fmt::{ Display, self };
-use std::collections::HashMap;
-
-type StringStorageID = u64;
 
 const STACK_DEFAULT_SIZE : usize = 128;
 
@@ -42,103 +39,82 @@ impl Display for Comparision {
 enum DynamicValue {
     Integer(IntegerType),
     Number(f64),
-    Text(StringStorageID),
+    Text(u64),
+    List(u64),
     Null,
 }
 
-#[derive(Debug, Clone)]
-struct StringEntry {
-    id : u64,
-    content : String,
+#[derive(Debug)]
+enum SpecialItemData {
+    Text(String),
+    List(Vec<Box<DynamicValue>>)
 }
 
 #[derive(Debug)]
-struct StringStorage {
-    entries : HashMap<u64, Vec<StringEntry>>,
-    last_id : u64,
-    next_parent_id : u64,
+struct SpecialItem {
+    data : SpecialItemData,
+    item_id : u64,
 }
 
-impl StringStorage {
-    fn new() -> StringStorage {
-        StringStorage {
-            entries: HashMap::new(),
-            last_id : 0,
-            next_parent_id : 0,
+#[derive(Debug)]
+struct SpecialStorage {
+    items : Vec<SpecialItem>,
+    next_item_id : u64,
+}
+
+impl SpecialStorage {
+    fn new() -> SpecialStorage {
+        SpecialStorage {
+            items : vec![],
+            next_item_id : 0,
         }
     }
 
-    fn add_parent_storage(&mut self, id : u64) {
-        self.entries.insert(id, vec![]);
-    }
+    fn add(&mut self, data : SpecialItemData) -> u64 {
+        let item_id = self.next_item_id;
+        self.next_item_id += 1;
 
-    fn get_ref(&self, id : u64) -> Option<&str> {
-        for (_, par) in &self.entries {
-            for e in par {
-                if e.id == id {
-                    return Some(e.content.as_str());
-                }
-            }
-        }
-
-        None
-    }
-
-    fn get_mut(&mut self, id : u64) -> Option<&mut String> {
-        for (_, par) in &mut self.entries {
-            for e in par {
-                if e.id == id {
-                    return Some(&mut e.content);
-                }
-            }
-        }
-
-        None
-    }
-
-    fn get(&mut self, id : u64) -> Option<String> {
-        for (_, entries) in &mut self.entries {
-            for i in 0..entries.len() {
-                if entries[i].id == id {
-                    let entry = entries.remove(i);
-                    return Some(entry.content);
-                }
-            }
-        }
-
-        None
-    }
-
-    fn add(&mut self, content : &str, parent_id : u64) -> u64 {
-        self.add_string(content.to_owned(), parent_id)
-    }
-
-    fn add_string(&mut self, content : String, parent_id : u64) -> u64 {
-        let id = self.last_id + 1;
-        self.last_id += 1;
-
-        let entry = StringEntry {
-            content,
-            id,
+        let item = SpecialItem {
+            data,
+            item_id
         };
 
-        let mut i_am_fucking_dead_in_the_inside_and_i_hate_rust_so_much = false;
+        self.items.push(item);
 
-        if let Some(ref mut scope) = self.entries.get_mut(&parent_id) {
-            scope.push(entry.clone());
-        } else {
-            i_am_fucking_dead_in_the_inside_and_i_hate_rust_so_much = true;
-        }
-
-        if i_am_fucking_dead_in_the_inside_and_i_hate_rust_so_much {
-            self.entries.insert(parent_id, vec![entry]);
-        }
-
-        id
+        item_id
     }
 
-    fn delete_for_parent(&mut self, id : u64) {
-        // stub
+    fn remove_top(&mut self, num : usize) -> Result<(), String> {
+        if self.items.len() < num {
+            Err("remove_top : Número pra remover é maior que o número guardado".to_owned())
+        } else {
+
+            for _ in 0..num {
+                let _ = self.items.pop().expect("Impossível. Erro no pop em remove_top");
+            }
+
+            Ok(())
+        }
+    }
+
+    fn get_ref(&self, id : u64) -> Option<&SpecialItemData> {
+        for e in &self.items {
+            if e.item_id == id {
+                return Some(&e.data);
+            }
+        }
+
+        None
+    }
+
+    fn get_mut(&mut self, id : u64) -> Option<&mut SpecialItemData> {
+        for e in &mut self.items {
+            if e.item_id == id {
+                return Some(&mut e.data);
+            }
+        }
+
+        None
     }
 }
 
@@ -169,12 +145,13 @@ pub struct FunctionFrame {
     ready : bool,
     skip_level : u32,
     stack_size : usize,
-    parent_id : u64,
+    // Number of special items allocated
+    num_special_items : usize,
     label_stack : Vec<LoopLabel>,
 }
 
 impl FunctionFrame {
-    pub fn new(id : usize, stack_size : usize, parent_id : u64) -> FunctionFrame {
+    pub fn new(id : usize, stack_size : usize) -> FunctionFrame {
         FunctionFrame {
             id,
             stack : vec![DynamicValue::Null; stack_size],
@@ -185,7 +162,7 @@ impl FunctionFrame {
             skip_level : 0,
             stack_size,
             label_stack : vec![],
-            parent_id,
+            num_special_items : 0,
         }
     }
 }
@@ -202,6 +179,8 @@ struct Registers {
     math_a : DynamicValue,
     math_b : DynamicValue,
     intermediate : DynamicValue,
+    first_operation : bool,
+    secondary : DynamicValue,
 }
 
 impl Registers {
@@ -209,7 +188,9 @@ impl Registers {
         Registers {
             math_a : DynamicValue::Null,
             math_b : DynamicValue::Null,
+            secondary : DynamicValue::Null,
             intermediate : DynamicValue::Null,
+            first_operation : false,
         }
     }
 }
@@ -218,13 +199,13 @@ pub struct VirtualMachine {
     registers : Registers,
     has_quit : bool,
     stack_size : usize,
-    main_storage : StringStorage,
     callstack : Vec<FunctionFrame>,
     stdout: Option<Box<Write>>,
     stdin:  Option<Box<BufRead>>,
     code : Vec<Vec<Instruction>>,
     next_code_index : usize,
     is_interactive : bool,
+    special_storage : SpecialStorage,
 }
 
 macro_rules! vm_write{
@@ -243,7 +224,6 @@ impl VirtualMachine {
         VirtualMachine {
             has_quit : false,
             registers : Registers::default(),
-            main_storage : StringStorage::new(),
             stack_size : STACK_DEFAULT_SIZE,
             callstack : vec![],
             stdout: None,
@@ -251,18 +231,32 @@ impl VirtualMachine {
             code : vec![],
             next_code_index : 0,
             is_interactive : false,
+            special_storage : SpecialStorage::new(),
         }
+    }
+
+    fn add_special_item(&mut self, frame_index : usize, data : SpecialItemData) -> Result<u64, String> {
+        if self.callstack.len() <= frame_index {
+            return Err("add_special_item : Index é inválido".to_owned());
+        }
+
+        self.callstack[frame_index].num_special_items += 1;
+
+        Ok(self.special_storage.add(data))
     }
 
     fn raw_to_dynamic(&mut self, val : RawValue) -> Result<DynamicValue, String> {
         match val {
             RawValue::Text(t) => {
-                let parent_id = match self.get_last_ready_ref() {
-                    Some(s) => s.parent_id,
+                let parent_index = match self.get_last_ready_index() {
+                    Some(s) => s,
                     None => 0,
                 };
 
-                let id = self.main_storage.add_string(t, parent_id);
+                let id = match self.add_special_item(parent_index, SpecialItemData::Text(t)) {
+                    Ok(id) => id,
+                    Err(e) => return Err(e)
+                };
 
                 Ok(DynamicValue::Text(id))
             },
@@ -433,27 +427,94 @@ impl VirtualMachine {
                 }
             }
             DynamicValue::Text(l_t) => {
-
                 match right {
                     DynamicValue::Text(r_t) => {
                         // Add right value to left node
 
-                        let left_v = match self.main_storage.get(r_t) {
-                            Some(s) => s,
-                            None => return Err(format!("Add w/ Text : Id {} não encontrada.", r_t))
+                        let mut result = String::new();
+
+                        {
+                            let left_v = match self.special_storage.get_ref(r_t) {
+                                Some(s) => match s {
+                                    &SpecialItemData::Text(ref s) => s,
+                                    _ => return Err(format!("Erro interno : DynamicValue é texto, mas o id aponta pra outra coisa"))
+                                },
+                                None => return Err(format!("Add w/ Text : Id {} não encontrada.", r_t))
+                            };
+
+                            // remove right node
+                            let right_v = match self.special_storage.get_ref(l_t) {
+                                Some(s) => match s {
+                                    &SpecialItemData::Text(ref s) => s,
+                                    _ => return Err(format!("Erro interno : DynamicValue é texto, mas o id aponta pra outra coisa"))
+                                },
+                                None => return Err(format!("Add w/ Text : Id {} não encontrada.", l_t))
+                            };
+
+                            if self.registers.first_operation {
+                                result.push_str(right_v);
+                                result.push_str(left_v);
+
+                                self.registers.first_operation = false;
+                            } else {
+                                result.push_str(left_v);
+                                result.push_str(right_v);
+
+                            }
+                        }
+
+                        let parent_index = match self.get_last_ready_index() {
+                            Some(idx) => idx,
+                            None => return Err("Nenhuma função em execução".to_owned())
                         };
 
-                        // remove right node
-                        let right_v_ref = match self.main_storage.get_mut(l_t) {
-                            Some(c) => c,
-                            None => return Err(format!("Add w/ Text : Id {} não encontrada.", l_t))
+                        let id = match self.add_special_item(parent_index, SpecialItemData::Text(result)) {
+                            Ok(id) => id,
+                            Err(e) => return Err(e)
                         };
 
-                        right_v_ref.push_str(left_v.as_str());
-
-                        Ok(DynamicValue::Text(l_t))
+                        Ok(DynamicValue::Text(id))
                     }
                     _ => return Err("Incompatível. Não deveria chegar aqui.".to_owned()),
+                }
+            }
+            DynamicValue::List(left_id) => {
+                match right {
+                    DynamicValue::List(right_id) => {
+                        // We must create a new list, add elements from left, then right, then return it
+
+                        let mut data = vec![];
+
+                        match self.special_storage.get_ref(left_id) {
+                            Some(SpecialItemData::List(ref contents)) => {
+                                for item in contents {
+                                    data.push(item.clone());
+                                }
+                            }
+                            Some(_) => return Err("Erro interno : DynamicValue é uma lista, mas o valor guardado não".to_owned()),
+                            None => return Err("Erro interno : ID inválida pra lista".to_owned())
+                        }
+
+                        match self.special_storage.get_ref(right_id) {
+                            Some(SpecialItemData::List(ref contents)) => {
+                                for item in contents {
+                                    data.push(item.clone());
+                                }
+                            }
+                            Some(_) => return Err("Erro interno : DynamicValue é uma lista, mas o valor guardado não".to_owned()),
+                            None => return Err("Erro interno : ID inválida pra lista".to_owned())
+                        }
+
+                        let index = match self.get_last_ready_index() {
+                            Some(i) => i,
+                            None => return Err("Nenhuma função em execução".to_owned())
+                        };
+
+                        let id = self.add_special_item(index, SpecialItemData::List(data))?;
+
+                        Ok(DynamicValue::List(id))
+                    }
+                    _ => return Err("Operação não suportada entre Listas e outros valores".to_owned())
                 }
             }
             DynamicValue::Null => Ok(DynamicValue::Null),
@@ -482,6 +543,7 @@ impl VirtualMachine {
             }
             DynamicValue::Text(_) => return Err("Operação inválida em texto : -".to_owned()),
             DynamicValue::Null => Ok(DynamicValue::Null),
+            DynamicValue::List(_) => return Err("Operação não suportada em listas".to_owned())
         }
     }
 
@@ -507,6 +569,7 @@ impl VirtualMachine {
             }
             DynamicValue::Text(_) => return Err("Operação inválida em texto : *".to_owned()),
             DynamicValue::Null => Ok(DynamicValue::Null),
+            DynamicValue::List(_) => return Err("Operação não suportada em listas".to_owned())
         }
     }
 
@@ -532,6 +595,7 @@ impl VirtualMachine {
             }
             DynamicValue::Text(_) => return Err("Operação inválida em texto : /".to_owned()),
             DynamicValue::Null => Ok(DynamicValue::Null),
+            DynamicValue::List(_) => return Err("Operação não suportada em listas".to_owned())
         }
     }
 
@@ -591,13 +655,19 @@ impl VirtualMachine {
             DynamicValue::Text(l_t) => {
                 match right {
                     DynamicValue::Text(r_t) => {
-                        let ltext = match self.main_storage.get_ref(l_t) {
-                            Some(t) => t,
+                        let ltext = match self.special_storage.get_ref(l_t) {
+                            Some(s) => match s {
+                                &SpecialItemData::Text(ref s) => s,
+                                _ => return Err(format!("Erro interno : DynamicValue é texto, mas o id aponta pra outra coisa"))
+                            },
                             None => return Err(format!("Erro : TextID não encontrada : {}", l_t)),
                         };
 
-                        let rtext = match self.main_storage.get_ref(r_t) {
-                            Some(t) => t,
+                        let rtext = match self.special_storage.get_ref(r_t) {
+                            Some(s) => match s {
+                                &SpecialItemData::Text(ref s) => s,
+                                _ => return Err(format!("Erro interno : DynamicValue é texto, mas o id aponta pra outra coisa"))
+                            },
                             None => return Err(format!("Erro : TextID não encontrada : {}", r_t)),
                         };
 
@@ -619,7 +689,45 @@ impl VirtualMachine {
                     _ => Comparision::NotEqual
                 }
             }
-            DynamicValue::Null => Comparision::NotEqual,
+            DynamicValue::List(left_id) => {
+                match right {
+                    DynamicValue::List(right_id) => {
+                        let left_list = match self.special_storage.get_ref(left_id) {
+                            Some(SpecialItemData::List(ref list)) => list.clone(),
+                            Some(_) => return Err("Erro interno : DynamicValue é uma lista mas o item guardado não".to_owned()),
+                            None => return Err("ID não existe".to_owned())
+                        };
+
+                        let right_list = match self.special_storage.get_ref(right_id) {
+                            Some(SpecialItemData::List(ref list)) => list.clone(),
+                            Some(_) => return Err("Erro interno : DynamicValue é uma lista mas o item guardado não".to_owned()),
+                            None => return Err("ID não existe".to_owned())
+                        };
+
+                        if left_list.len() != right_list.len() {
+                            Comparision::NotEqual
+                        } else {
+
+                            for i in 0..left_list.len() {
+                                match self.compare(*left_list[i].clone(), *right_list[i].clone()) {
+                                    Ok(Comparision::Equal) => {},
+                                    Ok(_) => return Ok(Comparision::NotEqual),
+                                    Err(e) => return Err(e)
+                                }
+                            }
+
+                            Comparision::Equal
+                        }
+                    }
+                    _ => Comparision::NotEqual,
+                }
+            }
+            DynamicValue::Null => {
+                match right {
+                    DynamicValue::Null => Comparision::Equal,
+                    _ => Comparision::NotEqual,
+                }
+            }
         };
 
         Ok(comp)
@@ -741,30 +849,61 @@ impl VirtualMachine {
         }
 
         Ok(())
-
     }
 
     fn conv_to_string(&mut self, val : DynamicValue) -> Result<String, String> {
         match val {
             DynamicValue::Text(t) => {
-                let s = match self.main_storage.get_ref(t) {
-                    Some(s) => s.to_owned(),
+                let s = match self.special_storage.get_ref(t) {
+                    Some(s) => match s {
+                        &SpecialItemData::Text(ref s) => s,
+                        _ => return Err(format!("Erro interno : DynamicValue é texto, mas o id aponta pra outra coisa"))
+                    },
                     None => return Err("Invalid string ID".to_owned()),
                 };
 
-                Ok(s)
+                Ok(s.clone())
             }
             DynamicValue::Integer(i) => Ok(format!("{}", i)),
             DynamicValue::Number(n) => Ok(format!("{}", n)),
             DynamicValue::Null => Ok(String::from("<Null>")),
+            DynamicValue::List(id) => {
+                let list = match self.special_storage.get_ref(id) {
+                    Some(SpecialItemData::List(ref list)) => list.clone(),
+                    Some(_) => return Err("Erro interno : DynamicValue é uma lista, item interno não".to_owned()),
+                    None => return Err("ID inválida pra lista".to_owned())
+                };
+                
+                let mut result = String::from("[ ");
+                let mut first = true;
+
+                for item in list {
+                    if !first {
+                        result.push_str(", ");
+                    } else {
+                        first = false;
+                    }
+
+                    let s = self.conv_to_string(*item.clone())?;
+
+                    result.push_str(s.as_str());
+                }
+
+                result.push_str(" ]");
+
+                Ok(result)
+            }
         }
     }
 
     fn conv_to_int(&mut self, val : DynamicValue) -> Result<IntegerType, String> {
         match val {
             DynamicValue::Text(t) => {
-                let text = match self.main_storage.get_ref(t) {
-                    Some(v) => v,
+                let text = match self.special_storage.get_ref(t) {
+                    Some(s) => match s {
+                        &SpecialItemData::Text(ref s) => s,
+                        _ => return Err(format!("Erro interno : DynamicValue é texto, mas o id aponta pra outra coisa"))
+                    },
                     None => return Err("Invalid text id".to_owned())
                 };
 
@@ -778,14 +917,18 @@ impl VirtualMachine {
             DynamicValue::Number(n) => Ok(n as IntegerType),
             DynamicValue::Integer(i) => Ok(i),
             DynamicValue::Null => return Err("Convert : <Null>".to_owned()),
+            DynamicValue::List(_) => return Err("Não é possível converter uma lista pra inteiro".to_owned())
         }
     }
 
     fn conv_to_num(&mut self, val : DynamicValue) -> Result<f64, String> {
         match val {
             DynamicValue::Text(t) => {
-                let text = match self.main_storage.get_ref(t) {
-                    Some(v) => v,
+                let text = match self.special_storage.get_ref(t) {
+                    Some(s) => match s {
+                        &SpecialItemData::Text(ref s) => s,
+                        _ => return Err(format!("Erro interno : DynamicValue é texto, mas o id aponta pra outra coisa"))
+                    },
                     None => return Err("Invalid text id".to_owned())
                 };
 
@@ -799,6 +942,7 @@ impl VirtualMachine {
             DynamicValue::Number(n) => Ok(n),
             DynamicValue::Integer(i) => Ok(i as f64),
             DynamicValue::Null => return Err("Convert : <Null>".to_owned()),
+            DynamicValue::List(_) => return Err("Não é possível converter uma lista pra número".to_owned())
         }
     }
 
@@ -848,14 +992,24 @@ impl VirtualMachine {
                     DynamicValue::Integer(i) => vm_write!(self.stdout, "(Integer) {}\n", i)?,
                     DynamicValue::Number(n) => vm_write!(self.stdout, "(Number) {}\n", n)?,
                     DynamicValue::Text(t) => {
-                        let t = match self.main_storage.get_ref(t) {
-                            Some(t) => t,
+                        let t = match self.special_storage.get_ref(t) {
+                            Some(s) => match s {
+                                &SpecialItemData::Text(ref s) => s,
+                                _ => return Err(format!("Erro interno : DynamicValue é texto, mas o id aponta pra outra coisa"))
+                            },
                             None => return Err(format!("MainPrint : Não foi encontrado text com ID {}", t)),
                         };
 
                         vm_write!(self.stdout, "(Text) \"{}\"\n", t)?
                     }
                     DynamicValue::Null => vm_write!(self.stdout, "<Null>")?,
+                    DynamicValue::List(id) => {
+                        let string = match self.conv_to_string(DynamicValue::List(id)) {
+                            Ok(s) => s,
+                            Err(e) => return Err(e)
+                        };
+                        vm_write!(self.stdout, "{}\n", string)?;
+                    }
                 }
 
                 self.flush_stdout();
@@ -865,12 +1019,22 @@ impl VirtualMachine {
                     DynamicValue::Integer(i) => vm_write!(self.stdout, "{}", i)?,
                     DynamicValue::Number(n) => vm_write!(self.stdout, "{}", n)?,
                     DynamicValue::Text(t) => {
-                        let t = match self.main_storage.get_ref(t) {
-                            Some(t) => t,
+                        let t = match self.special_storage.get_ref(t) {
+                            Some(s) => match s {
+                                &SpecialItemData::Text(ref s) => s,
+                                _ => return Err(format!("Erro interno : DynamicValue é texto, mas o id aponta pra outra coisa"))
+                            },
                             None => return Err(format!("MainPrint : Não foi encontrado text com ID {}", t)),
                         };
 
                         vm_write!(self.stdout, "{}", t)?
+                    }
+                    DynamicValue::List(id) => {
+                        let string = match self.conv_to_string(DynamicValue::List(id)) {
+                            Ok(s) => s,
+                            Err(e) => return Err(e)
+                        };
+                        vm_write!(self.stdout, "(Lista) {}", string)?;
                     }
                     DynamicValue::Null => vm_write!(self.stdout, "<Null>")?,
                 }
@@ -905,7 +1069,7 @@ impl VirtualMachine {
                 }
 
                 match self.callstack.pop() {
-                    Some(frame) => self.main_storage.delete_for_parent(frame.parent_id),
+                    Some(frame) => self.special_storage.remove_top(frame.num_special_items)?,
                     None => return Err("Erro no return : Nenhuma função em execução".to_owned())
                 }
 
@@ -930,12 +1094,7 @@ impl VirtualMachine {
             Instruction::MakeNewFrame(id) => {
                 // Add a new, not ready frame to the callstack
 
-                let parent_id = self.main_storage.next_parent_id;
-                self.main_storage.next_parent_id += 1;
-
-                self.main_storage.add_parent_storage(parent_id);
-
-                let frame = FunctionFrame::new(id, self.stack_size, parent_id);
+                let frame = FunctionFrame::new(id, self.stack_size);
 
                 self.callstack.push(frame);
             }
@@ -974,6 +1133,13 @@ impl VirtualMachine {
                             return Err("Tipo incompatível : Number".to_owned());
                         }
                     }
+                    DynamicValue::List(_) => {
+                        if kind == TypeKind::List {
+                            // Ok
+                        } else {
+                            return Err("Tipo incompatível : Lista".to_owned());
+                        }
+                    }
                 }
             }
             Instruction::ReadInput => {
@@ -990,13 +1156,17 @@ impl VirtualMachine {
                     Some(line)
                 } else { None };
 
-                let parent_id = match self.get_last_ready_ref() {
-                    Some(s) => s.parent_id,
+                let parent_index = match self.get_last_ready_index() {
+                    Some(s) => s,
                     None => return Err("Nenhuma função em execução".to_owned())
                 };
 
-                if let Some(line) = line{
-                    let id = self.main_storage.add_string(line, parent_id);
+                if let Some(line) = line {
+                    let id = match self.add_special_item(parent_index, SpecialItemData::Text(line)) {
+                        Ok(id) => id,
+                        Err(e) => return Err(e)
+                    };
+
                     self.registers.intermediate = DynamicValue::Text(id);
                 }
             }
@@ -1023,17 +1193,24 @@ impl VirtualMachine {
             Instruction::ConvertToString => {
                 let val = self.registers.math_b;
 
-                let v = match self.conv_to_string(val) {
-                    Ok(v) => v,
-                    Err(e) => return Err(e)
-                };
+                let id = if let DynamicValue::Text(id) = val {
+                    id
+                } else {
+                    let v = match self.conv_to_string(val) {
+                        Ok(v) => v,
+                        Err(e) => return Err(e)
+                    };
 
-                let parent_id = match self.get_last_ready_ref() {
-                    Some(s) => s.parent_id,
-                    None => return Err("Nenhuma função em execução".to_owned())
-                };
+                    let parent_index = match self.get_last_ready_index() {
+                        Some(s) => s,
+                        None => return Err("Nenhuma função em execução".to_owned())
+                    };
 
-                let id = self.main_storage.add_string(v, parent_id);
+                    match self.add_special_item(parent_index, SpecialItemData::Text(v)) {
+                        Ok(id) => id,
+                        Err(e) => return Err(e)
+                    }
+                };
 
                 self.registers.math_b = DynamicValue::Text(id);
             }
@@ -1236,6 +1413,87 @@ impl VirtualMachine {
                     None => return Err("Nenhuma função em execução".to_owned())
                 };
             }
+            Instruction::SetFirstExpressionOperation => {
+                self.registers.first_operation = true;
+            }
+            Instruction::MakeNewList => {
+                let index = match self.get_last_ready_index() {
+                    Some(i) => i,
+                    None => return Err("Nenhuma função em execução".to_owned())
+                };
+
+                let data = match self.add_special_item(index, SpecialItemData::List(vec![])) {
+                    Ok(d) => d,
+                    Err(e) => return Err(e)
+                };
+
+                self.registers.math_b = DynamicValue::List(data);
+            }
+            Instruction::IndexList => {
+                unimplemented!()
+            }
+            Instruction::AddToListAtIndex => {
+                let index = if let DynamicValue::Integer(val) = self.registers.secondary {
+                    Some(val)
+                } else {
+                    None
+                };
+
+                let value = self.registers.math_b;
+
+                let list_id = if let DynamicValue::List(id) = self.registers.intermediate {
+                    id
+                } else {
+                    return Err(format!("AddListToIndex : A variável não é uma lista"));
+                };
+
+                let list = match self.special_storage.get_mut(list_id) {
+                    Some(l) => match l {
+                        SpecialItemData::List(ref mut list) => list,
+                        _ => return Err("Item especial com a ID passada não é uma lista".to_owned())
+                    }
+                    None => return Err("ID da lista não encontrada".to_owned())
+                };
+
+                if let Some(i) = index {
+                    if i as usize >= list.len() {
+                        list.push(Box::new(value));
+                    } else {
+                        list.insert(i as usize, Box::new(value));
+                    }
+                } else {
+                    list.push(Box::new(value));
+                }
+            }
+            Instruction::ClearSecondary => {
+                self.registers.secondary = DynamicValue::Null;
+            }
+            Instruction::PushMathBToSeconday => {
+                let val = self.registers.math_b;
+                self.registers.secondary = val;
+            }
+            Instruction::RemoveFromListAtIndex => {
+                unimplemented!()
+            }
+            Instruction::QueryListSize => {
+                let id = if let DynamicValue::List(id) = self.registers.intermediate {
+                    id
+                } else {
+                    return Err("QueryListSize : Variável não é uma lista".to_owned());
+                };
+
+                let list = match self.special_storage.get_ref(id) {
+                    Some(l) => match l {
+                        SpecialItemData::List(l) => l,
+                        _ => return Err("Erro interno : ID não aponta pra uma lista".to_owned())
+                    }
+                    None => return Err("Não encontrado item com a ID passada".to_owned())
+                };
+
+                let val = DynamicValue::Integer(list.len() as IntegerType);
+
+                self.registers.math_b = val;
+            }
         }
 
         Ok(ExecutionStatus::Normal)
@@ -1270,6 +1528,8 @@ pub enum Instruction {
     PushValMathB(RawValue),
     PushIntermediateToA,
     PushIntermediateToB,
+    PushMathBToSeconday,
+    ClearSecondary,
     // Values are read to the intermediate register
     ReadGlobalVarFrom(usize),
     // When writing, values are read from the math b register
@@ -1291,4 +1551,17 @@ pub enum Instruction {
     PopLoopLabel,
     /// Retrieve the increment value from MathB and write it on every Restore to the specified address
     RegisterIncrementOnRestore(usize),
+    /// Set the register to denote this is the first operation on the expression
+    SetFirstExpressionOperation,
+    /// Create a new list and put the result at MathB
+    MakeNewList,
+    /// Index a list with the ID from the intermediate register and the index from MathB, and put the result in MathB
+    IndexList,
+    /// Add the result in MathB to the list in the intermediate register, using the index at the secondary register
+    /// if the secondary register is Null, the element is placed on the back of the list
+    AddToListAtIndex,
+    /// Remove the element at the index located in MathB from the list in the intermediate register
+    RemoveFromListAtIndex,
+    /// Query the list from the intermediate address and write its size to the MathB
+    QueryListSize,
 }

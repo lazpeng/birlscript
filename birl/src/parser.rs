@@ -44,6 +44,12 @@ pub enum KeyPhrase {
     TypeInt,
     TypeNum,
     TypeStr,
+    TypeList,
+    MakeNewList,
+    QueryListSize,
+    AddListElement,
+    RemoveListElement,
+    IndexList
 }
 
 impl KeyPhrase {
@@ -65,6 +71,7 @@ impl KeyPhrase {
             "TRAPÉZIO DESCENDENTE" | "TRAPEZIO DESCENDENTE" => Some(KeyPhrase::TypeNum),
             "FIBRA" => Some(KeyPhrase::TypeStr),
             "BATATA DOCE" => Some(KeyPhrase::TypeInt),
+            "LISTA" => Some(KeyPhrase::TypeList),
             "E ELE QUE A GENTE QUER" |
             "É ELE QUE A GENTE QUER" => Some(KeyPhrase::Compare),
             "FIM" => Some(KeyPhrase::EndSubScope),
@@ -88,6 +95,11 @@ impl KeyPhrase {
             "ENQUANTO E MAIOR" | "ENQUANTO É MAIOR" => Some(KeyPhrase::ExecuteWhileGreater),
             "ENQUANTO MAIOR OU E MEMO" | "ENQUANTO MAIOR OU É MEMO" => Some(KeyPhrase::ExecuteWhileEqualOrGreater),
             "REPETE" => Some(KeyPhrase::RangeLoop),
+            "FAZ UMA LISTA" => Some(KeyPhrase::MakeNewList),
+            "FALA O TAMANHO" => Some(KeyPhrase::QueryListSize),
+            "POE ISSO AQUI" | "PÕE ISSO AQUI" => Some(KeyPhrase::AddListElement),
+            "TIRA ESSE" => Some(KeyPhrase::RemoveListElement),
+            "ME DA ESSE" | "ME DÁ ESSE" => Some(KeyPhrase::IndexList),
             _ => None,
         }
     }
@@ -378,6 +390,7 @@ pub enum TypeKind {
     Integer,
     Number,
     Text,
+    List
 }
 
 impl TypeKind {
@@ -386,6 +399,7 @@ impl TypeKind {
             KeyPhrase::TypeInt => Some(TypeKind::Integer),
             KeyPhrase::TypeNum => Some(TypeKind::Number),
             KeyPhrase::TypeStr => Some(TypeKind::Text),
+            KeyPhrase::TypeList => Some(TypeKind::List),
             _ => None,
         }
     }
@@ -474,6 +488,11 @@ pub enum CommandKind {
     ExecuteWhileGreater,
     ExecuteWhileEqualOrGreater,
     RangeLoop,
+    MakeNewList,
+    QueryListSize,
+    AddListElement,
+    RemoveListElement,
+    IndexList
 }
 
 impl CommandKind {
@@ -508,6 +527,11 @@ impl CommandKind {
             KeyPhrase::ExecuteWhileGreater => Some(CommandKind::ExecuteWhileGreater),
             KeyPhrase::ExecuteWhileEqualOrGreater => Some(CommandKind::ExecuteWhileEqualOrGreater),
             KeyPhrase::RangeLoop => Some(CommandKind::RangeLoop),
+            KeyPhrase::MakeNewList => Some(CommandKind::MakeNewList),
+            KeyPhrase::QueryListSize => Some(CommandKind::QueryListSize),
+            KeyPhrase::AddListElement => Some(CommandKind::AddListElement),
+            KeyPhrase::RemoveListElement => Some(CommandKind::RemoveListElement),
+            KeyPhrase::IndexList => Some(CommandKind::IndexList),
             _ => None,
         }
     }
@@ -592,6 +616,23 @@ impl CommandInfo {
                                              CommandArgumentKind::Expression, CommandArgumentKind::Expression,
                                                 CommandArgumentKind::Expression])
             }
+            CommandKind::MakeNewList => {
+                CommandInfo::from(1, 1, vec![CommandArgumentKind::Name])
+            }
+            CommandKind::QueryListSize => {
+                CommandInfo::from(2, 2, vec![CommandArgumentKind::Name, CommandArgumentKind::Name])
+            }
+            CommandKind::AddListElement => {
+                CommandInfo::from(2, 3, vec![CommandArgumentKind::Name, CommandArgumentKind::Expression,
+                    CommandArgumentKind::Expression])
+            }
+            CommandKind::RemoveListElement => {
+                CommandInfo::from(2, 2, vec![CommandArgumentKind::Name, CommandArgumentKind::Expression])
+            }
+            CommandKind::IndexList => {
+                CommandInfo::from(3, 3, vec![CommandArgumentKind::Name, CommandArgumentKind::Expression,
+                    CommandArgumentKind::Name])
+            }
         }
     }
 }
@@ -616,9 +657,10 @@ pub enum ParserResult {
     Nothing,
 }
 
-fn parse_parameter(src : &[char], offset : &mut usize) -> Result<FunctionParameter, String> {
+fn parse_parameter(src : &[char], offset : &mut usize) -> Result<Option<FunctionParameter>, String> {
     let name = match next_token(src, offset) {
         Ok(Token::Symbol(s)) => s,
+        Ok(Token::Operator(MathOperator::ParenthesisRight)) => return Ok(None),
         Ok(t) => return Err(format!("Esperado um nome pro parâmetro, encontrado {:?}", t)),
         Err(e) => return Err(e)
     };
@@ -640,7 +682,7 @@ fn parse_parameter(src : &[char], offset : &mut usize) -> Result<FunctionParamet
         Err(e) => return Err(e)
     };
 
-    Ok(FunctionParameter::from(name, kind))
+    Ok(Some(FunctionParameter::from(name, kind)))
 }
 
 fn parse_function(src : &[char], offset : &mut usize) -> Result<ParserResult, String> {
@@ -672,7 +714,8 @@ fn parse_function(src : &[char], offset : &mut usize) -> Result<ParserResult, St
                        }
 
                        let param = match parse_parameter(src, offset) {
-                           Ok(p) => p,
+                           Ok(Some(p)) => p,
+                           Ok(None) => break,
                            Err(e) => return Err(e)
                        };
 
@@ -722,17 +765,16 @@ fn parse_sub_expression(src : &[char], offset : &mut usize, expr : &mut Expressi
             if last_was_important {
                 last_was_important = false;
 
-                let left = match values.pop() {
-                    Some(v) => v,
-                    None => return Err("Impossível. Values tá vazio".to_owned())
-                };
+                match values.pop() {
+                    Some(v) => nodes.push(v),
+                    None => {}
+                }
 
                 let op = match operations.pop() {
                     Some(v) => v,
                     None => return Err("Operations tá vazio".to_owned()),
                 };
 
-                nodes.push(left);
                 nodes.push(ExpressionNode::Value(RawValue::Integer(i)));
                 nodes.push(ExpressionNode::Operator(op));
             } else {
@@ -745,17 +787,16 @@ fn parse_sub_expression(src : &[char], offset : &mut usize, expr : &mut Expressi
             if last_was_important {
                 last_was_important = false;
 
-                let left = match values.pop() {
-                    Some(v) => v,
-                    None => return Err("Impossível. Values tá vazio".to_owned())
-                };
+                match values.pop() {
+                    Some(v) => nodes.push(v),
+                    None => {}
+                }
 
                 let op = match operations.pop() {
                     Some(v) => v,
                     None => return Err("Operations tá vazio".to_owned()),
                 };
 
-                nodes.push(left);
                 nodes.push(ExpressionNode::Value(RawValue::Number(n)));
                 nodes.push(ExpressionNode::Operator(op));
             } else {
@@ -778,17 +819,16 @@ fn parse_sub_expression(src : &[char], offset : &mut usize, expr : &mut Expressi
             if last_was_important {
                 last_was_important = false;
 
-                let left = match values.pop() {
-                    Some(v) => v,
-                    None => return Err("Impossível. Values tá vazio".to_owned())
-                };
+                match values.pop() {
+                    Some(v) => nodes.push(v),
+                    None => {}
+                }
 
                 let op = match operations.pop() {
                     Some(v) => v,
                     None => return Err("Operations tá vazio".to_owned()),
                 };
 
-                nodes.push(left);
                 nodes.push(ExpressionNode::Symbol(s));
                 nodes.push(ExpressionNode::Operator(op));
             } else {
@@ -857,17 +897,16 @@ fn parse_sub_expression(src : &[char], offset : &mut usize, expr : &mut Expressi
                 if last_was_important {
                     last_was_important = false;
 
-                    let left = match values.pop() {
-                        Some(v) => v,
-                        None => return Err("Impossível. Values tá vazio".to_owned())
-                    };
+                    match values.pop() {
+                        Some(v) => nodes.push(v),
+                        None => {}
+                    }
 
                     let op = match operations.pop() {
                         Some(v) => v,
                         None => return Err("Operations tá vazio".to_owned()),
                     };
 
-                    nodes.push(left);
                     nodes.push(ExpressionNode::Value(RawValue::Integer(i)));
                     nodes.push(ExpressionNode::Operator(op));
                 } else {
@@ -884,17 +923,16 @@ fn parse_sub_expression(src : &[char], offset : &mut usize, expr : &mut Expressi
                 if last_was_important {
                     last_was_important = false;
 
-                    let left = match values.pop() {
-                        Some(v) => v,
-                        None => return Err("Impossível. Values tá vazio".to_owned())
-                    };
+                    match values.pop() {
+                        Some(v) => nodes.push(v),
+                        None => {}
+                    }
 
                     let op = match operations.pop() {
                         Some(v) => v,
                         None => return Err("Operations tá vazio".to_owned()),
                     };
 
-                    nodes.push(left);
                     nodes.push(ExpressionNode::Value(RawValue::Number(n)));
                     nodes.push(ExpressionNode::Operator(op));
                 } else {
@@ -924,17 +962,16 @@ fn parse_sub_expression(src : &[char], offset : &mut usize, expr : &mut Expressi
                 if last_was_important {
                     last_was_important = false;
 
-                    let left = match values.pop() {
-                        Some(v) => v,
-                        None => return Err("Impossível. Values tá vazio".to_owned())
-                    };
+                    match values.pop() {
+                        Some(v) => nodes.push(v),
+                        None => {}
+                    }
 
                     let op = match operations.pop() {
                         Some(v) => v,
                         None => return Err("Operations tá vazio".to_owned()),
                     };
 
-                    nodes.push(left);
                     nodes.push(ExpressionNode::Symbol(s));
                     nodes.push(ExpressionNode::Operator(op));
                 } else {
@@ -975,7 +1012,7 @@ fn parse_sub_expression(src : &[char], offset : &mut usize, expr : &mut Expressi
 
                         break;
                     }
-                    _ => return Err(format!("Erro: A expressão deveria começar com um valor ou operador unário, mas começa com {:?}", p)),
+                    _ => return Err(format!("Erro: {:?} no meio da expressão", p)),
                 }
             }
             Token::NewLine => break,
@@ -1159,9 +1196,21 @@ pub fn parse_line(src : &str) -> Result<ParserResult, String> {
                 _ => parse_command(&chars, &mut offset, kp),
             }
         }
-        Token::Text(_) | Token::Number(_) | Token::Integer(_) | Token::Symbol(_) => {
+        Token::Text(_) | Token::Number(_) | Token::Integer(_) | Token::Operator(MathOperator::ParenthesisLeft) => {
             offset = 0;
             parse_command(&chars, &mut offset, KeyPhrase::PrintDebug)
+        }
+        Token::Symbol(sym) => {
+            match next_token(&chars, &mut offset) {
+                Ok(Token::Punctuation(PunctuationKind::Colon)) => {
+                    return Err(format!("O comando \"{}\" não existe.", sym));
+                }
+                Ok(_) => {
+                    offset = 0;
+                    parse_command(&chars, &mut offset, KeyPhrase::PrintDebug)
+                }
+                Err(e) => return Err(e)
+            }
         }
         _ => Err("Linha começa com um token inválido".to_owned()),
     }

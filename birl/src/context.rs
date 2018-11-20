@@ -11,7 +11,7 @@ use std::env;
 pub const BIRL_COPYRIGHT : &'static str 
     = "© 2016 - 2018 Rafael Rodrigues Nakano <lazpeng@gmail.com>";
 pub const BIRL_VERSION : &'static str 
-    = "BirlScript v2.0.0-alpha";
+    = "BirlScript v2.0.0-beta";
 pub const BIRL_MAIN_FUNCTION : &str 
     = "SHOW";
 
@@ -125,14 +125,20 @@ impl Context {
                     }
                 };
 
-                return Ok(hint);
+                Ok(hint)
             }
-            ParserResult::FunctionEnd => self.end_function()?,
-            ParserResult::FunctionStart(func) => self.add_function(func)?,
-            ParserResult::Nothing => return Ok(None)
-        }
+            ParserResult::FunctionEnd => {
+                self.end_function()?;
 
-        Ok(None)
+                Ok(Some(CompilerHint::ScopeEnd))
+            },
+            ParserResult::FunctionStart(func) => {
+                self.add_function(func)?;
+
+                Ok(Some(CompilerHint::ScopeStart))
+            },
+            ParserResult::Nothing => Ok(None)
+        }
     }
 
     pub fn add_source_string(&mut self, string : String) -> Result<(), String> {
