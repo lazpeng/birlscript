@@ -27,9 +27,33 @@ em geral. Contribuições são bem-vindas, principalmente em relação à lingua
 como nomes de comandos e etc. Entrar em contato comigo ou fazer uma pull request
 são opções, e não esqueça de testar tudo e alterar essa documentação pra refletir
 o novo comportamento se for necessário.
+
+# Especificação da linguagem
+BirlScript é uma linguagem dinâmica e interpretada. O objetivo inicial
+era ter algo parecido com BASIC ou até assembly, mas acabou """evoluindo""" pra algo ~~pior~~ diferente.
+
+Basicamente tudo em BirlScript é feito por meio de comandos, e até a declaração
+de funções é, internamente, tratada como um comando. Comandos podem existir dentro de funções ou no contexto "global", que é uma função executada antes da principal e não pode ser chamada pelo código. A função principal é chamada de SHOW e é chamada depois da execução da função global, e pode ser chamada por outras funções ou até por ela mesma (se por algum motivo for necessário). A sintaxe pra declaração de uma função é a seguinte:
+```
+JAULA nome da função (argumentos...)
+```
+Nomes em BirlScript podem possuir espaços, desde que o primeiro caractere de cada palavra seja um alpha válido (e.g. "TESTE 2" não é válido, 2 é o primeiro caractere da palavra e é interpretado como o número 2) e para no fim do *input*, um *tab*, nova linha ou dois espaços seguidos são encontrados.
+A função aceita uma lista de argumentos delimitada por parênteses, separados por vírgula e seguindo a sintaxe abaixo:
+```
+nome do argumento : tipo
+```
+
 ## Comandos
-Listados todos os comandos e um resumo do que cada um faz e
-detalhes em relação ao comportamento de cada um
+Os comandos são as formas de executar ações no código BirlScript, como dar um valor a uma variável, declarar uma variável, executar uma função e etc.
+A sintaxe pra execução de um comando é :
+```
+nome do comando : argumentos...
+```
+Alguns comandos que não recebem nenhum argumento ou em que os únicos argumentos são opcionais podem omitir o `:`
+
+A forma como os argumentos são passados depende de comando pra comando. Alguns pedem o nome de uma variável no lugar de um argumento específico para, por exemplo, ler o valor dessa variável. Em outros casos, é pedida uma *expressão*, que é simplesmente algo que gere um valor, como por exemplo `2+2`, `"olá"` ou `variável + "!"`.
+
+Abaixo há a lista de todos os comandos presentes na linguagem BirlScript e os argumentos que cada um requer.
 ### BIRL (Return)
 Retorna pra função anterior. Um valor é opcional
 
@@ -189,4 +213,45 @@ São variáveis disponíveis no escopo global e não podem ser modificadas. O pr
 
 * CUMPADE : Tem o nome de usuário rodando o programa
 * UM : Tem o valor 1
-## Instruções e a máquina virtual
+* FRANGO : Tem o valor nulo
+# Funcionamento, comportamento e características da implementação
+O shell, que é responsável pelo gerenciamento da execução de código BirlScript, tem dois modos de operação :
+* Um modo interativo, onde comandos podem ser executados imediatamente (chamado REPL, *Read Eval Print Loop*)
+* O modo normal, que executa a função global, a função principal e encerra o programa. Nesse caso, todo o programa já deve estar escrito em algum arquivo que é passado para o shell ou como argumento pro programa (com o switch `-s`)
+
+Quando uma linha de entrada, ou *input* é passada para o contexto para a evaluação, uma série de processos são feitos e o resultado depende do modo de operação descrito acima. Para ambos os casos, os passos, em geral, são :
+`Lexer -> Parser -> Compiler -> Máquina Virtual`
+
+## Lexer
+O lexer simplesmente separar o *input* em vários *tokens*, que ajudam o parser a construir uma representação abstrata do que o programa representa. Por exemplo,
+```
+2 + "texto" + variável
+```
+depois de passar pelo Lexer se transforma em :
+```
+Int(2), Operador(+), Texto("texto"), Operador(+), Símbolo("variável")
+```
+
+Os tipos diferentes de Tokens são :
+* Símbolos : Um nome de uma variável ou um comando incorreto
+* Valor : Que pode ser um Texto, um Inteiro ou Número  (ainda não é possível ter literais de Lista)
+* Operador : Um operador matemático (e.g. +) ou um Parêntesis
+* Pontuação : vírgula e "dois pontos" (:)
+* *Frases-chave* : São como os símbolos, mas "palavras-chave" (só que com múltiplas palavras) que já são conhecidas, como JAULA, e podem ser representadas por um valor menor e definido, como um enum. Pra isso é usado o enum `KeyPhrase`.
+* Comentário : Um comentário, como em qualquer outra linguagem, serve pra deixar uma anotação ou mensagem sem que ela seja interpretada pela linguagem/compilador. No caso de BirlScript, o comentário é definido por `#` e a linha acaba quando esse caractere é encontrado
+* Nova linha (\n) : Denota uma quebra de linha
+* Nada : Quando, por exemplo, é pedido o próximo Token mas o input já não tem mais nada pra oferecer.
+
+O Lexer entrega um Token de cada vez baseado num *offset*, que diz onde o Lexer deve começar a procurar na string de input. Quando o *tokenizing* é finalizado (isso é, o ato de extrair um Token), o offset é modificado pra refletir a posição do próximo Token (se houver). Dessa maneira o Parser por requisitar somente os Tokens necessários (no caso de um erro, por exemplo, os outros Tokens seriam descartados e tempo seria perdido) e também pelo fato de a função específica que pede pelo próximo Token ser dona do objeto e poder mover valores, o que ~~não seria possível~~ seria bem mais complicado por conta de "limitações" que Rust impõe.
+
+## Parser
+
+*Em breve*
+
+## Compiler
+
+*Em breve*
+
+## A máquina virtual
+
+*Em breve*

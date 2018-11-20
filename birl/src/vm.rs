@@ -612,10 +612,6 @@ impl VirtualMachine {
     }
 
     fn compare(&self, left : DynamicValue, right : DynamicValue) -> Result<Comparision, String> {
-        if ! VirtualMachine::is_compatible(left, right) {
-            return Err(format!("Compare : Valores incompatíveis : {:?} e {:?}", left, right));
-        }
-
         let comp_numbers: fn(f64, f64) -> Comparision = | l, r | {
             if l == r {
                 Comparision::Equal
