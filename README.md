@@ -16,22 +16,22 @@ de opções que podem ser passadas.
 
 *© 2016-2018 Rafael Rodrigues Nakano. Contato: lazpeng@gmail.com*
 
-***Removido brief sobre a linguagem por conta do novo backend (que, diferente do atual, não é uma bagunça mal-feita) que deve
-mudar bastante coisa na própria língua. Exemplos podem sofrer mudanças também***
+## [Documentação disponível aqui](birl/DOC.md)
 
 # Exemplos
 
 ## Fatorial
 ```python
-JAULA FATORIAL (NUMERO: BATATA DOCE, ATUAL : BATATA DOCE)
-    E ELE QUE A GENTE QUER: NUMERO, 1
-    MENOR OU E MEMO:
-        BIRL: ATUAL
+JAULA FATORIAL (NUMERO: BATATA DOCE)
+    É ELE QUE A GENTE QUER: NUMERO, 1
+    MENOR OU É MEMO:
+        BIRL: 1
     FIM
-    BORA: NUMERO, NUMERO - 1
-    BORA: ATUAL, ATUAL * NUMERO
-    E HORA DO: FATORIAL, NUMERO, ATUAL
-    BIRL: TREZE
+    VEM: TOTAL, NUMERO
+    REPETE: ATUAL, NUMERO - 1, 1, (-1)
+        BORA: TOTAL, TOTAL * ATUAL
+    FIM
+    BIRL: TOTAL
 SAINDO DA JAULA
 
 JAULA SHOW
@@ -99,5 +99,3 @@ JAULA SHOW
     FIM
 SAINDO DA JAULA
 ```
-
-##[Documentação](birl/DOC.md)
