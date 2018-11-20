@@ -169,6 +169,7 @@ impl Compiler {
     fn add_symbol(&mut self, name : String, writeable : bool) -> Option<SymbolEntry> {
         let is_global = self.current_scope == ScopeKind::Global;
         let entry = SymbolEntry::from(self.next_var_address, is_global, writeable);
+        self.next_var_address += 1;
 
         match self.scopes.last_mut() {
             Some(s) => {
@@ -1090,6 +1091,9 @@ impl Compiler {
                     if expected != TypeKind::Text {
                         return Err(format!("Tipo incompatível : Função espera {:?}, foi passado Texto", expected))
                     }
+                }
+                &RawValue::Null => {
+                    return Err(format!("Tipo incompatível : Passado Nulo como argumento"))
                 }
             }
 

@@ -23,7 +23,8 @@ pub const BIRL_RET_VAL_VAR_ADDRESS  : usize = 0;
 pub enum RawValue {
     Text(String),
     Integer(IntegerType),
-    Number(f64)
+    Number(f64),
+    Null,
 }
 
 impl RawValue {
@@ -32,6 +33,7 @@ impl RawValue {
             &RawValue::Integer(_) => TypeKind::Integer,
             &RawValue::Number(_) => TypeKind::Number,
             &RawValue::Text(_) => TypeKind::Text,
+            &RawValue::Null => TypeKind::Null,
         }
     }
 }
@@ -191,7 +193,8 @@ impl Context {
         let vars = vec!
         [
             ("UM".to_owned(), RawValue::Integer(1)),
-            ("CUMPADE".to_owned(), RawValue::Text(env::var("USER").unwrap_or("CUMPADE".to_owned())))
+            ("CUMPADE".to_owned(), RawValue::Text(env::var("USER").unwrap_or("CUMPADE".to_owned()))),
+            ("FRANGO".to_owned(), RawValue::Null),
         ];
 
         for (name, value) in vars {

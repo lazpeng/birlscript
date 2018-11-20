@@ -262,6 +262,7 @@ impl VirtualMachine {
             },
             RawValue::Number(n) => Ok(DynamicValue::Number(n)),
             RawValue::Integer(i) => Ok(DynamicValue::Integer(i)),
+            RawValue::Null => Ok(DynamicValue::Null),
         }
     }
 
@@ -884,9 +885,24 @@ impl VirtualMachine {
                         first = false;
                     }
 
+                    // kek
+                    let is_str = if let DynamicValue::Text(_) = *item {
+                        true
+                    } else {
+                        false
+                    };
+
                     let s = self.conv_to_string(*item)?;
 
+                    if is_str {
+                        result.push_str("\"");
+                    }
+
                     result.push_str(s.as_str());
+
+                    if is_str {
+                        result.push_str("\"");
+                    }
                 }
 
                 result.push_str(" ]");
@@ -1002,7 +1018,7 @@ impl VirtualMachine {
 
                         vm_write!(self.stdout, "(Text) \"{}\"\n", t)?
                     }
-                    DynamicValue::Null => vm_write!(self.stdout, "<Null>")?,
+                    DynamicValue::Null => vm_write!(self.stdout, "<Null>\n")?,
                     DynamicValue::List(id) => {
                         let string = match self.conv_to_string(DynamicValue::List(id)) {
                             Ok(s) => s,
@@ -1430,7 +1446,31 @@ impl VirtualMachine {
                 self.registers.math_b = DynamicValue::List(data);
             }
             Instruction::IndexList => {
-                unimplemented!()
+                let index = if let DynamicValue::Integer(i) = self.registers.math_b {
+                    i
+                } else {
+                    return Err(format!("Esperado um índice na forma de um inteiro, encontrado {:?}", self.registers.math_b))
+                };
+
+                let value = {
+                    if let DynamicValue::List(id) = self.registers.intermediate {
+                        match self.special_storage.get_ref(id) {
+                            Some(SpecialItemData::List(ref d)) => {
+                                if index as usize >= d.len() {
+                                    return Err(format!("Erro : Index depois do final da lista. Tamanho da lista : {}", d.len()));
+                                }
+
+                                *d[index as usize]
+                            }
+                            Some(_) => return Err(format!("Erro interno : DynamicValue é uma lista, mas o item na memória não")),
+                            None => return Err("Erro interno : ID inválida".to_owned())
+                        }
+                    } else {
+                        return Err(format!("Variável passada não é uma lista"));
+                    }
+                };
+
+                self.registers.math_b = value;
             }
             Instruction::AddToListAtIndex => {
                 let index = if let DynamicValue::Integer(val) = self.registers.secondary {
@@ -1473,7 +1513,29 @@ impl VirtualMachine {
                 self.registers.secondary = val;
             }
             Instruction::RemoveFromListAtIndex => {
-                unimplemented!()
+                let index = if let DynamicValue::Integer(i) = self.registers.math_b {
+                    i
+                } else {
+                    return Err(format!("Esperado um inteiro como índice pra lista, encontrado {:?}", self.registers.math_b));
+                };
+
+                let id = if let DynamicValue::List(id) = self.registers.intermediate {
+                    id
+                } else {
+                    return Err("A variável não é uma lista".to_owned());
+                };
+
+                match self.special_storage.get_mut(id) {
+                    Some(SpecialItemData::List(ref mut list)) => {
+                        if index as usize >= list.len() {
+                            return Err(format!("Erro : Index maior que a lista. Tamanho da lista : {}", list.len()));
+                        }
+
+                        list.remove(index as usize);
+                    }
+                    Some(_) => return Err("Erro interno : DynamicValue é uma lista mas o valor na memória não".to_owned()),
+                    None => return Err("Erro interno : ID não encontrada".to_owned())
+                }
             }
             Instruction::QueryListSize => {
                 let id = if let DynamicValue::List(id) = self.registers.intermediate {

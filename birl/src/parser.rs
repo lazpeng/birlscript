@@ -390,7 +390,8 @@ pub enum TypeKind {
     Integer,
     Number,
     Text,
-    List
+    List,
+    Null,
 }
 
 impl TypeKind {
