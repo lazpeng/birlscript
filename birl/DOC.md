@@ -1,5 +1,5 @@
 # Documentação
-**BirlScript 2.0.0-beta**
+**BirlScript 2.0.0**
 **Rafael Rodrigues Nakano <lazpeng@gmail.com>**
 
 BirlScript é uma linguagem de tipagem dinâmica e interpretada
@@ -42,6 +42,7 @@ A função aceita uma lista de argumentos delimitada por parênteses, separados 
 ```
 nome do argumento : tipo
 ```
+Para encerrar o corpo da função, `SAINDO DA JAULA` é usado. Tudo entre o início e esse comando é considerado parte da função.
 
 ## Comandos
 Os comandos são as formas de executar ações no código BirlScript, como dar um valor a uma variável, declarar uma variável, executar uma função e etc.
@@ -175,6 +176,14 @@ Se não existir, é declarada pelo comando.
 * Valor de início : Expressão que resulta em um número inteiro que é o primeiro index
 * Valor final : Expressão que resulta em um inteiro que é o último index - 1 (isso é, o index nunca chega no valor final). Se o valor final for menor que o inicial (o loop é reverso), *stepping* deve ser usado com um valor negativo
 * (opcional) *stepping* : Expressão que resulta em um inteiro que é usado como modificador pro index a cada iteração. (Padrão : 1)
+### PARA AQUI (BreakScope)
+Encerra a execução de algum bloco condicional. No caso de um loop, a condição pra 
+continuar é ignorada, então esse comando não deve ser confundido com um *continue* em
+linguagens como C ou C++, por exemplo.
+### VAI PRO PRÓXIMO (SkipNextIteration)
+Mesma coisa do BreakScope, mas continua a próxima iteração, incluindo a parte de incrementar o index. Mesma funcionalidade
+de um *continue* em outras linguagens.
+Esse, porém, não funciona em condicionais, só em loops. Usar esse comando fora de algum loop resulta em um erro na execução.
 ### FAZ UMA LISTA (MakeNewList)
 Cria uma nova lista vazia. Se a variável passada como argumento já existir, o valor nela é perdido
 e substituído pela lista. Se não, ela é criada
@@ -245,13 +254,115 @@ Os tipos diferentes de Tokens são :
 O Lexer entrega um Token de cada vez baseado num *offset*, que diz onde o Lexer deve começar a procurar na string de input. Quando o *tokenizing* é finalizado (isso é, o ato de extrair um Token), o offset é modificado pra refletir a posição do próximo Token (se houver). Dessa maneira o Parser por requisitar somente os Tokens necessários (no caso de um erro, por exemplo, os outros Tokens seriam descartados e tempo seria perdido) e também pelo fato de a função específica que pede pelo próximo Token ser dona do objeto e poder mover valores, o que ~~não seria possível~~ seria bem mais complicado por conta de "limitações" que Rust impõe.
 
 ## Parser
+O parser é o módulo que transforma os Tokens em informação útil que pode ser compilada e, então, executada pela VM. Nessa implementação o parser é
+*stateless*, isso é, não mantem registro de nenhum estado. Isso significa que, com o mesmo input (e o mesmo offset), o resultado
+~~deveria~~ vai ser sempre o mesmo.
 
-*Em breve*
+Dependendo do input passado por parser, 3 possíveis respostas são dadas:
+### Início de uma função
+Nesse caso a declaração de uma função é retornada. Essa declaração inclui o nome e os parâmetros definidos no input conforme definidos
+pela especificação mais acima
+### Fim de uma função
+Só é retornado algo sinalizando que foi pedido o fim da função. Os casos de esse fim ser inválido não são responsabilidade do parser
+### Um comando
+Comandos, conforme explicado na especificação, seguem uma certa sintaxe, exceto por um único comando que *oficialmente* só existe
+no modo interativo de execução, que é o *DebugPrint*. Esse comando não possui um nome, em vez disso o parser entende como
+uma chamada pra esse comando quando vê uma expressão *crua* em vez de um comando ou *keyphrase* que signifique alguma coisa.
+Isso é útil pro modo interativo porque te permite ver o resultado de expressões sem digitar muito (e com informação adicional).
 
 ## Compiler
+O compilador possui mais complexidade que o parser e o lexer em termos de funções e responsabilidades. Diferente do parser,
+o compilador guarda uma série de informações e é ele que decide o que é válido e o que não dependendo de uma série de fatores,
+um deles sendo o *Scope*.
+*Scope* tem vários sentidos diferentes na codebase do BirlScript dependendo do que se trata, mas todos esses sentidos são,
+de certa forma, parecidos. Pra mim um Scope é um bloco (como uma caixa) que engloba alguma coisa (ou várias dessas coisas).
+O corpo de uma função, por exemplo, é tratado como um Scope, e variáveis definidas dentro dessa função só existem dentro
+dessa mesma função. Blocos de código como condicionais e loops também são Scopes, e variáveis definidas dentro desses Scopes
+só existem dentro deles. O compilador guarda as definições de variáveis dentro desses Scopes. Quando se é necessário procurar
+por um *símbolo*, ou um nome, a procura é feita do Scope mais recente para o mais velho, de forma que as variáveis mais recentes
+sobreponham as mais antigas. Uma informação que tanto as variáveis declaradas quanto os Scopes guardam é a respeito de estarem no Scope
+global, isso é, fora de qualquer função. Isso é importante pra gerar o código de acesso a essas variáveis corretamente.
 
-*Em breve*
+O compilador também guarda informação sobre as funções (e plugins) declaradas. Essa informação é sincronizada com a VM de forma
+que o compilador só guarda o "endereço" pra função e como acarretar a sua execução.
+
+Para a execução de funções normais, ou como elas são chamadas internamente, *source functions*, os argumentos são processados
+da esquerda pra direita e escritos para os endereços 1 + n (a primeira posição, isso é, o endereço 0 é a variável que guarda
+o valor de retorno da última função, TREZE) da *última* função que ainda não está sendo executada, isso é, ainda não tá pronta.
+Mais sobre isso na parte da máquina virtual.
+
+
+Para a execução de plugins, o compilador processa todos os argumentos da esquerda pra direita e coloca os resultados numa pilha
+intermediária. No momento da execução, n argumentos são retirados da pilha e usados pra chamar a função definida como plugin.
+### Plugins
+São funções definidas internamente e incluidos com o interpretador. Como é código nativo, plugins podem trazer melhoras de performance,
+mas também as mensagens de erro não são de muita ajuda. *Crashes* e erros de memória também podem acontecer devido ao código
+não ser gerenciado pelo BirlScript diretamente (como se isso fosse adiantar alguma coisa).
+
+No momento da declaração do plugin, uma lista de argumentos esperados é passado pro compilador que guarda essa informação, que
+é usada pra garantir que o plugin receba a quantidade (e o tipo certo) de argumentos que ela espera.
+
+Um plugin tem acesso de leitura e escrita à máquina virtual, ou seja, tem o poder de acessar e mudar o valor de variáveis existentes.
+Não é possível criar novas variáveis acessíveis pras outras funções por várias razões:
+* Criar um símbolo e ligar ele a um endereço (isso é, criar uma variável) requer acesso ao compilador
+* Não é possível declarar variáveis globais dentro de uma função nem nas funções source, e variáveis de dentro das funções
+não são acessíveis de qualquer forma.
+
+Para a criação de variáveis globais por meio de plugins (mas não exatamente), módulos são usados.
+
+### Módulos
+São como bibliotecas que podem carregar definições de funções, plugins e variáveis globais. Essas definições são feitas pelo
+contexto no momento da inclusão do módulo. Módulos podem ser incluidos por código (embora ainda não seja possível, só em teoria),
+ou com acesso direto ao contexto.
+
+A *biblioteca padrão* inclui as variáveis padrão definidas na especificação, assim como as funções e plugins necessários.
+Esse módulo é incluido por padrão mas pode ser ignorado com uma *flag* pela command line.
 
 ## A máquina virtual
+O que realmente executa o código e "faz a mágica acontecer" (se é que existe alguma mágica nisso aqui). A VM é responsável por
+guardar algumas informações e alterar o próprio estado conforme executa instruções. Essa lista de instruções não vai ficar
+disponível aqui porque são muitas, a descrição da maioria é bem pequena e já existe uma certa documentação na própria declaração
+de cada uma.
 
-*Em breve*
+A VM é composta por uma série de componentes, mas além disso ela guarda o *corpo* das funções compiladas (pra facilitar o
+acesso no momento da execução) e as funções internas dos plugins definidos. Os componentes da VM são:
+
+### Callstack
+A callstack é uma pilha de *Frame*s, o último pronto sendo o que está sendo executado atualmente, o último *não-pronto*
+a próxima função a ser executada (ainda em preparação) e o primeiro a função global.
+
+Um frame é a representação individual de uma função em execução. Por exemplo, uma mesma função (que compartilha o mesmo corpo)
+pode ter dois Frames diferentes dependendo da direção que a execução dela tomou, e isso é um detalhe importante em casos como
+recursão. O frame guardas as variáveis especiais declaras na execução, a *stack* contendo os valores, um *PC* que aponta pra
+qual instrução na função desse Frame é a próxima a ser executada, uma última comparação (que é usada na execução de condicionais),
+um *skipping level*, que é usado em condicionais (incluindo loops) pra ignorar instruções até que se deva parar de pular instruções
+e *labels*, que guardam informações sobre loops em execução, como por exemplo o PC de início pra que seja possível voltar do
+topo a cada iteração.
+
+### Registradores
+São algumas "variáveis" que a VM gerencia e usa pra algumas coisas. Os registradores não fazem parte da linguagem e não são
+acessíveis normalmente, então não fazem parte da especificação e dependem da implementação. Nessa, em específico, existem:
+* math_a e math_b : São usados pra computar expressões. Pra operação de adição, por exemplo, é feito `math_b = math_a + math_b`,
+isso é, o resultado sempre fica em math_b. A ordem sempre é `a op b`, exceto no caso de Texto onde a primeira operação é
+assim e as subsequentes são b + a.
+* intermediate : Intermediário, e seu uso principal é receber o valor de variáveis lidas pela VM antes de ser colocado em
+math_a ou math_b
+* secondary : Usado em operações com listas. Enquanto o intermediário recebe um valor lido, o secundário mantem guardado o
+endereço da lista.
+* first_operation : Como explicado no math_*, isso só possui efeito em operações em strings e define se é a primeira operação
+sendo executada.
+* next_*_index : Próxima ID pro corpo de uma função ou pra um plugin.
+* is_interactive e has_quit : bools que refletem o estado atual da VM.
+* default_stack_size : Capacidade padrão a ser usada nas stacks dos próximos Frames criados.
+
+### *Special Storage*
+São onde são guardados os valores *especiais*, que em BirlScript isso significa que são valores de tamanho variável e são
+mantidos na *heap*, ou seja, com memória dinâmica. Todos os valores mantidos aqui possuem uma ID, e é por ela que eles são
+acessados. Não existe qualquer tipo de *reference counting*, só um tipo de garbage collecting, que limpa as variáveis especiais
+declaradas dentro de um Frame quando a execução do mesmo termina.
+
+### Stdout e Stdin
+São a entrada e saída padrão (de onde o input vem e pra onde o output vai, respectivamente. Não confunda esse input com o que
+vai pro lexer/parser, por exemplo. Esse input é o que é digitado no console quando se pede algum input, por exemplo). Normalmente
+essas duas *bindings* apontam pras *streams* convencionais que o sistema operacional oferece, mas quando Birl é usado como
+uma biblioteca, isso facilita dar input ou receber o que é output sem *fuckery* adicional.
