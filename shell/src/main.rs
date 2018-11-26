@@ -1,10 +1,12 @@
 extern crate birl;
 
 use std::env::args;
+use std::process::exit;
 use birl::context::Context;
 use birl::compiler::CompilerHint;
+use birl::context::BIRL_GLOBAL_FUNCTION_ID;
 
-fn start_interactive_console() {
+fn start_interactive_console(add_stdlib : bool) {
 	/* Print heading info. */
 	eprintln!("O SHELL QUE CONSTRÓI FIBRA. VERSÃO {}", birl::context::BIRL_VERSION);
 	eprintln!("BIRL  © 2018, RAFAEL RODRIGUES NAKANO.");
@@ -28,10 +30,6 @@ fn start_interactive_console() {
 
     c.set_interactive_mode();
 
-	use birl::context::BIRL_GLOBAL_FUNCTION_ID;
-	c.call_function_by_id(BIRL_GLOBAL_FUNCTION_ID, vec![])
-		.expect("Could not setup BIRL runtime.");
-
 	/* Bind the Context interpreter to standard IO */
 	let _ = c.set_stdin({
 		use std::io;
@@ -43,11 +41,13 @@ fn start_interactive_console() {
 		Some(Box::new(io::stdout()))
 	});
 
-    match c.add_standard_definitions() {
-        Ok(_) => {}
-        Err(e) => {
-            eprintln!("Erro fatal : Não foi possível adicionar variáveis padrão : {}", e);
-            return;
+    if add_stdlib {
+        match c.add_standard_library() {
+            Ok(_) => {}
+            Err(e) => {
+                eprintln!("Erro fatal : Não foi possível adicionar variáveis padrão : {}", e);
+                return;
+            }
         }
     }
 
@@ -125,6 +125,7 @@ fn print_help() {
 	println!("\t-s ou --string \"[codigo]\"\t\t: Executa o codigo na string ao inves de \
               um arquivo.");
 	println!("\t-i ou --interativo\t\t\t\t: Inicia um console interativo pra rodar códigos");
+    println!("\t-p ou --sem-padrão\t\t\t\t: Não adiciona as definições da biblioteca padrão");
 }
 
 /// Parameters passed through the command line
@@ -137,6 +138,8 @@ enum Param {
 	StringSource(String),
 	/// Starts an interactive console for running code
 	Interactive,
+    /// Do not add the standard library to the code
+    WithoutStdLib,
 }
 
 fn get_params() -> Vec<Param> {
@@ -159,6 +162,7 @@ fn get_params() -> Vec<Param> {
 						println!("Erro: O argumento {} precisa de um conteúdo logo em seguida, bixo.", arg);
 					}
 				}
+                "-p" | "--sem-padrao" | "--sem-padrão" => result.push(Param::WithoutStdLib),
 				// Push the file to the result stack
 				_ => result.push(Param::InputFile(arg))
 			}
@@ -173,8 +177,30 @@ fn get_params() -> Vec<Param> {
 fn main() {
 	let args = get_params();
 	let mut interactive = false;
+    let mut with_stdlib = true;
+    let mut files = vec![];
+    let mut strings = vec![];
 
 	let mut ctx = Context::new();
+
+    match ctx.call_function_by_id(BIRL_GLOBAL_FUNCTION_ID, vec![]) {
+        Ok(_) => {}
+        Err(e) => {
+            println!("Erro iniciando o contexto : {}", e);
+
+            exit(-1);
+        }
+    }
+
+    if with_stdlib {
+        match ctx.add_standard_library() {
+            Ok(_) => {}
+            Err(e) => {
+                println!("Erro adicionando standard library : {}", e);
+                exit(-1);
+            }
+        }
+    }
 
 	if args.len() > 0 {
 		for arg in args {
@@ -182,32 +208,38 @@ fn main() {
 				Param::PrintHelp => print_help(),
 				Param::Interactive => interactive = true,
 				Param::PrintVersion => Context::print_version(),
-				Param::InputFile(file) => {
-					match ctx.add_file(file.as_str()) {
-						Ok(_) => {}
-						Err(e) => {
-							println!("Ocorreu um erro ao adicionar o arquivo \"{}\" pro contexto : {}",
-									 file.as_str(), e);
-							// Exit? continue?
-						}
-					}
-				}
-				Param::StringSource(source) => {
-					match ctx.add_source_string(source) {
-						Ok(_) => {}
-						Err(e) => {
-							println!("Erro ao adicionar string de código ao contexto : {}", e);
-						}
-					}
-				}
+                Param::WithoutStdLib => with_stdlib = false,
+				Param::InputFile(file) => files.push(file),
+				Param::StringSource(source) => strings.push(source),
 			}
 		}
 	} else {
 		interactive = true;
 	}
 
+
+    for file in files {
+        match ctx.add_file(file.as_str()) {
+            Ok(_) => {}
+            Err(e) => {
+                println!("Ocorreu um erro ao adicionar o arquivo \"{}\" pro contexto : {}",
+                         file.as_str(), e);
+                exit(-1);
+            }
+        }
+    }
+
+    for source in strings {
+        match ctx.add_source_string(source) {
+            Ok(_) => {}
+            Err(e) => {
+                println!("Erro ao adicionar string de código ao contexto : {}", e);
+            }
+        }
+    }
+
 	if interactive {
-		start_interactive_console();
+		start_interactive_console(with_stdlib);
 	} else {
         /* Bind the Context interpreter to standard IO */
         let _ = ctx.set_stdin({

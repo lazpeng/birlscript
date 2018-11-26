@@ -1,11 +1,11 @@
 [[package]]
 name = "birl"
-version = "2.0.0-beta"
+version = "2.0.0"
 
 [[package]]
 name = "shell"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
- "birl 2.0.0-beta",
+ "birl 2.0.0",
 ]
 

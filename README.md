@@ -12,11 +12,11 @@ de opções que podem ser passadas.
 
 [Editor Online](https://birlscript.github.io/), pra rodar código na web
 
-## Versão 2.0.0 beta
+## Versão 2.0.0
 
 *© 2016-2018 Rafael Rodrigues Nakano. Contato: lazpeng@gmail.com*
 
-## [Documentação disponível aqui](birl/DOC.md)
+### [Documentação disponível aqui](birl/DOC.md)
 
 # Exemplos
 
