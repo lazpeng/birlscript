@@ -49,14 +49,21 @@ impl ScopeInfo {
     }
 }
 
+#[derive(Debug, PartialEq)]
+enum FunctionKind {
+    Plugin,
+    Source,
+}
+
 struct FunctionInfo {
     address : usize,
     arguments : Vec<TypeKind>,
+    kind : FunctionKind,
 }
 
 impl FunctionInfo {
-    fn from(address : usize, arguments : Vec<TypeKind>) -> FunctionInfo {
-        FunctionInfo { address, arguments }
+    fn from(address : usize, arguments : Vec<TypeKind>, kind : FunctionKind) -> FunctionInfo {
+        FunctionInfo { address, arguments, kind }
     }
 }
 
@@ -75,8 +82,8 @@ pub struct Compiler {
 impl Compiler {
     pub fn new() -> Compiler {
         let mut funcs = HashMap::new();
-        funcs.insert("__global__".to_owned(), FunctionInfo::from(0, vec![]));
-        funcs.insert("SHOW".to_owned(), FunctionInfo::from(1, vec![]));
+        funcs.insert("__global__".to_owned(), FunctionInfo::from(0, vec![], FunctionKind::Source));
+        funcs.insert("SHOW".to_owned(), FunctionInfo::from(1, vec![], FunctionKind::Source));
 
         Compiler {
             scopes : vec![ScopeInfo::new(SubScopeKind::Regular, 1, true)],
@@ -497,61 +504,55 @@ impl Compiler {
             CommandKind::Call => {
                 // First argument is the function name
 
-                let mut is_first = true;
-                let mut index = 0usize;
-                let mut function_info : Option<&FunctionInfo> = None;
-                let num_args = cmd.arguments.len() - 1;
-
-                for arg in cmd.arguments {
-                    if is_first {
-                        is_first = false;
-
-                        let name = match arg {
-                            CommandArgument::Name(n) => n,
-                            _ => return Err(format!("Erro interno : Esperado um nome pra função")),
-                        };
-
-                        let info = match self.functions.get(name.as_str()) {
-                            Some(f) => f,
-                            None => return Err(format!("Nenhuma função declarada com nome {}", name))
-                        };
-
-                        if info.arguments.len() != num_args {
-                            return Err(format!("A função {} espera {} argumentos, mas {} foram passados", name,
-                                info.arguments.len(), num_args));
-                        }
-
-                        function_info = Some(info);
-
-                        instructions.push(Instruction::MakeNewFrame(info.address));
-                    } else {
-                        let info = function_info.unwrap();
-
-                        let expr = match arg {
-                            CommandArgument::Expression(e) => e,
-                            _ => return Err("Erro interno : Era esperado um valor como argumento \
-                                                    pro comando.".to_owned()),
-                        };
-
-                        let expected_type = info.arguments[index];
-
-                        // The parameter address is, in this case, index + 1 (because the address 0 is reserved to
-                        // the return value)
-
-                        match self.compile_expression(expr, instructions) {
-                            Ok(_) => {}
-                            Err(e) => return Err(e)
-                        };
-
-                        instructions.push(Instruction::AssertMathBCompatible(expected_type));
-
-                        instructions.push(Instruction::WriteVarToLast(index + 1));
-
-                        index += 1;
+                let info = if let CommandArgument::Name(name) = cmd.arguments.remove(0) {
+                    match self.functions.get(name.as_str()) {
+                        Some(i) => i,
+                        None => return Err(format!("Função {} não encontrada", name))
                     }
+                } else {
+                    return Err("É HORA DO espera um nome pra função".to_owned());
+                };
+
+                if info.kind == FunctionKind::Source {
+                    instructions.push(Instruction::MakeNewFrame(info.address));
                 }
 
-                instructions.push(Instruction::SetLastFrameReady);
+                let mut index = 0usize;
+                let num_args = cmd.arguments.len();
+
+                for arg in cmd.arguments {
+                    let expr = match arg {
+                        CommandArgument::Expression(e) => e,
+                        _ => return Err("Erro interno : Era esperado um valor como argumento \
+                                                    pro comando.".to_owned()),
+                    };
+
+                    let expected_type = info.arguments[index];
+
+                    // The parameter address is, in this case, index + 1 (because the address 0 is reserved to
+                    // the return value)
+
+                    match self.compile_expression(expr, instructions) {
+                        Ok(_) => {}
+                        Err(e) => return Err(e)
+                    };
+
+                    instructions.push(Instruction::AssertMathBCompatible(expected_type));
+
+                    if info.kind == FunctionKind::Source {
+                        instructions.push(Instruction::WriteVarToLast(index + 1));
+                    } else {
+                        instructions.push(Instruction::PushMathBPluginArgument);
+                    }
+
+                    index += 1;
+                }
+
+                if info.kind == FunctionKind::Source {
+                    instructions.push(Instruction::SetLastFrameReady);
+                } else if info.kind == FunctionKind::Plugin {
+                    instructions.push(Instruction::CallPlugin(info.address, num_args));
+                }
             }
             CommandKind::GetStringInput => {
                 let name_arg = cmd.arguments.remove(0);
@@ -1013,6 +1014,12 @@ impl Compiler {
                     instructions.push(Instruction::WriteVarTo(dest.address));
                 }
             }
+            CommandKind::BreakScope => {
+                instructions.push(Instruction::IncreaseSkippingLevel);
+            }
+            CommandKind::SkipNextIteration => {
+                instructions.push(Instruction::RestoreLoopLabel);
+            }
         }
 
         Ok(None)
@@ -1034,10 +1041,19 @@ impl Compiler {
         }
 
         self.current_scope = ScopeKind::Function;
-        self.functions.insert(name, FunctionInfo::from(address, args_kind));
+        self.functions.insert(name, FunctionInfo::from(address, args_kind, FunctionKind::Source));
         self.scopes.push(base_scope);
 
         Ok(())
+    }
+
+    pub fn add_plugin_function_definition(&mut self, address : usize, params : Vec<TypeKind>, name : String) -> Result<(), String> {
+        let info = FunctionInfo::from(address, params, FunctionKind::Plugin);
+
+        match self.functions.insert(name, info) {
+            None => Ok(()),
+            Some(_) => Err(format!("Erro adicionando plugin : Função já existe"))
+        }
     }
 
     pub fn compile_global_variable(&mut self, name : String, value : RawValue, writeable : bool, instructions : &mut Vec<Instruction>) -> Result<(), String> {

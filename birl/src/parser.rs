@@ -49,7 +49,9 @@ pub enum KeyPhrase {
     QueryListSize,
     AddListElement,
     RemoveListElement,
-    IndexList
+    IndexList,
+    BreakScope,
+    SkipNextIteration,
 }
 
 impl KeyPhrase {
@@ -100,6 +102,8 @@ impl KeyPhrase {
             "POE ISSO AQUI" | "PÕE ISSO AQUI" => Some(KeyPhrase::AddListElement),
             "TIRA ESSE" => Some(KeyPhrase::RemoveListElement),
             "ME DA ESSE" | "ME DÁ ESSE" => Some(KeyPhrase::IndexList),
+            "PARA AQUI" => Some(KeyPhrase::BreakScope),
+            "VAI PRO PROXIMO" | "VAI PRO PRÓXIMO" => Some(KeyPhrase::SkipNextIteration),
             _ => None,
         }
     }
@@ -493,7 +497,9 @@ pub enum CommandKind {
     QueryListSize,
     AddListElement,
     RemoveListElement,
-    IndexList
+    IndexList,
+    BreakScope,
+    SkipNextIteration,
 }
 
 impl CommandKind {
@@ -533,6 +539,8 @@ impl CommandKind {
             KeyPhrase::AddListElement => Some(CommandKind::AddListElement),
             KeyPhrase::RemoveListElement => Some(CommandKind::RemoveListElement),
             KeyPhrase::IndexList => Some(CommandKind::IndexList),
+            KeyPhrase::BreakScope => Some(CommandKind::BreakScope),
+            KeyPhrase::SkipNextIteration => Some(CommandKind::SkipNextIteration),
             _ => None,
         }
     }
@@ -634,6 +642,7 @@ impl CommandInfo {
                 CommandInfo::from(3, 3, vec![CommandArgumentKind::Name, CommandArgumentKind::Expression,
                     CommandArgumentKind::Name])
             }
+            CommandKind::BreakScope | CommandKind::SkipNextIteration => CommandInfo::from(0, 0, vec![]),
         }
     }
 }

@@ -1,5 +1,3 @@
-//! The virtual machine runs code (DUH)
-
 use parser::{ TypeKind, IntegerType };
 use context::RawValue;
 
@@ -7,6 +5,8 @@ use std::io::{ Write, BufRead };
 use std::fmt::{ Display, self };
 
 const STACK_DEFAULT_SIZE : usize = 128;
+
+pub type PluginFunction = fn (arguments : Vec<DynamicValue>, vm : &mut VirtualMachine) -> Result<Option<DynamicValue>, String>;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Comparision {
@@ -36,7 +36,7 @@ impl Display for Comparision {
 }
 
 #[derive(Debug, Clone, Copy)]
-enum DynamicValue {
+pub enum DynamicValue {
     Integer(IntegerType),
     Number(f64),
     Text(u64),
@@ -45,19 +45,49 @@ enum DynamicValue {
 }
 
 #[derive(Debug)]
-enum SpecialItemData {
+pub enum SpecialItemData {
     Text(String),
     List(Vec<Box<DynamicValue>>)
 }
 
+impl SpecialItemData {
+    pub fn try_into_str(&self) -> Option<&str> {
+        match self {
+            &SpecialItemData::Text(ref s) => Some(s.as_str()),
+            _ => None
+        }
+    }
+
+    pub fn try_into_str_mut(&mut self) -> Option<&mut String> {
+        match self {
+            &mut SpecialItemData::Text(ref mut s) => Some(s),
+            _ => None
+        }
+    }
+
+    pub fn try_into_list(&self) -> Option<&Vec<Box<DynamicValue>>> {
+        match self {
+            &SpecialItemData::List(ref l) => Some(l),
+            _ => None
+        }
+    }
+
+    pub fn try_into_list_mut(&mut self) -> Option<&mut Vec<Box<DynamicValue>>> {
+        match self {
+            &mut SpecialItemData::List(ref mut l) => Some(l),
+            _ => None
+        }
+    }
+}
+
 #[derive(Debug)]
-struct SpecialItem {
+pub struct SpecialItem {
     data : SpecialItemData,
     item_id : u64,
 }
 
 #[derive(Debug)]
-struct SpecialStorage {
+pub struct SpecialStorage {
     items : Vec<SpecialItem>,
     next_item_id : u64,
 }
@@ -175,12 +205,17 @@ pub enum ExecutionStatus {
     Halt,
 }
 
-struct Registers {
+pub struct Registers {
     math_a : DynamicValue,
     math_b : DynamicValue,
     intermediate : DynamicValue,
     first_operation : bool,
     secondary : DynamicValue,
+    default_stack_size : usize,
+    has_quit : bool,
+    is_interactive : bool,
+    next_code_index : usize,
+    next_plugin_index : usize,
 }
 
 impl Registers {
@@ -191,21 +226,24 @@ impl Registers {
             secondary : DynamicValue::Null,
             intermediate : DynamicValue::Null,
             first_operation : false,
+            default_stack_size : STACK_DEFAULT_SIZE,
+            has_quit : false,
+            is_interactive : false,
+            next_code_index : 0,
+            next_plugin_index : 0,
         }
     }
 }
 
 pub struct VirtualMachine {
     registers : Registers,
-    has_quit : bool,
-    stack_size : usize,
     callstack : Vec<FunctionFrame>,
     stdout: Option<Box<Write>>,
     stdin:  Option<Box<BufRead>>,
     code : Vec<Vec<Instruction>>,
-    next_code_index : usize,
-    is_interactive : bool,
+    plugins : Vec<PluginFunction>,
     special_storage : SpecialStorage,
+    plugin_argument_stack : Vec<DynamicValue>,
 }
 
 macro_rules! vm_write{
@@ -222,16 +260,14 @@ macro_rules! vm_write{
 impl VirtualMachine {
     pub fn new() -> VirtualMachine {
         VirtualMachine {
-            has_quit : false,
             registers : Registers::default(),
-            stack_size : STACK_DEFAULT_SIZE,
             callstack : vec![],
             stdout: None,
             stdin: None,
             code : vec![],
-            next_code_index : 0,
-            is_interactive : false,
+            plugins : vec![],
             special_storage : SpecialStorage::new(),
+            plugin_argument_stack : vec![]
         }
     }
 
@@ -267,7 +303,7 @@ impl VirtualMachine {
     }
 
     pub fn set_interactive_mode(&mut self) {
-        self.is_interactive = true;
+        self.registers.is_interactive = true;
     }
 
     pub fn execute_next_instruction(&mut self) -> Result<ExecutionStatus, String> {
@@ -293,7 +329,7 @@ impl VirtualMachine {
             let code = &self.code[id];
 
             if code.len() <= pc {
-                if self.callstack.len() == 1 && self.is_interactive {
+                if self.callstack.len() == 1 && self.registers.is_interactive {
                     return Ok(ExecutionStatus::Halt);
                 } else {
                     Instruction::Return
@@ -360,7 +396,11 @@ impl VirtualMachine {
     }
 
     pub fn get_next_code_id(&self) -> usize {
-        self.next_code_index
+        self.registers.next_code_index
+    }
+
+    pub fn get_next_plugin_id(&self) -> usize {
+        self.registers.next_plugin_index
     }
 
     pub fn get_code_for(&mut self, id : usize) -> Option<&mut Vec<Instruction>> {
@@ -372,11 +412,30 @@ impl VirtualMachine {
     }
 
     pub fn add_new_code(&mut self) -> usize {
-        let id = self.next_code_index;
-        self.next_code_index += 1;
+        let id = self.registers.next_code_index;
+        self.registers.next_code_index += 1;
         self.code.push(vec![]);
 
         id
+    }
+
+    pub fn add_new_plugin(&mut self, plugin : PluginFunction) -> usize {
+        let id = self.get_next_plugin_id();
+        self.registers.next_plugin_index += 1;
+        self.plugins.push(plugin);
+
+        id
+    }
+    pub fn get_registers(&self) -> &Registers {
+        &self.registers
+    }
+
+    pub fn get_special_storage_ref(&self) -> &SpecialStorage {
+        &self.special_storage
+    }
+
+    pub fn get_special_storage_mut(&mut self) -> &mut SpecialStorage {
+        &mut self.special_storage
     }
 
     pub fn flush_stdout(&mut self) {
@@ -816,11 +875,11 @@ impl VirtualMachine {
     }
 
     pub fn unset_quit(&mut self) {
-        self.has_quit = false;
+        self.registers.has_quit = false;
     }
 
     pub fn has_quit(&self) -> bool {
-        self.has_quit
+        self.registers.has_quit
     }
 
     pub fn get_current_pc(&self) -> Option<usize> {
@@ -975,7 +1034,7 @@ impl VirtualMachine {
     }
 
     pub fn set_stack_size(&mut self, size : usize) {
-        self.stack_size = size;
+        self.registers.default_stack_size = size;
     }
 
     fn set_current_pc(&mut self, pc : usize) -> Result<(), String> {
@@ -987,8 +1046,39 @@ impl VirtualMachine {
         Ok(())
     }
 
+    pub fn print_string(&mut self, s : &str) -> Result<(), String> {
+        vm_write!(self.stdout, "{}", s)
+    }
+
+    pub fn print_value(&mut self, val : DynamicValue) -> Result<(), String> {
+        match val {
+            DynamicValue::Integer(i) => vm_write!(self.stdout, "{}", i)?,
+            DynamicValue::Number(n) => vm_write!(self.stdout, "{}", n)?,
+            DynamicValue::Text(t) => {
+                let t = match self.special_storage.get_ref(t) {
+                    Some(s) => match s {
+                        &SpecialItemData::Text(ref s) => s,
+                        _ => return Err(format!("Erro interno : DynamicValue é texto, mas o id aponta pra outra coisa"))
+                    },
+                    None => return Err(format!("MainPrint : Não foi encontrado text com ID {}", t)),
+                };
+
+                vm_write!(self.stdout, "{}", t)?
+            }
+            DynamicValue::List(id) => {
+                let string = match self.conv_to_string(DynamicValue::List(id)) {
+                    Ok(s) => s,
+                    Err(e) => return Err(e)
+                };
+                vm_write!(self.stdout, "(Lista) {}", string)?;
+            }
+            DynamicValue::Null => vm_write!(self.stdout, "<Null>")?,
+        }
+
+        Ok(())
+    }
+
     pub fn run(&mut self, inst : Instruction) -> Result<ExecutionStatus, String> {
-        //println!("{:?}", inst);
         if self.get_current_skip_level() > 0 {
             if let Instruction::EndConditionalBlock = inst {
                 self.decrease_skip_level()?;
@@ -1027,35 +1117,15 @@ impl VirtualMachine {
                 self.flush_stdout();
             }
             Instruction::PrintMathB => {
-                match self.registers.math_b {
-                    DynamicValue::Integer(i) => vm_write!(self.stdout, "{}", i)?,
-                    DynamicValue::Number(n) => vm_write!(self.stdout, "{}", n)?,
-                    DynamicValue::Text(t) => {
-                        let t = match self.special_storage.get_ref(t) {
-                            Some(s) => match s {
-                                &SpecialItemData::Text(ref s) => s,
-                                _ => return Err(format!("Erro interno : DynamicValue é texto, mas o id aponta pra outra coisa"))
-                            },
-                            None => return Err(format!("MainPrint : Não foi encontrado text com ID {}", t)),
-                        };
+                let val = self.registers.math_b;
 
-                        vm_write!(self.stdout, "{}", t)?
-                    }
-                    DynamicValue::List(id) => {
-                        let string = match self.conv_to_string(DynamicValue::List(id)) {
-                            Ok(s) => s,
-                            Err(e) => return Err(e)
-                        };
-                        vm_write!(self.stdout, "(Lista) {}", string)?;
-                    }
-                    DynamicValue::Null => vm_write!(self.stdout, "<Null>")?,
-                }
+                self.print_value(val)?;
             }
             Instruction::PrintNewLine => {
                 vm_write!(self.stdout, "\n")?
             }
             Instruction::Quit => {
-                self.has_quit = true;
+                self.registers.has_quit = true;
 
                 return Ok(ExecutionStatus::Quit);
             }
@@ -1075,7 +1145,7 @@ impl VirtualMachine {
             }
             Instruction::Return => {
                 if self.callstack.len() == 1 {
-                    self.has_quit = true;
+                    self.registers.has_quit = true;
 
                     return Ok(ExecutionStatus::Quit);
                 }
@@ -1106,7 +1176,7 @@ impl VirtualMachine {
             Instruction::MakeNewFrame(id) => {
                 // Add a new, not ready frame to the callstack
 
-                let frame = FunctionFrame::new(id, self.stack_size);
+                let frame = FunctionFrame::new(id, self.registers.default_stack_size);
 
                 self.callstack.push(frame);
             }
@@ -1552,6 +1622,42 @@ impl VirtualMachine {
 
                 self.registers.math_b = val;
             }
+            Instruction::CallPlugin(address, num) => {
+                if address > self.plugins.len() {
+                    return Err("CallPlugin : Endereço inválido".to_owned());
+                }
+
+                let plugin = self.plugins[address];
+
+                if num > self.plugin_argument_stack.len() {
+                    return Err(format!("CallPlugin : Número de argumentos maior que a quantidade de argumentos disponíveis"));
+                }
+
+                let mut args = Vec::with_capacity(num);
+
+                for _ in 0..num {
+                    let val = match self.plugin_argument_stack.pop() {
+                        Some(v) => v,
+                        None => unreachable!()
+                    };
+
+                    args.push(val);
+                }
+
+                let result = plugin(args, self)?;
+
+                if let Some(value) = result {
+                    let index = self.callstack.len() - 1;
+                    self.write_to(value, index, 0)?;
+                }
+            }
+            Instruction::PushMathBPluginArgument => {
+                let val = self.registers.math_b;
+                self.plugin_argument_stack.push(val);
+            }
+            Instruction::IncreaseSkippingLevel => {
+                self.increase_skip_level()?;
+            }
         }
 
         Ok(ExecutionStatus::Normal)
@@ -1622,4 +1728,10 @@ pub enum Instruction {
     RemoveFromListAtIndex,
     /// Query the list from the intermediate address and write its size to the MathB
     QueryListSize,
+    /// Call a plugin function with a number of arguments to pop from the stack
+    CallPlugin(usize, usize),
+    /// Push the value in MathB to the Plugin Argument stack
+    PushMathBPluginArgument,
+    /// Increase the skipping level
+    IncreaseSkippingLevel,
 }

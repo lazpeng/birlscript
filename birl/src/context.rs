@@ -1,17 +1,18 @@
 //! Hosts the runtime for the birlscript language
 
-use vm::{ VirtualMachine, ExecutionStatus };
+use vm::{ VirtualMachine, ExecutionStatus, PluginFunction };
 use parser::{ parse_line, TypeKind, ParserResult, IntegerType, FunctionDeclaration };
 use compiler::{ Compiler, CompilerHint };
+use modules::*;
+use standard_lib::module_standard_library;
 
 use std::io::{ BufRead, BufReader, Write };
 use std::fs::File;
-use std::env;
 
 pub const BIRL_COPYRIGHT : &'static str 
     = "© 2016 - 2018 Rafael Rodrigues Nakano <lazpeng@gmail.com>";
 pub const BIRL_VERSION : &'static str 
-    = "BirlScript v2.0.0-beta";
+    = "BirlScript v2.0.0";
 pub const BIRL_MAIN_FUNCTION : &str 
     = "SHOW";
 
@@ -187,30 +188,69 @@ impl Context {
         Ok(())
     }
 
-    pub fn add_standard_definitions(&mut self) -> Result<(), String> {
-        // TODO: Add a better (and dynamic) way to add definitions and functions
+    pub fn add_plugin(&mut self, name : String, parameters : Vec<TypeKind>, code : PluginFunction) -> Result<(), String> {
+        let index = self.vm.add_new_plugin(code);
 
-        let vars = vec!
-        [
-            ("UM".to_owned(), RawValue::Integer(1)),
-            ("CUMPADE".to_owned(), RawValue::Text(env::var("USER").unwrap_or("CUMPADE".to_owned()))),
-            ("FRANGO".to_owned(), RawValue::Null),
-        ];
+        self.compiler.add_plugin_function_definition(index, parameters, name)?;
 
-        for (name, value) in vars {
-            let mut code = vec![];
+        Ok(())
+    }
 
-            match self.compiler.compile_global_variable(name, value, false, &mut code) {
-                Ok(_) => {}
-                Err(e) => return Err(e)
-            }
+    pub fn add_global_variable(&mut self, name : String, value : RawValue, writeable : bool) -> Result<(), String> {
+        let mut inst = vec![];
 
-            for c in code {
-                self.vm.run(c)?;
+        self.compiler.compile_global_variable(name, value, writeable, &mut inst)?;
+
+        for i in inst {
+            match self.vm.run(i)? {
+                ExecutionStatus::Halt => break,
+                ExecutionStatus::Quit => return Err("VM Quitou enquanto adicionava var".to_owned()),
+                ExecutionStatus::Normal => {}
+                ExecutionStatus::Returned => return Err("VM Retornou enquanto adicionava var".to_owned())
             }
         }
 
         Ok(())
+    }
+
+    pub fn add_module(&mut self, module : Module) -> Result<(), String> {
+
+        for var in module.global_variables {
+            self.add_global_variable(var.name, var.value, var.writeable)?;
+        }
+
+        for src in module.source_functions {
+            let mut decl = FunctionDeclaration::from(src.name);
+            decl.arguments = src.parameters;
+
+            self.add_function(decl)?;
+
+            for c in src.body {
+                let instructions = match self.vm.get_code_for(self.current_code_id) {
+                    Some(i) => i,
+                    None => return Err(format!("Erro ao pegar o código para a função atual"))
+                };
+
+                match self.compiler.compile_command(c, instructions) {
+                    Ok(_) => {},
+                    Err(e) => return Err(e)
+                }
+            }
+
+            self.end_function()?;
+        }
+
+        for plg in module.plugin_functions {
+            self.add_plugin(plg.name, plg.parameters, plg.func)?;
+        }
+
+        Ok(())
+    }
+
+    pub fn add_standard_library(&mut self) -> Result<(), String> {
+        let m = module_standard_library();
+
+        self.add_module(m)
     }
 
     pub fn call_function_by_id(&mut self, id : usize, args : Vec<RawValue>) -> Result<(), String> {
@@ -236,10 +276,7 @@ impl Context {
     }
 
     pub fn start_program(&mut self) -> Result<(), String> {
-        match self.call_function_by_id(BIRL_GLOBAL_FUNCTION_ID, vec![]) {
-            Ok(_) => {}
-            Err(e) => return Err(e)
-        }
+        // Global function is already running
 
         loop {
             match self.execute_next_instruction() {
