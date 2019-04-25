@@ -6,27 +6,12 @@ use birl::context::Context;
 use birl::compiler::CompilerHint;
 use birl::context::BIRL_GLOBAL_FUNCTION_ID;
 
-fn start_interactive_console(add_stdlib : bool) {
+fn start_interactive_console(c: &mut Context) {
 	/* Print heading info. */
 	eprintln!("O SHELL QUE CONSTRÓI FIBRA. VERSÃO {}", birl::context::BIRL_VERSION);
 	eprintln!("BIRL  © 2018, RAFAEL RODRIGUES NAKANO.");
 	eprintln!("SHELL © 2018, MATHEUS BRANCO BORELLA.");
 	eprintln!();
-
-	/* Setup BIRL.
-	 * The Context interpreter is not built to run interactively,
-	 * by default, as it lacks much of the framework that would be
-	 * needed to properly implement an interactive shell with
-	 * immidiate evaluation of expresssions.
-	 *
-	 * So, as a workaround, the shell cycles the interpreter manually
-	 * to the completion of all instructions added by a line. To
-	 * achieve that, we first call the root function, as any
-	 * expression typed into the interpreted will be compiled as a
-	 * root-level instruction.
-	 */
-	use birl::context::Context;
-	let mut c = Context::new();
 
     c.set_interactive_mode();
 
@@ -40,16 +25,6 @@ fn start_interactive_console(add_stdlib : bool) {
 		use std::io;
 		Some(Box::new(io::stdout()))
 	});
-
-    if add_stdlib {
-        match c.add_standard_library() {
-            Ok(_) => {}
-            Err(e) => {
-                eprintln!("Erro fatal : Não foi possível adicionar variáveis padrão : {}", e);
-                return;
-            }
-        }
-    }
 
 	/* Enter interactive loop */
 	use std::io::{stdin, BufReader, BufRead};
@@ -192,16 +167,6 @@ fn main() {
         }
     }
 
-    if with_stdlib {
-        match ctx.add_standard_library() {
-            Ok(_) => {}
-            Err(e) => {
-                println!("Erro adicionando standard library : {}", e);
-                exit(-1);
-            }
-        }
-    }
-
 	if args.len() > 0 {
 		for arg in args {
 			match arg {
@@ -217,6 +182,15 @@ fn main() {
 		interactive = true;
 	}
 
+    if with_stdlib {
+        match ctx.add_standard_library() {
+            Ok(_) => {}
+            Err(e) => {
+                println!("Erro adicionando standard library : {}", e);
+                exit(-1);
+            }
+        }
+    }
 
     for file in files {
         match ctx.add_file(file.as_str()) {
@@ -239,7 +213,7 @@ fn main() {
     }
 
 	if interactive {
-		start_interactive_console(with_stdlib);
+		start_interactive_console(&mut ctx);
 	} else {
         /* Bind the Context interpreter to standard IO */
         let _ = ctx.set_stdin({

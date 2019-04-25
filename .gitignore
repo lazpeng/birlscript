@@ -1,10 +1,10 @@
 target/
 birl/target/
-birlscript/target
+shell/target
 .idea/
 birl/.idea/
 birlscript/.idea
 .c9/
 birl/Cargo.lock
-birlscript/Cargo.lock
+shell/Cargo.lock
 *.swp

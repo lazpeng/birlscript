@@ -100,7 +100,7 @@ impl SpecialStorage {
         }
     }
 
-    fn add(&mut self, data : SpecialItemData) -> u64 {
+    pub fn add(&mut self, data : SpecialItemData) -> u64 {
         let item_id = self.next_item_id;
         self.next_item_id += 1;
 
@@ -127,7 +127,7 @@ impl SpecialStorage {
         }
     }
 
-    fn get_ref(&self, id : u64) -> Option<&SpecialItemData> {
+    pub fn get_ref(&self, id : u64) -> Option<&SpecialItemData> {
         for e in &self.items {
             if e.item_id == id {
                 return Some(&e.data);
@@ -137,7 +137,7 @@ impl SpecialStorage {
         None
     }
 
-    fn get_mut(&mut self, id : u64) -> Option<&mut SpecialItemData> {
+    pub fn get_mut(&mut self, id : u64) -> Option<&mut SpecialItemData> {
         for e in &mut self.items {
             if e.item_id == id {
                 return Some(&mut e.data);

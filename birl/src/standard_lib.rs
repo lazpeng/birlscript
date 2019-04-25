@@ -6,10 +6,58 @@ use context::RawValue;
 mod plugins {
     use vm::{ DynamicValue, VirtualMachine, PluginFunction };
     use parser::{ TypeKind, IntegerType };
+    use vm::{ SpecialItem, SpecialItemData };
+
+    /// Split an string into multiple parts based on another string
+    /// Arguments : source : Text, splitter : Text2
+    fn split_string(mut arguments : Vec<DynamicValue>, vm : &mut VirtualMachine) -> Result<Option<DynamicValue>, String>
+    {
+        // Well since it seems Birlscript passes arguments in the reverse order
+
+        let splitter = match arguments.remove(0)
+        {
+            DynamicValue::Text(id) => {
+                match vm.get_special_storage_ref().get_ref(id)
+                {
+                    Some(data) => match data {
+                        SpecialItemData::List(_) => unreachable!(),
+                        SpecialItemData::Text(s) => s.clone(),
+                    }
+                    None => return Err("Erro interno : Dado special com ID fornecido não existe".to_owned())
+                }
+            }
+            _ => unreachable!()
+        };
+        
+        // pardon me for repeating code
+        let source = match arguments.remove(0)
+        {
+            DynamicValue::Text(id) => {
+                match vm.get_special_storage_ref().get_ref(id)
+                {
+                    Some(data) => match data {
+                        SpecialItemData::List(_) => unreachable!(),
+                        SpecialItemData::Text(s) => s.clone(),
+                    }
+                    None => return Err("Erro interno : Dado special com ID fornecido não existe".to_owned())
+                }
+            }
+            _ => unreachable!()
+        };
+
+        let result = source.split(splitter.as_str()).map(|e| {
+            Box::new(DynamicValue::Text(vm.get_special_storage_mut().add(SpecialItemData::Text(e.to_owned()))))
+        }).collect::<Vec<Box<DynamicValue>>>();
+
+        let result_id = {
+            vm.get_special_storage_mut().add(SpecialItemData::List(result))
+        };
+
+        Ok(Some(DynamicValue::List(result_id)))
+    }
 
     pub fn get_plugins() -> Vec<(String, Vec<TypeKind>, PluginFunction)> {
-        // TODO: Add functions
-        vec![]
+        vec![("DIVIDE TEXTO".to_owned(), vec![TypeKind::Text, TypeKind::Text], split_string)]
     }
 }
 
