@@ -34,6 +34,7 @@ struct ScopeInfo {
     symbol_table : HashMap<String, SymbolEntry>,
     scope_kind : SubScopeKind,
     previous_next_var_address : usize,
+    starting_var_address : usize,
 }
 
 impl ScopeInfo {
@@ -45,6 +46,7 @@ impl ScopeInfo {
             symbol_table,
             scope_kind,
             previous_next_var_address,
+            starting_var_address : previous_next_var_address
         }
     }
 }
@@ -158,7 +160,11 @@ impl Compiler {
         Ok(())
     }
 
-    fn end_scope(&mut self, info : ScopeInfo) {
+    fn end_scope(&mut self, info : ScopeInfo, instructions : &mut Vec<Instruction>) {
+        for (_, sym) in info.symbol_table {
+            instructions.push(Instruction::TryDecrementRefAt(sym.address));
+        }
+
         self.next_var_address = info.previous_next_var_address;
     }
 
@@ -449,7 +455,7 @@ impl Compiler {
                     }
                 }
 
-                self.end_scope(scope_info);
+                self.end_scope(scope_info, instructions);
 
                 return Ok(Some(CompilerHint::ScopeEnd));
             },
@@ -1124,7 +1130,13 @@ impl Compiler {
         Ok(())
     }
 
-    pub fn end_compiling_function(&mut self) -> Result<(), String> {
+    pub fn end_compiling_function(&mut self, instructions : &mut Vec<Instruction>) -> Result<(), String> {
+        // Push a return if the last instruction is not a return
+        match instructions.last() {
+            Some(Instruction::Return) | None => {}
+            Some(_) => instructions.push(Instruction::Return)
+        };
+
         match self.scopes.pop() {
             Some(s) => {
                 match s.scope_kind {
@@ -1132,13 +1144,13 @@ impl Compiler {
                     _ => return Err("Fim da função encontrado, mas algum scope foi deixado aberto".to_owned()),
                 }
 
-                self.end_scope(s);
+                self.end_scope(s, instructions);
 
                 self.current_scope = ScopeKind::Global;
 
                 Ok(())
             }
-            None => return Err("".to_owned())
+            None => Err("".to_owned())
         }
     }
 }

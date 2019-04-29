@@ -6,11 +6,14 @@ use birl::context::Context;
 use birl::compiler::CompilerHint;
 use birl::context::BIRL_GLOBAL_FUNCTION_ID;
 
+pub const SHELL_COPYRIGHT : &'static str
+= "© 2019 Rafael Rodrigues Nakano, Matheus Branco Borella";
+
 fn start_interactive_console(c: &mut Context) {
 	/* Print heading info. */
-	eprintln!("O SHELL QUE CONSTRÓI FIBRA. VERSÃO {}", birl::context::BIRL_VERSION);
-	eprintln!("BIRL  © 2018, RAFAEL RODRIGUES NAKANO.");
-	eprintln!("SHELL © 2018, MATHEUS BRANCO BORELLA.");
+	eprintln!("Birlscript versão {}", birl::context::BIRL_VERSION);
+	eprintln!("{}", birl::context::BIRL_COPYRIGHT);
+	eprintln!("{}", SHELL_COPYRIGHT);
 	eprintln!();
 
     c.set_interactive_mode();
@@ -65,6 +68,11 @@ fn start_interactive_console(c: &mut Context) {
         };
 
         if scope_level == 0 {
+            match c.interactive_prepare_resume() {
+                Ok(_) => {}
+                Err(e) => eprintln!("{}", e)
+            }
+
             use birl::vm::ExecutionStatus as Es;
             loop {
                 match c.execute_next_instruction() {

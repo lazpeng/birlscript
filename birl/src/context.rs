@@ -1,6 +1,6 @@
 //! Hosts the runtime for the birlscript language
 
-use vm::{ VirtualMachine, ExecutionStatus, PluginFunction };
+use vm::{VirtualMachine, ExecutionStatus, PluginFunction, Instruction};
 use parser::{ parse_line, TypeKind, ParserResult, IntegerType, FunctionDeclaration };
 use compiler::{ Compiler, CompilerHint };
 use modules::*;
@@ -10,9 +10,9 @@ use std::io::{ BufRead, BufReader, Write };
 use std::fs::File;
 
 pub const BIRL_COPYRIGHT : &'static str 
-    = "© 2016 - 2018 Rafael Rodrigues Nakano <lazpeng@gmail.com>";
+    = "© 2016 - 2019 Rafael Rodrigues Nakano";
 pub const BIRL_VERSION : &'static str 
-    = "BirlScript v2.0.0";
+    = "BirlScript v2.1.0";
 pub const BIRL_MAIN_FUNCTION : &str 
     = "SHOW";
 
@@ -100,7 +100,10 @@ impl Context {
     }
     
     pub fn end_function(&mut self) -> Result<(), String>{
-        self.compiler.end_compiling_function()?;
+        match self.vm.get_code_for(self.current_code_id) {
+            Some(f) => self.compiler.end_compiling_function(f)?,
+            None => return Err("Nenhuma função em compilação".to_owned())
+        };
 
         self.current_code_id = BIRL_GLOBAL_FUNCTION_ID;
 
@@ -242,6 +245,19 @@ impl Context {
 
         for plg in module.plugin_functions {
             self.add_plugin(plg.name, plg.parameters, plg.func)?;
+        }
+
+        Ok(())
+    }
+
+    /// Prepares the context to begin executing interactive code again after an Halt
+    pub fn interactive_prepare_resume(&mut self) -> Result<(), String>
+    {
+        // all this does is put an Halt in the end of the global function, so the program stops on its own
+
+        match self.vm.get_code_for(BIRL_GLOBAL_FUNCTION_ID) {
+            Some(c) => c.push(Instruction::Halt),
+            None => return Err("Contexto não foi iniciado corretamente".to_owned())
         }
 
         Ok(())

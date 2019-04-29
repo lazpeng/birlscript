@@ -84,6 +84,7 @@ impl SpecialItemData {
 pub struct SpecialItem {
     data : SpecialItemData,
     item_id : u64,
+    ref_count : u64,
 }
 
 #[derive(Debug)]
@@ -100,13 +101,14 @@ impl SpecialStorage {
         }
     }
 
-    pub fn add(&mut self, data : SpecialItemData) -> u64 {
+    pub fn add(&mut self, data : SpecialItemData, ref_count : u64) -> u64 {
         let item_id = self.next_item_id;
         self.next_item_id += 1;
 
         let item = SpecialItem {
             data,
-            item_id
+            item_id,
+            ref_count
         };
 
         self.items.push(item);
@@ -114,33 +116,55 @@ impl SpecialStorage {
         item_id
     }
 
-    fn remove_top(&mut self, num : usize) -> Result<(), String> {
-        if self.items.len() < num {
-            Err("remove_top : Número pra remover é maior que o número guardado".to_owned())
-        } else {
+    pub fn decrement_ref(&mut self, id : u64) -> Result<(), String>
+    {
+        for i in 0..self.items.len() {
+            if self.items[i].item_id == id {
+                if self.items[i].ref_count <= 1 {
+                    self.items.remove(i);
+                } else {
+                    self.items[i].ref_count -= 1;
+                }
 
-            for _ in 0..num {
-                let _ = self.items.pop().expect("Impossível. Erro no pop em remove_top");
+                break;
             }
-
-            Ok(())
         }
+
+        Ok(())
     }
 
-    pub fn get_ref(&self, id : u64) -> Option<&SpecialItemData> {
+    pub fn increment_ref(&mut self, id : u64) -> Result<(), String>
+    {
+        match self.get_mut(id) {
+            Some(item) => item.ref_count += 1,
+            None => return Err("Invalid item ID".to_owned())
+        };
+
+        Ok(())
+    }
+
+    pub fn get_data_ref(&self, id : u64) -> Option<&SpecialItemData> {
+        Some(&self.get_ref(id)?.data)
+    }
+
+    pub fn get_data_mut(&mut self, id : u64) -> Option<&mut SpecialItemData> {
+        Some(&mut self.get_mut(id)?.data)
+    }
+
+    pub fn get_ref(&self, id : u64) -> Option<&SpecialItem> {
         for e in &self.items {
             if e.item_id == id {
-                return Some(&e.data);
+                return Some(e);
             }
         }
 
         None
     }
 
-    pub fn get_mut(&mut self, id : u64) -> Option<&mut SpecialItemData> {
+    pub fn get_mut(&mut self, id : u64) -> Option<&mut SpecialItem> {
         for e in &mut self.items {
             if e.item_id == id {
-                return Some(&mut e.data);
+                return Some(e);
             }
         }
 
@@ -278,7 +302,7 @@ impl VirtualMachine {
 
         self.callstack[frame_index].num_special_items += 1;
 
-        Ok(self.special_storage.add(data))
+        Ok(self.special_storage.add(data, 0u64))
     }
 
     fn raw_to_dynamic(&mut self, val : RawValue) -> Result<DynamicValue, String> {
@@ -325,24 +349,15 @@ impl VirtualMachine {
             return Err("ID atual pra função é inválida".to_owned());
         }
 
-        let instruction = {
-            let code = &self.code[id];
-
-            if code.len() <= pc {
-                if self.callstack.len() == 1 && self.registers.is_interactive {
-                    return Ok(ExecutionStatus::Halt);
-                } else {
-                    Instruction::Return
-                }
-            } else {
-                code[pc].clone()
-            }
-        };
-
         match self.increment_pc() {
             Ok(_) => {}
             Err(e) => return Err(e),
         }
+
+        // The case above doesn't happen anymore and we can just execute it directly
+        // if self.code[id].len() <= pc {}
+
+        let instruction = self.code[id][pc].clone();
 
         self.run(instruction)
     }
@@ -494,7 +509,7 @@ impl VirtualMachine {
                         let mut result = String::new();
 
                         {
-                            let left_v = match self.special_storage.get_ref(r_t) {
+                            let left_v = match self.special_storage.get_data_ref(r_t) {
                                 Some(s) => match s {
                                     &SpecialItemData::Text(ref s) => s,
                                     _ => return Err(format!("Erro interno : DynamicValue é texto, mas o id aponta pra outra coisa"))
@@ -503,7 +518,7 @@ impl VirtualMachine {
                             };
 
                             // remove right node
-                            let right_v = match self.special_storage.get_ref(l_t) {
+                            let right_v = match self.special_storage.get_data_ref(l_t) {
                                 Some(s) => match s {
                                     &SpecialItemData::Text(ref s) => s,
                                     _ => return Err(format!("Erro interno : DynamicValue é texto, mas o id aponta pra outra coisa"))
@@ -545,7 +560,7 @@ impl VirtualMachine {
 
                         let mut data = vec![];
 
-                        match self.special_storage.get_ref(left_id) {
+                        match self.special_storage.get_data_ref(left_id) {
                             Some(SpecialItemData::List(ref contents)) => {
                                 for item in contents {
                                     data.push(item.clone());
@@ -555,7 +570,7 @@ impl VirtualMachine {
                             None => return Err("Erro interno : ID inválida pra lista".to_owned())
                         }
 
-                        match self.special_storage.get_ref(right_id) {
+                        match self.special_storage.get_data_ref(right_id) {
                             Some(SpecialItemData::List(ref contents)) => {
                                 for item in contents {
                                     data.push(item.clone());
@@ -711,7 +726,7 @@ impl VirtualMachine {
             DynamicValue::Text(l_t) => {
                 match right {
                     DynamicValue::Text(r_t) => {
-                        let ltext = match self.special_storage.get_ref(l_t) {
+                        let ltext = match self.special_storage.get_data_ref(l_t) {
                             Some(s) => match s {
                                 &SpecialItemData::Text(ref s) => s,
                                 _ => return Err(format!("Erro interno : DynamicValue é texto, mas o id aponta pra outra coisa"))
@@ -719,7 +734,7 @@ impl VirtualMachine {
                             None => return Err(format!("Erro : TextID não encontrada : {}", l_t)),
                         };
 
-                        let rtext = match self.special_storage.get_ref(r_t) {
+                        let rtext = match self.special_storage.get_data_ref(r_t) {
                             Some(s) => match s {
                                 &SpecialItemData::Text(ref s) => s,
                                 _ => return Err(format!("Erro interno : DynamicValue é texto, mas o id aponta pra outra coisa"))
@@ -748,13 +763,13 @@ impl VirtualMachine {
             DynamicValue::List(left_id) => {
                 match right {
                     DynamicValue::List(right_id) => {
-                        let left_list = match self.special_storage.get_ref(left_id) {
+                        let left_list = match self.special_storage.get_data_ref(left_id) {
                             Some(SpecialItemData::List(ref list)) => list.clone(),
                             Some(_) => return Err("Erro interno : DynamicValue é uma lista mas o item guardado não".to_owned()),
                             None => return Err("ID não existe".to_owned())
                         };
 
-                        let right_list = match self.special_storage.get_ref(right_id) {
+                        let right_list = match self.special_storage.get_data_ref(right_id) {
                             Some(SpecialItemData::List(ref list)) => list.clone(),
                             Some(_) => return Err("Erro interno : DynamicValue é uma lista mas o item guardado não".to_owned()),
                             None => return Err("ID não existe".to_owned())
@@ -823,14 +838,31 @@ impl VirtualMachine {
 
     fn write_to(&mut self, val : DynamicValue, stack_index : usize, address : usize) -> Result<(), String> {
         if self.callstack.len() <= stack_index {
-            return Err(format!("Index inválido : {}", stack_index));
+            return Err(format!("Index de frame inválido : {}", stack_index));
         }
 
         let frame = &mut self.callstack[stack_index];
 
         if frame.stack.len() <= address {
-            return Err("Endereço inválido pra stack".to_owned());
+            return Err("Endereço out-of-bounds".to_owned());
         }
+
+        // Check if the value we're writing to is a special item
+        // if it is, we need to decrement it first
+
+        match frame.stack[address] {
+            DynamicValue::List(id) => self.special_storage.decrement_ref(id)?,
+            DynamicValue::Text(id) => self.special_storage.decrement_ref(id)?,
+            _ => {}
+        };
+
+        // If the value we're writing is a special item, increment its ref count
+
+        match val {
+            DynamicValue::List(id) => self.special_storage.increment_ref(id)?,
+            DynamicValue::Text(id) => self.special_storage.increment_ref(id)?,
+            _ => {}
+        };
 
         frame.stack[address] = val;
 
@@ -910,7 +942,7 @@ impl VirtualMachine {
     fn conv_to_string(&mut self, val : DynamicValue) -> Result<String, String> {
         match val {
             DynamicValue::Text(t) => {
-                let s = match self.special_storage.get_ref(t) {
+                let s = match self.special_storage.get_data_ref(t) {
                     Some(s) => match s {
                         &SpecialItemData::Text(ref s) => s,
                         _ => return Err(format!("Erro interno : DynamicValue é texto, mas o id aponta pra outra coisa"))
@@ -924,7 +956,7 @@ impl VirtualMachine {
             DynamicValue::Number(n) => Ok(format!("{}", n)),
             DynamicValue::Null => Ok(String::from("<Null>")),
             DynamicValue::List(id) => {
-                let list = match self.special_storage.get_ref(id) {
+                let list = match self.special_storage.get_data_ref(id) {
                     Some(SpecialItemData::List(ref list)) => list.clone(),
                     Some(_) => return Err("Erro interno : DynamicValue é uma lista, item interno não".to_owned()),
                     None => return Err("ID inválida pra lista".to_owned())
@@ -970,7 +1002,7 @@ impl VirtualMachine {
     fn conv_to_int(&mut self, val : DynamicValue) -> Result<IntegerType, String> {
         match val {
             DynamicValue::Text(t) => {
-                let text = match self.special_storage.get_ref(t) {
+                let text = match self.special_storage.get_data_ref(t) {
                     Some(s) => match s {
                         &SpecialItemData::Text(ref s) => s,
                         _ => return Err(format!("Erro interno : DynamicValue é texto, mas o id aponta pra outra coisa"))
@@ -995,7 +1027,7 @@ impl VirtualMachine {
     fn conv_to_num(&mut self, val : DynamicValue) -> Result<f64, String> {
         match val {
             DynamicValue::Text(t) => {
-                let text = match self.special_storage.get_ref(t) {
+                let text = match self.special_storage.get_data_ref(t) {
                     Some(s) => match s {
                         &SpecialItemData::Text(ref s) => s,
                         _ => return Err(format!("Erro interno : DynamicValue é texto, mas o id aponta pra outra coisa"))
@@ -1055,7 +1087,7 @@ impl VirtualMachine {
             DynamicValue::Integer(i) => vm_write!(self.stdout, "{}", i)?,
             DynamicValue::Number(n) => vm_write!(self.stdout, "{}", n)?,
             DynamicValue::Text(t) => {
-                let t = match self.special_storage.get_ref(t) {
+                let t = match self.special_storage.get_data_ref(t) {
                     Some(s) => match s {
                         &SpecialItemData::Text(ref s) => s,
                         _ => return Err(format!("Erro interno : DynamicValue é texto, mas o id aponta pra outra coisa"))
@@ -1094,7 +1126,7 @@ impl VirtualMachine {
                     DynamicValue::Integer(i) => vm_write!(self.stdout, "(Integer) {}\n", i)?,
                     DynamicValue::Number(n) => vm_write!(self.stdout, "(Number) {}\n", n)?,
                     DynamicValue::Text(t) => {
-                        let t = match self.special_storage.get_ref(t) {
+                        let t = match self.special_storage.get_data_ref(t) {
                             Some(s) => match s {
                                 &SpecialItemData::Text(ref s) => s,
                                 _ => return Err(format!("Erro interno : DynamicValue é texto, mas o id aponta pra outra coisa"))
@@ -1144,6 +1176,7 @@ impl VirtualMachine {
                 }
             }
             Instruction::Return => {
+
                 if self.callstack.len() == 1 {
                     self.registers.has_quit = true;
 
@@ -1151,7 +1184,7 @@ impl VirtualMachine {
                 }
 
                 match self.callstack.pop() {
-                    Some(frame) => self.special_storage.remove_top(frame.num_special_items)?,
+                    Some(_) => {}
                     None => return Err("Erro no return : Nenhuma função em execução".to_owned())
                 }
 
@@ -1160,6 +1193,12 @@ impl VirtualMachine {
                 match self.write_to(val, index, 0) {
                     Ok(_) => {}
                     Err(e) => return Err(e)
+                }
+
+                // If this is the global function and we're in interactive mode, print the return value
+
+                if self.callstack.len() == 1 && self.registers.is_interactive {
+                    self.run(Instruction::PrintMathBDebug)?; // Return val is in math_b already
                 }
 
                 return Ok(ExecutionStatus::Returned);
@@ -1520,7 +1559,7 @@ impl VirtualMachine {
 
                 let value = {
                     if let DynamicValue::List(id) = self.registers.intermediate {
-                        match self.special_storage.get_ref(id) {
+                        match self.special_storage.get_data_ref(id) {
                             Some(SpecialItemData::List(ref d)) => {
                                 if index as usize >= d.len() {
                                     return Err(format!("Erro : Index depois do final da lista. Tamanho da lista : {}", d.len()));
@@ -1553,7 +1592,7 @@ impl VirtualMachine {
                     return Err(format!("AddListToIndex : A variável não é uma lista"));
                 };
 
-                let list = match self.special_storage.get_mut(list_id) {
+                let list = match self.special_storage.get_data_mut(list_id) {
                     Some(l) => match l {
                         SpecialItemData::List(ref mut list) => list,
                         _ => return Err("Item especial com a ID passada não é uma lista".to_owned())
@@ -1591,7 +1630,7 @@ impl VirtualMachine {
                     return Err("A variável não é uma lista".to_owned());
                 };
 
-                match self.special_storage.get_mut(id) {
+                match self.special_storage.get_data_mut(id) {
                     Some(SpecialItemData::List(ref mut list)) => {
                         if index as usize >= list.len() {
                             return Err(format!("Erro : Index maior que a lista. Tamanho da lista : {}", list.len()));
@@ -1610,7 +1649,7 @@ impl VirtualMachine {
                     return Err("QueryListSize : Variável não é uma lista".to_owned());
                 };
 
-                let list = match self.special_storage.get_ref(id) {
+                let list = match self.special_storage.get_data_ref(id) {
                     Some(l) => match l {
                         SpecialItemData::List(l) => l,
                         _ => return Err("Erro interno : ID não aponta pra uma lista".to_owned())
@@ -1649,6 +1688,16 @@ impl VirtualMachine {
                 if let Some(value) = result {
                     let index = self.callstack.len() - 1;
                     self.write_to(value, index, 0)?;
+
+                    if self.registers.is_interactive && self.callstack.len() == 1 {
+                        let tmp = self.registers.math_b;
+
+                        self.registers.math_b = value;
+
+                        self.run(Instruction::PrintMathBDebug)?;
+
+                        self.registers.math_b = tmp;
+                    }
                 }
             }
             Instruction::PushMathBPluginArgument => {
@@ -1657,6 +1706,24 @@ impl VirtualMachine {
             }
             Instruction::IncreaseSkippingLevel => {
                 self.increase_skip_level()?;
+            }
+            Instruction::Halt => {
+                return Ok(ExecutionStatus::Halt);
+            }
+            Instruction::TryDecrementRefAt(address) => {
+                let index = match self.get_last_ready_index() {
+                    Some(i) => i,
+                    None => return Err("".to_owned()),
+                };
+
+                match self.read_from_id(index, address) {
+                    Ok(v) => match v {
+                        DynamicValue::List(id) => self.special_storage.decrement_ref(id)?,
+                        DynamicValue::Text(id) => self.special_storage.decrement_ref(id)?,
+                        _ => {}
+                    }
+                    Err(e) => return Err(e),
+                }
             }
         }
 
@@ -1694,9 +1761,9 @@ pub enum Instruction {
     PushIntermediateToB,
     PushMathBToSeconday,
     ClearSecondary,
-    // Values are read to the intermediate register
+    /// Read a global var to the intermediary register
     ReadGlobalVarFrom(usize),
-    // When writing, values are read from the math b register
+    /// When writing, values are read from the math b register
     WriteGlobalVarTo(usize),
     ReadVarFrom(usize),
     WriteVarTo(usize),
@@ -1734,4 +1801,8 @@ pub enum Instruction {
     PushMathBPluginArgument,
     /// Increase the skipping level
     IncreaseSkippingLevel,
+    /// Halt the execution
+    Halt,
+    /// Try decrementing the ref count of the object in the specified location in the current frame (if special item)
+    TryDecrementRefAt(usize),
 }

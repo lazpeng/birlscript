@@ -12,16 +12,16 @@ de opções que podem ser passadas.
 
 [Editor Online](https://birlscript.github.io/), pra rodar código na web
 
-## Versão 2.0.0
+## Versão 2.1.0
 
-*© 2016-2018 Rafael Rodrigues Nakano. Contato: lazpeng@gmail.com*
+*© 2016-2019 Rafael Rodrigues Nakano. Contato: lazpeng@gmail.com*
 
 ### [Documentação disponível aqui](birl/DOC.md)
 
 # Exemplos
 
 ## Fatorial
-```python
+```
 JAULA FATORIAL (NUMERO: BATATA DOCE)
     É ELE QUE A GENTE QUER: NUMERO, 1
     MENOR OU É MEMO:
@@ -43,7 +43,7 @@ SAINDO DA JAULA
 ```
 
 ## Sequência fibonacci
-```python
+```
 JAULA FIBONACCI(NUMERO: BATATA DOCE)
     E ELE QUE A GENTE QUER: NUMERO, 1
     MENOR OU E MEMO:
@@ -74,14 +74,14 @@ SAINDO DA JAULA
 ```
 
 ## Hello world, cumpade!
-```python
+```
 # A JAULA SHOW é opcional, codigos podem ser executados fora de uma JAULA
 # porem uma jaula (no caso, a show) permite que se faça uso de recursão, o que não é disponivel em comandos globais
 CE QUER VER ISSO: "BORA, " + CUMPADE + "!" # O operador + em strings só pode ser usado com outra string
 ```
 
 ## Funções e condicionais
-```python
+```
 JAULA OUTRO # Declaração da JAULA outro
     CE QUER VER ISSO: "estou em outra"
 SAINDO DA JAULA # Fim da declaração de OUTRO
