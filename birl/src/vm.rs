@@ -238,8 +238,8 @@ impl Registers {
 pub struct VirtualMachine {
     registers : Registers,
     callstack : Vec<FunctionFrame>,
-    stdout: Option<Box<Write>>,
-    stdin:  Option<Box<BufRead>>,
+    stdout: Option<Box<dyn Write>>,
+    stdin:  Option<Box<dyn BufRead>>,
     code : Vec<Vec<Instruction>>,
     plugins : Vec<PluginFunction>,
     special_storage : SpecialStorage,
@@ -347,12 +347,12 @@ impl VirtualMachine {
         self.run(instruction)
     }
 
-    pub fn set_stdout(&mut self, write: Option<Box<Write>>) -> Option<Box<Write>>{
+    pub fn set_stdout(&mut self, write: Option<Box<dyn Write>>) -> Option<Box<dyn Write>>{
         use std::mem;
         mem::replace(&mut self.stdout, write)
     }
 
-    pub fn set_stdin(&mut self, read: Option<Box<BufRead>>) -> Option<Box<BufRead>>{
+    pub fn set_stdin(&mut self, read: Option<Box<dyn BufRead>>) -> Option<Box<dyn BufRead>>{
         use std::mem;
         mem::replace(&mut self.stdin, read)
     } 

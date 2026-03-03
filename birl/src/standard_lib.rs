@@ -4,8 +4,8 @@ use modules::*;
 use context::RawValue;
 
 mod plugins {
-    use vm::{ DynamicValue, VirtualMachine, PluginFunction };
-    use parser::{ TypeKind, IntegerType };
+    use vm::PluginFunction;
+    use parser::TypeKind;
 
     pub fn get_plugins() -> Vec<(String, Vec<TypeKind>, PluginFunction)> {
         // TODO: Add functions

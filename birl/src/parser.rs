@@ -161,7 +161,7 @@ fn get_ponct(c : char) -> Option<PunctuationKind> {
 
 fn get_digit(c : char) -> Option<u8> {
     match c {
-        '0' ... '9' => {
+        '0' ..= '9' => {
             let z = '0' as u8;
             let d = c as u8;
 
@@ -209,7 +209,7 @@ fn number_token(input : &[char], offset : &mut usize, first : char) -> Result<To
             }
         } else {
             match cur {
-                '0'...'9' => {
+                '0'..='9' => {
                     let digit = get_digit(cur).unwrap();
 
                     if is_int {
@@ -714,7 +714,7 @@ fn parse_function(src : &[char], offset : &mut usize) -> Result<ParserResult, St
     match next_token(src, offset) {
         Ok(t) => {
            match t {
-               Token::NewLine | Token::None => {}
+               Token::NewLine | Token::None | Token::Comment => {}
                Token::Operator(MathOperator::ParenthesisLeft) => {
                    // Argument list
 
@@ -896,7 +896,7 @@ fn parse_sub_expression(src : &[char], offset : &mut usize, expr : &mut Expressi
         };
 
         match current {
-            Token::None | Token::Comment => return Ok(()),
+            Token::None | Token::Comment => break,
             Token::Integer(i) => {
                 if last_was_value {
                     return Err("Dois valores seguidos na expressão".to_owned());
@@ -1154,7 +1154,7 @@ fn parse_command(src : &[char], offset : &mut usize, kp : KeyPhrase) -> Result<P
             match next_token(src, &mut peek_offset) {
                 Ok(t) => {
                     match t {
-                        Token::None | Token::NewLine => break,
+                        Token::None | Token::NewLine | Token::Comment => break,
                         Token::Punctuation(p) => {
                             match p {
                                 PunctuationKind::Comma => {

@@ -10,7 +10,7 @@ Ajude no desenvolvimento do projeto com ideias, código e muita fibra!
 Use o interpretador com a flag *-a* ou *--ajuda-o-maluco-ta-doente* para ver uma lista
 de opções que podem ser passadas.
 
-[Editor Online](https://birlscript.github.io/), pra rodar código na web
+[Editor Online](https://birlscript.wooby.moe/), pra rodar código na web
 
 ## Versão 2.0.0
 

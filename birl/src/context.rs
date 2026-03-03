@@ -48,12 +48,12 @@ pub struct Context {
 
 impl Context {
     /// Alias for vm.set_stdout().
-    pub fn set_stdout(&mut self, write: Option<Box<Write>>) -> Option<Box<Write>>{
+    pub fn set_stdout(&mut self, write: Option<Box<dyn Write>>) -> Option<Box<dyn Write>>{
         self.vm.set_stdout(write)
     }
 
     /// Alias for vm.set_stdin().
-    pub fn set_stdin(&mut self, read: Option<Box<BufRead>>) -> Option<Box<BufRead>>{
+    pub fn set_stdin(&mut self, read: Option<Box<dyn BufRead>>) -> Option<Box<dyn BufRead>>{
         self.vm.set_stdin(read)
     }
 
