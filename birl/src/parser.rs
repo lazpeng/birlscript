@@ -172,21 +172,17 @@ fn get_digit(c : char) -> Option<u8> {
 }
 
 fn number_token(input : &[char], offset : &mut usize, first : char) -> Result<Token, String> {
-
-    let mut is_int = true;
-    let mut int_val = 0 as IntegerType;
-    let mut num_val = 0f64;
-    let mut digits_after_dot = 0;
+    let mut is_int = first != '.';
+    let mut literal = String::new();
 
     if first == '.' {
-        is_int = false;
-        digits_after_dot = 1;
-    } else {
-        int_val = match get_digit(first) {
-            Some(d) => d as IntegerType,
-            None => return Err("Internal error : First char to number_token is not a digit or a dot".to_owned()),
-        };
+        // Rust doesn't parse a lone ".", so ".5" becomes "0.5"
+        literal.push('0');
+    } else if get_digit(first).is_none() {
+        return Err("Internal error : First char to number_token is not a digit or a dot".to_owned());
     }
+
+    literal.push(first);
 
     loop {
         if *offset >= input.len() {
@@ -195,43 +191,30 @@ fn number_token(input : &[char], offset : &mut usize, first : char) -> Result<To
 
         let cur = input[*offset];
 
-        if cur == COMMENT_CHARACTER {
-            break;
-        }
-
         if cur == '.' {
             if !is_int {
                 return Err(String::from("Dois pontos aparecem no literal de número"));
-            } else {
-                is_int = false;
-                num_val = int_val as f64;
-                digits_after_dot = 1;
             }
-        } else {
-            match cur {
-                '0'..='9' => {
-                    let digit = get_digit(cur).unwrap();
 
-                    if is_int {
-                        int_val *= 10;
-                        int_val += digit as IntegerType;
-                    } else {
-                        let diff = 0.1f64.powi(digits_after_dot);
-                        num_val += diff * (digit as f64);
-                        digits_after_dot += 1;
-                    }
-                }
-                _ => break,
-            }
+            is_int = false;
+        } else if get_digit(cur).is_none() {
+            break;
         }
 
+        literal.push(cur);
         *offset += 1;
     }
 
     if is_int {
-        Ok(Token::Integer(int_val))
+        match literal.parse::<IntegerType>() {
+            Ok(i) => Ok(Token::Integer(i)),
+            Err(_) => Err(format!("O literal inteiro {} é grande demais", literal)),
+        }
     } else {
-        Ok(Token::Number(num_val))
+        match literal.parse::<f64>() {
+            Ok(n) => Ok(Token::Number(n)),
+            Err(_) => Err(format!("Literal de número inválido : {}", literal)),
+        }
     }
 }
 
@@ -348,6 +331,10 @@ pub fn next_token(input : &[char], offset : &mut usize) -> Result<Token, String>
     }
 
     loop {
+        if *offset >= input.len() {
+            return Ok(Token::None);
+        }
+
         if input[*offset] != ' ' && input[*offset] != '\t' {
             break;
         }
@@ -750,322 +737,132 @@ fn parse_function(src : &[char], offset : &mut usize) -> Result<ParserResult, St
     Ok(ParserResult::FunctionStart(func))
 }
 
-fn parse_sub_expression(src : &[char], offset : &mut usize, expr : &mut Expression, root : bool) -> Result<(), String> {
+fn peek_token(src : &[char], offset : usize) -> Result<(Token, usize), String> {
+    let mut next = offset;
+    let tok = next_token(src, &mut next)?;
 
-    let mut last_was_value;
+    Ok((tok, next))
+}
 
-    let mut dummy_offset = *offset;
-
-    let first = match next_token(src, &mut dummy_offset) {
-        Ok(t) => t,
-        Err(e) => return Err(e),
-    };
-
-    let mut nodes = vec![];
-
-    let mut values : Vec<ExpressionNode> = vec![];
-    let mut operations : Vec<MathOperator> = vec![];
-    let mut last_was_important = false;
-
-    match first {
-        Token::Comment | Token::None => return Ok(()),
-        Token::Integer(i) => {
-            last_was_value = true;
-
-            if last_was_important {
-                last_was_important = false;
-
-                match values.pop() {
-                    Some(v) => nodes.push(v),
-                    None => {}
-                }
-
-                let op = match operations.pop() {
-                    Some(v) => v,
-                    None => return Err("Operations tá vazio".to_owned()),
-                };
-
-                nodes.push(ExpressionNode::Value(RawValue::Integer(i)));
-                nodes.push(ExpressionNode::Operator(op));
-            } else {
-                values.push(ExpressionNode::Value(RawValue::Integer(i)));
-            }
-        }
-        Token::Number(n) => {
-            last_was_value = true;
-
-            if last_was_important {
-                last_was_important = false;
-
-                match values.pop() {
-                    Some(v) => nodes.push(v),
-                    None => {}
-                }
-
-                let op = match operations.pop() {
-                    Some(v) => v,
-                    None => return Err("Operations tá vazio".to_owned()),
-                };
-
-                nodes.push(ExpressionNode::Value(RawValue::Number(n)));
-                nodes.push(ExpressionNode::Operator(op));
-            } else {
-                values.push(ExpressionNode::Value(RawValue::Number(n)));
-            }
-        }
-        Token::Text(t) => {
-            last_was_value = true;
-
-            values.push(ExpressionNode::Value(RawValue::Text(t)));
-        }
-        Token::NewLine => return Ok(()),
-        Token::Symbol(s) => {
-            last_was_value = true;
-
-            if !expr.has_symbols {
-                expr.has_symbols = true;
-            }
-
-            if last_was_important {
-                last_was_important = false;
-
-                match values.pop() {
-                    Some(v) => nodes.push(v),
-                    None => {}
-                }
-
-                let op = match operations.pop() {
-                    Some(v) => v,
-                    None => return Err("Operations tá vazio".to_owned()),
-                };
-
-                nodes.push(ExpressionNode::Symbol(s));
-                nodes.push(ExpressionNode::Operator(op));
-            } else {
-                values.push(ExpressionNode::Symbol(s));
-            }
-        }
-        Token::Operator(MathOperator::ParenthesisLeft) => {
-            last_was_value = true;
-
-            match parse_sub_expression(src, &mut dummy_offset, expr, false) {
-                Ok(_) => {}
-                Err(e) => return Err(e)
-            };
-        }
-        Token::Operator(MathOperator::ParenthesisRight) => {
-            *offset = dummy_offset;
-
-            return Ok(());
-        },
-        Token::Operator(o) => {
-            match o {
-                MathOperator::Plus | MathOperator::Minus => {
-                    // Add a zero before this
-                    values.push(ExpressionNode::Value(RawValue::Integer(0)));
-                    operations.push(o);
-                },
-                _ => return Err(format!("Scope ou expressão começa com o operator unário inválido {:?}", o)),
-            }
-
-            last_was_value = false;
-        }
-        Token::Punctuation(p) => {
-            match p {
-                PunctuationKind::Comma if root => {
-                    // Ok
-
-                    return Ok(());
-                }
-                _ => return Err(format!("A expressão deveria começar com um valor ou operador unário, mas começa com {:?}", p)),
-            }
-        }
-        _ => return Err(format!("Esperado um valor ou operador na expressão, encontrado {:?}", first)),
+fn ends_expression(tok : &Token) -> bool {
+    match tok {
+        Token::None | Token::Comment | Token::NewLine | Token::Punctuation(PunctuationKind::Comma) => true,
+        _ => false,
     }
+}
 
-    *offset = dummy_offset;
+/// Parses a sequence of `operand (op operand)*` where op is one of `ops`, writing the result
+/// in postfix order to the expression. Operators of the same level are left associative
+fn parse_binary_level(src : &[char], offset : &mut usize, expr : &mut Expression, ops : &[MathOperator],
+                      operand : fn(&[char], &mut usize, &mut Expression) -> Result<(), String>) -> Result<(), String> {
+    operand(src, offset, expr)?;
 
     loop {
-        if *offset >= src.len() {
-            break;
-        }
+        let (tok, next) = peek_token(src, *offset)?;
 
-        let current = match next_token(src, &mut dummy_offset) {
-            Ok(t) => t,
-            Err(e) => return Err(e)
+        let op = match tok {
+            Token::Operator(o) if ops.contains(&o) => o,
+            _ => break,
         };
 
-        match current {
-            Token::None | Token::Comment => break,
-            Token::Integer(i) => {
-                if last_was_value {
-                    return Err("Dois valores seguidos na expressão".to_owned());
-                }
+        *offset = next;
 
-                last_was_value = true;
+        operand(src, offset, expr)?;
 
-                if last_was_important {
-                    last_was_important = false;
-
-                    match values.pop() {
-                        Some(v) => nodes.push(v),
-                        None => {}
-                    }
-
-                    let op = match operations.pop() {
-                        Some(v) => v,
-                        None => return Err("Operations tá vazio".to_owned()),
-                    };
-
-                    nodes.push(ExpressionNode::Value(RawValue::Integer(i)));
-                    nodes.push(ExpressionNode::Operator(op));
-                } else {
-                    values.push(ExpressionNode::Value(RawValue::Integer(i)));
-                }
-            }
-            Token::Number(n) => {
-                if last_was_value {
-                    return Err("Dois valores seguidos na expressão".to_owned());
-                }
-
-                last_was_value = true;
-
-                if last_was_important {
-                    last_was_important = false;
-
-                    match values.pop() {
-                        Some(v) => nodes.push(v),
-                        None => {}
-                    }
-
-                    let op = match operations.pop() {
-                        Some(v) => v,
-                        None => return Err("Operations tá vazio".to_owned()),
-                    };
-
-                    nodes.push(ExpressionNode::Value(RawValue::Number(n)));
-                    nodes.push(ExpressionNode::Operator(op));
-                } else {
-                    values.push(ExpressionNode::Value(RawValue::Number(n)));
-                }
-            }
-            Token::Text(t) => {
-                if last_was_value {
-                    return Err("Dois valores seguidos na expressão".to_owned());
-                }
-
-                last_was_value = true;
-
-                values.push(ExpressionNode::Value(RawValue::Text(t)));
-            }
-            Token::Symbol(s) => {
-                if last_was_value {
-                    return Err("Dois valores seguidos na expressão".to_owned());
-                }
-
-                last_was_value = true;
-
-                if !expr.has_symbols {
-                    expr.has_symbols = true;
-                }
-
-                if last_was_important {
-                    last_was_important = false;
-
-                    match values.pop() {
-                        Some(v) => nodes.push(v),
-                        None => {}
-                    }
-
-                    let op = match operations.pop() {
-                        Some(v) => v,
-                        None => return Err("Operations tá vazio".to_owned()),
-                    };
-
-                    nodes.push(ExpressionNode::Symbol(s));
-                    nodes.push(ExpressionNode::Operator(op));
-                } else {
-                    values.push(ExpressionNode::Symbol(s));
-                }
-            }
-            Token::Operator(MathOperator::ParenthesisLeft) => {
-                last_was_value = true;
-
-                match parse_sub_expression(src, &mut dummy_offset, expr, false) {
-                    Ok(_) => {}
-                    Err(e) => return Err(e)
-                };
-            }
-            Token::Operator(MathOperator::ParenthesisRight) => {
-                *offset = dummy_offset;
-
-                break
-            },
-            Token::Operator(o) => {
-                if !last_was_value {
-                    return Err("Dois operadores seguidos na expressão".to_owned());
-                }
-
-                last_was_value = false;
-
-                last_was_important = match o {
-                    MathOperator::Plus | MathOperator::Minus => false,
-                    _ => true,
-                };
-
-                operations.push(o);
-            }
-            Token::Punctuation(p) => {
-                match p {
-                    PunctuationKind::Comma if root => {
-                        // Ok. Do not set offset to dummy_offset, since we want the lower calls and the parser to see the comma
-
-                        break;
-                    }
-                    _ => return Err(format!("Erro: {:?} no meio da expressão", p)),
-                }
-            }
-            Token::NewLine => break,
-            _ => return Err(format!("Esperado um valor ou operador na expressão, encontrado {:?}", current)),
-        }
-
-        *offset = dummy_offset;
-    }
-
-    if !last_was_value {
-        return Err("Expressão termina com um operador".to_owned());
-    }
-
-    for node in nodes {
-        expr.nodes.push(node);
-    }
-
-    if values.len() == operations.len() {
-        // Ok
-    } else if operations.len() == values.len() - 1 {
-        let first = values.remove(0);
-
-        expr.nodes.push(first);
-    } else {
-        return Err(format!("Formatação inválida da expressão resultado. Lenv : {}. lenO: {}", values.len(), operations.len()));
-    }
-
-    for _ in 0..values.len() {
-        let val = values.remove(0);
-        let op = operations.remove(0);
-        expr.nodes.push(val);
         expr.nodes.push(ExpressionNode::Operator(op));
     }
 
     Ok(())
 }
 
+/// sum := product (('+' | '-') product)*
+fn parse_sum(src : &[char], offset : &mut usize, expr : &mut Expression) -> Result<(), String> {
+    parse_binary_level(src, offset, expr, &[MathOperator::Plus, MathOperator::Minus], parse_product)
+}
+
+/// product := unary (('*' | '/') unary)*
+fn parse_product(src : &[char], offset : &mut usize, expr : &mut Expression) -> Result<(), String> {
+    parse_binary_level(src, offset, expr, &[MathOperator::Multiplication, MathOperator::Division], parse_unary)
+}
+
+/// unary := ('+' | '-') unary | value | '(' sum ')'
+fn parse_unary(src : &[char], offset : &mut usize, expr : &mut Expression) -> Result<(), String> {
+    let (tok, next) = peek_token(src, *offset)?;
+
+    match tok {
+        Token::Operator(MathOperator::Plus) => {
+            *offset = next;
+
+            parse_unary(src, offset, expr)
+        }
+        Token::Operator(MathOperator::Minus) => {
+            *offset = next;
+
+            // -x is compiled as 0 - x
+            expr.nodes.push(ExpressionNode::Value(RawValue::Integer(0)));
+            parse_unary(src, offset, expr)?;
+            expr.nodes.push(ExpressionNode::Operator(MathOperator::Minus));
+
+            Ok(())
+        }
+        Token::Operator(MathOperator::ParenthesisLeft) => {
+            *offset = next;
+
+            parse_sum(src, offset, expr)?;
+
+            match next_token(src, offset)? {
+                Token::Operator(MathOperator::ParenthesisRight) => Ok(()),
+                t => Err(format!("Esperado um ')' fechando o parêntese, encontrado {:?}", t)),
+            }
+        }
+        Token::Integer(i) => {
+            *offset = next;
+            expr.nodes.push(ExpressionNode::Value(RawValue::Integer(i)));
+
+            Ok(())
+        }
+        Token::Number(n) => {
+            *offset = next;
+            expr.nodes.push(ExpressionNode::Value(RawValue::Number(n)));
+
+            Ok(())
+        }
+        Token::Text(t) => {
+            *offset = next;
+            expr.nodes.push(ExpressionNode::Value(RawValue::Text(t)));
+
+            Ok(())
+        }
+        Token::Symbol(s) => {
+            *offset = next;
+            expr.has_symbols = true;
+            expr.nodes.push(ExpressionNode::Symbol(s));
+
+            Ok(())
+        }
+        ref t if ends_expression(t) => Err("Expressão termina com um operador ou está incompleta".to_owned()),
+        Token::Operator(o) => Err(format!("Operador {:?} inesperado na expressão", o)),
+        t => Err(format!("Esperado um valor ou operador na expressão, encontrado {:?}", t)),
+    }
+}
+
 fn parse_expression(src : &[char], offset : &mut usize) -> Result<Expression, String> {
     let mut expr = Expression::new();
 
-    match parse_sub_expression(src, offset, &mut expr, true) {
-        Ok(_) => Ok(expr),
-        Err(e) => Err(e),
+    // An empty expression is allowed
+    if ends_expression(&peek_token(src, *offset)?.0) {
+        return Ok(expr);
+    }
+
+    parse_sum(src, offset, &mut expr)?;
+
+    // The expression must end here. Do not consume the token since the caller wants to see the comma
+    match peek_token(src, *offset)?.0 {
+        ref t if ends_expression(t) => Ok(expr),
+        Token::Operator(MathOperator::ParenthesisRight) => Err("Parêntese fechando sem um correspondente abrindo".to_owned()),
+        Token::Integer(_) | Token::Number(_) | Token::Text(_) | Token::Symbol(_) |
+        Token::Operator(MathOperator::ParenthesisLeft) => Err("Dois valores seguidos na expressão".to_owned()),
+        t => Err(format!("Esperado um operador ou o fim da expressão, encontrado {:?}", t)),
     }
 }
 

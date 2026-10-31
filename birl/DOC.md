@@ -223,6 +223,7 @@ São variáveis disponíveis no escopo global e não podem ser modificadas. O pr
 * CUMPADE : Tem o nome de usuário rodando o programa
 * UM : Tem o valor 1
 * FRANGO : Tem o valor nulo
+* BODYBUILDER : Tem o valor "BAMBAM"
 # Funcionamento, comportamento e características da implementação
 O shell, que é responsável pelo gerenciamento da execução de código BirlScript, tem dois modos de operação :
 * Um modo interativo, onde comandos podem ser executados imediatamente (chamado REPL, *Read Eval Print Loop*)

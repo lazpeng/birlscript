@@ -103,11 +103,14 @@ impl Compiler {
         }
     }
 
+    /// Compiles the expression (in postfix order) to be evaluated on the expression stack,
+    /// leaving the result on MathB
     pub fn compile_expression(&self, expr : Expression, inst : &mut Vec<Instruction>) -> Result<(), String> {
+        if expr.nodes.is_empty() {
+            return Ok(());
+        }
 
-        inst.push(Instruction::SetFirstExpressionOperation);
-
-        let mut is_a = expr.nodes.len() > 1;
+        inst.push(Instruction::ClearMathStack);
 
         for node in expr.nodes {
             match node {
@@ -120,18 +123,8 @@ impl Compiler {
                     };
 
                     inst.push(opi);
-
-                    is_a = true;
                 }
-                ExpressionNode::Value(raw) => {
-                    if is_a {
-                        inst.push(Instruction::PushValMathA(raw));
-                    } else {
-                        inst.push(Instruction::PushValMathB(raw));
-                    }
-
-                    is_a = !is_a;
-                }
+                ExpressionNode::Value(raw) => inst.push(Instruction::PushValMathStack(raw)),
                 ExpressionNode::Symbol(s) => {
                     let info = match self.find_symbol(s.as_str()) {
                         Some(i) => i,
@@ -144,16 +137,12 @@ impl Compiler {
                         inst.push(Instruction::ReadVarFrom(info.address));
                     }
 
-                    if is_a {
-                        inst.push(Instruction::PushIntermediateToA);
-                    } else {
-                        inst.push(Instruction::PushIntermediateToB);
-                    }
-
-                    is_a = !is_a;
+                    inst.push(Instruction::PushIntermediateToMathStack);
                 }
             }
         }
+
+        inst.push(Instruction::PopMathStackToB);
 
         Ok(())
     }

@@ -275,6 +275,11 @@ impl Context {
         self.vm.execute_next_instruction()
     }
 
+    /// In interactive mode, discard what's left to execute after an error so the next line starts clean
+    pub fn recover_from_error(&mut self) -> Result<(), String> {
+        self.vm.discard_pending_execution()
+    }
+
     pub fn start_program(&mut self) -> Result<(), String> {
         // Global function is already running
 

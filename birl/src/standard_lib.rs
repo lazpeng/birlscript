@@ -21,6 +21,7 @@ pub fn module_standard_library() -> Module {
         ("UM".to_owned(), RawValue::Integer(1)),
         ("CUMPADE".to_owned(), RawValue::Text(env::var("USER").unwrap_or("CUMPADE".to_owned()))),
         ("FRANGO".to_owned(), RawValue::Null),
+        ("BODYBUILDER".to_owned(), RawValue::Text("BAMBAM".to_owned())),
     ];
 
     for (name, value) in vars {

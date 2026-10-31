@@ -6,7 +6,7 @@ use birl::context::Context;
 use birl::compiler::CompilerHint;
 use birl::context::BIRL_GLOBAL_FUNCTION_ID;
 
-fn start_interactive_console(add_stdlib : bool) {
+fn start_interactive_console(mut c : Context) {
 	/* Print heading info. */
 	eprintln!("O SHELL QUE CONSTRÓI FIBRA. VERSÃO {}", birl::context::BIRL_VERSION);
 	eprintln!("BIRL  © 2018, RAFAEL RODRIGUES NAKANO.");
@@ -25,9 +25,6 @@ fn start_interactive_console(add_stdlib : bool) {
 	 * expression typed into the interpreted will be compiled as a
 	 * root-level instruction.
 	 */
-	use birl::context::Context;
-	let mut c = Context::new();
-
     c.set_interactive_mode();
 
 	/* Bind the Context interpreter to standard IO */
@@ -40,16 +37,6 @@ fn start_interactive_console(add_stdlib : bool) {
 		use std::io;
 		Some(Box::new(io::stdout()))
 	});
-
-    if add_stdlib {
-        match c.add_standard_library() {
-            Ok(_) => {}
-            Err(e) => {
-                eprintln!("Erro fatal : Não foi possível adicionar variáveis padrão : {}", e);
-                return;
-            }
-        }
-    }
 
 	/* Enter interactive loop */
 	use std::io::{stdin, BufReader, BufRead};
@@ -101,6 +88,13 @@ fn start_interactive_console(add_stdlib : bool) {
                     Ok(_) => {}
                     Err(e) => {
                         eprintln!("{}", e);
+
+                        if let Err(e) = c.recover_from_error() {
+                            eprintln!("Erro fatal : {}", e);
+                            return;
+                        }
+
+                        break;
                     }
                 }
             }
@@ -121,7 +115,7 @@ fn print_help() {
               é o ponto de partida do teu programa.");
 	println!("As opções são as seguintes:");
 	println!("\t-a ou --ajuda-o-maluco-ta-doente\t: Imprime essa mensagem de ajuda");
-	println!("\t-v ou --versao\t\t\t\t: Imprime a versão do programa");
+	println!("\t-v ou --versao-cumpade\t\t\t: Imprime a versão do programa");
 	println!("\t-s ou --string \"[codigo]\"\t\t: Executa o codigo na string ao inves de \
               um arquivo.");
 	println!("\t-i ou --interativo\t\t\t\t: Inicia um console interativo pra rodar códigos");
@@ -152,7 +146,7 @@ fn get_params() -> Vec<Param> {
 		if let Some(arg) = arguments.next() {
 			match arg.as_str() {
 				"-a" | "--ajuda-o-maluco-ta-doente" => result.push(Param::PrintHelp),
-				"-v" | "--versao-cumpade" => result.push(Param::PrintVersion),
+				"-v" | "--versao" | "--versao-cumpade" => result.push(Param::PrintVersion),
 				"-i" | "--interativo" => result.push(Param::Interactive),
 				"-s" | "--string" => {
 					// The next argument is expected to be a string containing source code
@@ -192,16 +186,6 @@ fn main() {
         }
     }
 
-    if with_stdlib {
-        match ctx.add_standard_library() {
-            Ok(_) => {}
-            Err(e) => {
-                println!("Erro adicionando standard library : {}", e);
-                exit(-1);
-            }
-        }
-    }
-
 	if args.len() > 0 {
 		for arg in args {
 			match arg {
@@ -217,6 +201,15 @@ fn main() {
 		interactive = true;
 	}
 
+    if with_stdlib {
+        match ctx.add_standard_library() {
+            Ok(_) => {}
+            Err(e) => {
+                println!("Erro adicionando standard library : {}", e);
+                exit(-1);
+            }
+        }
+    }
 
     for file in files {
         match ctx.add_file(file.as_str()) {
@@ -239,7 +232,7 @@ fn main() {
     }
 
 	if interactive {
-		start_interactive_console(with_stdlib);
+		start_interactive_console(ctx);
 	} else {
         /* Bind the Context interpreter to standard IO */
         let _ = ctx.set_stdin({

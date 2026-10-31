@@ -209,7 +209,8 @@ pub struct Registers {
     math_a : DynamicValue,
     math_b : DynamicValue,
     intermediate : DynamicValue,
-    first_operation : bool,
+    /// Operand stack used while evaluating an expression
+    math_stack : Vec<DynamicValue>,
     secondary : DynamicValue,
     default_stack_size : usize,
     has_quit : bool,
@@ -225,7 +226,7 @@ impl Registers {
             math_b : DynamicValue::Null,
             secondary : DynamicValue::Null,
             intermediate : DynamicValue::Null,
-            first_operation : false,
+            math_stack : vec![],
             default_stack_size : STACK_DEFAULT_SIZE,
             has_quit : false,
             is_interactive : false,
@@ -345,6 +346,31 @@ impl VirtualMachine {
         }
 
         self.run(instruction)
+    }
+
+    /// Unwinds the callstack down to the global function and skips its remaining instructions.
+    /// Used by the interactive mode to recover from an error in the middle of a line
+    pub fn discard_pending_execution(&mut self) -> Result<(), String> {
+        while self.callstack.len() > 1 {
+            if let Some(frame) = self.callstack.pop() {
+                self.special_storage.remove_top(frame.num_special_items)?;
+            }
+        }
+
+        let code_len = match self.callstack.first() {
+            Some(frame) => self.code[frame.id].len(),
+            None => return Err("Nenhuma função em execução".to_owned()),
+        };
+
+        if let Some(frame) = self.callstack.first_mut() {
+            frame.program_counter = code_len;
+            frame.skip_level = 0;
+            frame.label_stack.clear();
+        }
+
+        self.registers.math_stack.clear();
+
+        Ok(())
     }
 
     pub fn set_stdout(&mut self, write: Option<Box<dyn Write>>) -> Option<Box<dyn Write>>{
@@ -474,7 +500,8 @@ impl VirtualMachine {
         match left {
             DynamicValue::Integer(l_i) => {
                 match right {
-                    DynamicValue::Integer(r_i) => Ok(DynamicValue::Integer(l_i + r_i)),
+                    DynamicValue::Integer(r_i) => l_i.checked_add(r_i).map(DynamicValue::Integer)
+                        .ok_or_else(|| format!("Overflow na soma de {} e {}", l_i, r_i)),
                     DynamicValue::Number(r_n) => Ok(DynamicValue::Number((l_i as f64) + r_n)),
                     _ => return Err("Incompatível. Não deveria chegar aqui.".to_owned()),
                 }
@@ -493,33 +520,11 @@ impl VirtualMachine {
 
                         let mut result = String::new();
 
-                        {
-                            let left_v = match self.special_storage.get_ref(r_t) {
-                                Some(s) => match s {
-                                    &SpecialItemData::Text(ref s) => s,
-                                    _ => return Err(format!("Erro interno : DynamicValue é texto, mas o id aponta pra outra coisa"))
-                                },
-                                None => return Err(format!("Add w/ Text : Id {} não encontrada.", r_t))
-                            };
-
-                            // remove right node
-                            let right_v = match self.special_storage.get_ref(l_t) {
-                                Some(s) => match s {
-                                    &SpecialItemData::Text(ref s) => s,
-                                    _ => return Err(format!("Erro interno : DynamicValue é texto, mas o id aponta pra outra coisa"))
-                                },
-                                None => return Err(format!("Add w/ Text : Id {} não encontrada.", l_t))
-                            };
-
-                            if self.registers.first_operation {
-                                result.push_str(right_v);
-                                result.push_str(left_v);
-
-                                self.registers.first_operation = false;
-                            } else {
-                                result.push_str(left_v);
-                                result.push_str(right_v);
-
+                        for id in [l_t, r_t].iter() {
+                            match self.special_storage.get_ref(*id) {
+                                Some(&SpecialItemData::Text(ref s)) => result.push_str(s),
+                                Some(_) => return Err(format!("Erro interno : DynamicValue é texto, mas o id aponta pra outra coisa")),
+                                None => return Err(format!("Add w/ Text : Id {} não encontrada.", id)),
                             }
                         }
 
@@ -589,7 +594,8 @@ impl VirtualMachine {
         match left {
             DynamicValue::Integer(l_i) => {
                 match right {
-                    DynamicValue::Integer(r_i) => Ok(DynamicValue::Integer(l_i - r_i)),
+                    DynamicValue::Integer(r_i) => l_i.checked_sub(r_i).map(DynamicValue::Integer)
+                        .ok_or_else(|| format!("Overflow na subtração de {} e {}", l_i, r_i)),
                     DynamicValue::Number(r_n) => Ok(DynamicValue::Number((l_i as f64) - r_n)),
                     _ => return Err("Incompatível. Não deveria chegar aqui.".to_owned()),
                 }
@@ -615,7 +621,8 @@ impl VirtualMachine {
         match left {
             DynamicValue::Integer(l_i) => {
                 match right {
-                    DynamicValue::Integer(r_i) => Ok(DynamicValue::Integer(l_i * r_i)),
+                    DynamicValue::Integer(r_i) => l_i.checked_mul(r_i).map(DynamicValue::Integer)
+                        .ok_or_else(|| format!("Overflow na multiplicação de {} e {}", l_i, r_i)),
                     DynamicValue::Number(r_n) => Ok(DynamicValue::Number((l_i as f64) * r_n)),
                     _ => return Err("Incompatível. Não deveria chegar aqui.".to_owned()),
                 }
@@ -641,7 +648,9 @@ impl VirtualMachine {
         match left {
             DynamicValue::Integer(l_i) => {
                 match right {
-                    DynamicValue::Integer(r_i) => Ok(DynamicValue::Integer(l_i / r_i)),
+                    DynamicValue::Integer(0) => Err("Divisão de inteiro por zero, cumpade".to_owned()),
+                    DynamicValue::Integer(r_i) => l_i.checked_div(r_i).map(DynamicValue::Integer)
+                        .ok_or_else(|| format!("Overflow na divisão de {} e {}", l_i, r_i)),
                     DynamicValue::Number(r_n) => Ok(DynamicValue::Number((l_i as f64) / r_n)),
                     _ => return Err("Incompatível. Não deveria chegar aqui.".to_owned()),
                 }
@@ -656,6 +665,16 @@ impl VirtualMachine {
             DynamicValue::Text(_) => return Err("Operação inválida em texto : /".to_owned()),
             DynamicValue::Null => Ok(DynamicValue::Null),
             DynamicValue::List(_) => return Err("Operação não suportada em listas".to_owned())
+        }
+    }
+
+    fn pop_math_operands(&mut self) -> Result<(DynamicValue, DynamicValue), String> {
+        let right = self.registers.math_stack.pop();
+        let left = self.registers.math_stack.pop();
+
+        match (left, right) {
+            (Some(l), Some(r)) => Ok((l, r)),
+            _ => Err("Erro interno : Faltam operandos na pilha de expressão".to_owned()),
         }
     }
 
@@ -1308,6 +1327,19 @@ impl VirtualMachine {
                     Err(e) => return Err(e)
                 }
             }
+            Instruction::PushValMathStack(val) => {
+                let v = self.raw_to_dynamic(val)?;
+                self.registers.math_stack.push(v);
+            }
+            Instruction::PushIntermediateToMathStack => {
+                self.registers.math_stack.push(self.registers.intermediate);
+            }
+            Instruction::PopMathStackToB => {
+                self.registers.math_b = match self.registers.math_stack.pop() {
+                    Some(v) => v,
+                    None => return Err("Erro interno : Pilha de expressão vazia".to_owned()),
+                };
+            }
             Instruction::PushIntermediateToA => {
                 self.registers.math_a = self.registers.intermediate;
             }
@@ -1367,44 +1399,28 @@ impl VirtualMachine {
                 }
             }
             Instruction::Add => {
-                let left = self.registers.math_a;
-                let right = self.registers.math_b;
-                let res = match self.add_values(left, right) {
-                    Ok(v) => v,
-                    Err(e) => return Err(e)
-                };
+                let (left, right) = self.pop_math_operands()?;
+                let res = self.add_values(left, right)?;
 
-                self.registers.math_b = res;
+                self.registers.math_stack.push(res);
             }
             Instruction::Mul => {
-                let left = self.registers.math_a;
-                let right = self.registers.math_b;
-                let res = match self.mul_values(left, right) {
-                    Ok(v) => v,
-                    Err(e) => return Err(e)
-                };
+                let (left, right) = self.pop_math_operands()?;
+                let res = self.mul_values(left, right)?;
 
-                self.registers.math_b = res;
+                self.registers.math_stack.push(res);
             }
             Instruction::Div => {
-                let left = self.registers.math_a;
-                let right = self.registers.math_b;
-                let res = match self.div_values(left, right) {
-                    Ok(v) => v,
-                    Err(e) => return Err(e)
-                };
+                let (left, right) = self.pop_math_operands()?;
+                let res = self.div_values(left, right)?;
 
-                self.registers.math_b = res;
+                self.registers.math_stack.push(res);
             }
             Instruction::Sub => {
-                let left = self.registers.math_a;
-                let right = self.registers.math_b;
-                let res = match self.sub_values(left, right) {
-                    Ok(v) => v,
-                    Err(e) => return Err(e)
-                };
+                let (left, right) = self.pop_math_operands()?;
+                let res = self.sub_values(left, right)?;
 
-                self.registers.math_b = res;
+                self.registers.math_stack.push(res);
             }
             Instruction::SwapMath => {
                 let tmp = self.registers.math_b;
@@ -1495,8 +1511,8 @@ impl VirtualMachine {
                     None => return Err("Nenhuma função em execução".to_owned())
                 };
             }
-            Instruction::SetFirstExpressionOperation => {
-                self.registers.first_operation = true;
+            Instruction::ClearMathStack => {
+                self.registers.math_stack.clear();
             }
             Instruction::MakeNewList => {
                 let index = match self.get_last_ready_index() {
@@ -1692,6 +1708,12 @@ pub enum Instruction {
     PushValMathB(RawValue),
     PushIntermediateToA,
     PushIntermediateToB,
+    /// Push a value to the expression operand stack
+    PushValMathStack(RawValue),
+    /// Push the intermediate register to the expression operand stack
+    PushIntermediateToMathStack,
+    /// Pop the result of an expression from the operand stack into MathB
+    PopMathStackToB,
     PushMathBToSeconday,
     ClearSecondary,
     // Values are read to the intermediate register
@@ -1703,6 +1725,7 @@ pub enum Instruction {
     WriteVarToLast(usize),
     SwapMath,
     ClearMath,
+    /// Arithmetic operations pop the right, then the left operand from the expression stack and push the result
     Add,
     Mul,
     Div,
@@ -1715,8 +1738,8 @@ pub enum Instruction {
     PopLoopLabel,
     /// Retrieve the increment value from MathB and write it on every Restore to the specified address
     RegisterIncrementOnRestore(usize),
-    /// Set the register to denote this is the first operation on the expression
-    SetFirstExpressionOperation,
+    /// Clear the expression operand stack, before evaluating a new expression
+    ClearMathStack,
     /// Create a new list and put the result at MathB
     MakeNewList,
     /// Index a list with the ID from the intermediate register and the index from MathB, and put the result in MathB
